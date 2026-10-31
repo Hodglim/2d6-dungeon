@@ -9,7 +9,8 @@
   interface Props {
     map: DungeonMap;
     toggles: DisplayToggles;
-    ontap?: (pick: Pick) => void;
+    /** A tap: what's under it, plus the exact world point (squares) for nearest-edge snapping. */
+    ontap?: (pick: Pick, world: Point) => void;
   }
 
   let { map, toggles, ontap }: Props = $props();
@@ -47,6 +48,9 @@
   function setCamera(cam: Camera): void {
     if (!renderer) return;
     renderer.setCamera(viewW > 0 && viewH > 0 ? clampCamera(cam, worldBounds(map), viewW, viewH) : cam);
+    // Exposed for scripts/visual.mjs, which taps squares by world position.
+    const c = renderer.camera;
+    canvas.dataset.camera = `${c.x},${c.y},${c.scale}`;
   }
 
   function local(e: { clientX: number; clientY: number }): Point {
@@ -159,7 +163,10 @@
     pointers.delete(e.pointerId);
     if (pointers.size === 0) gesture = null;
     else if (gesture) gesture.moved = true; // the remaining finger keeps panning, no jump
-    if (wasTap && renderer && ontap) ontap(pick(map, renderer.screenToWorldPoint(e.clientX, e.clientY)));
+    if (wasTap && renderer && ontap) {
+      const world = renderer.screenToWorldPoint(e.clientX, e.clientY);
+      ontap(pick(map, world), world);
+    }
   }
 </script>
 

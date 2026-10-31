@@ -1,12 +1,20 @@
 <script lang="ts">
   import { demoMap } from '../app/demo';
   import { createMap } from '../core/campaign';
-  import { History } from '../core/history';
-  import { coverage } from '../core/query';
-  import type { DungeonMap } from '../core/types';
+  import { rectContains, sameEdge } from '../core/geometry';
+  import { type ExecResult, History } from '../core/history';
+  import { randomId } from '../core/ids';
+  import { findPath } from '../core/pathfinding';
+  import { coverage, openExits } from '../core/query';
+  import { moveToken } from '../core/token';
+  import type { Cell, DungeonMap, Edge } from '../core/types';
+  import { PlayFlow, type Step } from '../interaction/playflow';
+  import type { Point } from '../render/camera';
   import type { Pick } from '../render/hit';
   import { DEFAULT_TOGGLES, type DisplayToggles } from '../render/renderer';
   import { dungeonSystem } from '../systems/dungeon';
+  import { classicTheme } from '../systems/dungeon/classic';
+  import { drawOverlay, overlayFor } from './overlay';
   import { historyStore, type Tool } from './historyStore';
   import MapView from './MapView.svelte';
   import Menu from './Menu.svelte';
@@ -16,6 +24,8 @@
 
   const history = new History(createMap(dungeonSystem, { width: 25, height: 25 }));
   const view = historyStore(history);
+  // Real dice and ids for the app. Its History listener cancels a draft on any Undo/Redo.
+  const flow = new PlayFlow(history, Math.random, randomId);
 
   let tool = $state<Tool>('play');
   let toggles = $state<DisplayToggles>({ ...DEFAULT_TOGGLES });
@@ -24,6 +34,51 @@
   let confirmDemo = $state(false);
   let panelCollapsed = $state(false);
   let mapView = $state<ReturnType<typeof MapView>>();
+  let step = $state.raw<Step>(flow.step);
+  /** One-line panel message: a tap hint, or what happened on the last commit. */
+  let notice = $state<string | null>(null);
+  /** The next exit tap starts a gap corridor instead of a room. */
+  let gapMode = $state(false);
+
+  flow.subscribe((s) => {
+    step = s;
+    notice = null;
+    if (s.kind !== 'idle') {
+      gapMode = false;
+      panelCollapsed = false; // the steps live in the panel
+    }
+  });
+
+  /**
+   * The map on screen: the draft (entrance square, draft room) while a play-flow step is open,
+   * otherwise the committed map. The draft is never committed until finish()/placeGap().
+   */
+  const shownMap = $derived.by(() => {
+    const committed = $view.map;
+    return tool === 'play' && step.kind !== 'idle' ? flow.draftMap : committed;
+  });
+
+  /** A modal (menu, New map dialog, demo confirm) is open: map taps and shortcuts are off. */
+  const modalOpen = $derived(menuOpen || newMapOpen || confirmDemo);
+
+  // The overlay follows the step (and the map, for idle highlights). draftMap isn't reactive,
+  // but it only changes together with the step or the committed map.
+  $effect(() => {
+    const renderer = mapView?.getRenderer();
+    if (!renderer) return;
+    void $view.map; // re-run on every committed change (idle exit highlights)
+    const shapes = tool === 'play' ? overlayFor(step, flow.draftMap) : [];
+    renderer.setOverlay(shapes.length ? (ctx) => drawOverlay(ctx, shapes, classicTheme) : null);
+  });
+
+  function selectTool(t: Tool) {
+    if (t !== 'play') {
+      flow.cancel();
+      gapMode = false;
+    }
+    notice = null;
+    tool = t;
+  }
 
   const cover = $derived(coverage($view.map));
   /** Replacing the map would lose something: content on it, or undo history. */
@@ -43,14 +98,119 @@
     history.reset(demoMap());
   }
 
-  function onTap(p: Pick) {
-    // Tool behaviour (play flow, door/stairs/note editing, selection) is wired in later tasks.
-    void p;
+  /** Squares: a tap snaps to the nearest candidate edge whose midpoint is within this distance. */
+  const EDGE_SNAP = 0.7;
+
+  function nearestEdge(edges: Edge[], w: Point): Edge | null {
+    let best: Edge | null = null;
+    let bestDist = EDGE_SNAP;
+    for (const e of edges) {
+      const mx = e.side === 'N' ? e.x + 0.5 : e.x;
+      const my = e.side === 'N' ? e.y : e.y + 0.5;
+      const d = Math.hypot(w.x - mx, w.y - my);
+      if (d < bestDist) {
+        bestDist = d;
+        best = e;
+      }
+    }
+    return best;
+  }
+
+  function onTap(p: Pick, world: Point) {
+    const renderer = mapView?.getRenderer();
+    // A tap during the token's walk only stops the animation; the model is already final.
+    if (renderer?.walking) {
+      renderer.cancelWalk();
+      return;
+    }
+    if (modalOpen || tool !== 'play') return; // other tools are wired in later tasks
+    notice = null;
+    const s = flow.step;
+    switch (s.kind) {
+      case 'idle':
+        return idleTap(p, world);
+      case 'position':
+        return flow.slideTo(p.cell);
+      case 'exits': {
+        const e = nearestEdge([...flow.allowedExits, ...s.chosen], world);
+        if (e) flow.toggleExit(e);
+        return;
+      }
+      default:
+        return; // taps that don't belong to the step are ignored
+    }
+  }
+
+  function idleTap(p: Pick, world: Point) {
+    const map = history.map;
+    if (map.rooms.length === 0) {
+      flow.startEntrance(p.cell); // the flow explains an invalid square
+      return;
+    }
+    const exits = openExits(map);
+    const edge = nearestEdge(exits, world);
+    const exit = edge ? exits.find((d) => sameEdge(d, edge)) : undefined;
+    if (exit) {
+      if (gapMode) flow.startGap(exit.id);
+      else flow.startFromExit(exit.id);
+      return;
+    }
+    if (p.room) return walkTo(p.cell);
+    notice = gapMode ? 'Tap an open exit (highlighted)' : 'Tap an open exit, or a floor square to walk there';
+  }
+
+  function walkTo(cell: Cell) {
+    const map = history.map;
+    if (!map.token) {
+      notice = 'There is no token on the map';
+      return;
+    }
+    const path = findPath(map, map.token, cell);
+    if (!path) {
+      notice = "The token can't get there";
+      return;
+    }
+    const cmd = moveToken(map, path);
+    if (!cmd) return; // already there
+    const res = history.execute(cmd);
+    if (res.ok) animate(path);
+    else notice = res.reason;
+  }
+
+  /** Animate the token along a path it has already been moved along (the model holds the result). */
+  function animate(path: Cell[]) {
+    const renderer = mapView?.getRenderer();
+    if (!renderer || path.length < 2) return;
+    renderer.setMap(history.map); // first, so the map-change effect doesn't cancel the walk
+    renderer.walkToken(path, () => {});
+  }
+
+  /** Runs a committing PlayFlow call (finish / doneExits / placeGap), then animates the token's walk. */
+  function commit(run: () => ExecResult | null) {
+    const before = flow.step;
+    const roomId = before.kind === 'exits' || before.kind === 'label' ? before.draft.room.id : null;
+    const res = run();
+    if (!res) return; // moved on to the next step, nothing committed
+    if (!res.ok) {
+      // The flow shows a shortfall on its step; anything else goes in the notice line.
+      const shown = 'error' in flow.step && flow.step.error === res.reason;
+      if (!shown) notice = res.reason;
+      return;
+    }
+    // Consumed only here, right after the commit: lastWalk stays set until the next change.
+    const walk = flow.lastWalk;
+    if (walk) animate(walk);
+    else if (roomId) {
+      const map = history.map;
+      const room = map.rooms.find((r) => r.id === roomId);
+      if (room && map.token && !rectContains(room, map.token)) notice = "The token couldn't get to the new room, so it stays where it is";
+    }
   }
 
   function onKey(e: KeyboardEvent) {
     const target = e.target as HTMLElement | null;
     if (target?.closest('input, textarea, select, [contenteditable]')) return;
+    if (modalOpen) return;
     const key = e.key.toLowerCase();
     if (!(e.ctrlKey || e.metaKey) || (key !== 'z' && key !== 'y')) return;
     e.preventDefault();
@@ -68,7 +228,7 @@
       {tool}
       coverage={cover}
       {menuOpen}
-      ontool={(t) => (tool = t)}
+      ontool={selectTool}
       onundo={() => history.undo()}
       onredo={() => history.redo()}
       onmenu={() => (menuOpen = !menuOpen)}
@@ -83,8 +243,22 @@
       />
     {/if}
   </div>
-  <MapView bind:this={mapView} map={$view.map} {toggles} ontap={onTap} />
-  <StepPanel {tool} map={$view.map} collapsed={panelCollapsed} ontoggle={() => (panelCollapsed = !panelCollapsed)} />
+  <MapView bind:this={mapView} map={shownMap} {toggles} ontap={onTap} />
+  <StepPanel
+    {tool}
+    map={$view.map}
+    {flow}
+    {step}
+    {notice}
+    {gapMode}
+    ongapmode={(on) => {
+      gapMode = on;
+      notice = null;
+    }}
+    oncommit={commit}
+    collapsed={panelCollapsed}
+    ontoggle={() => (panelCollapsed = !panelCollapsed)}
+  />
 </div>
 
 {#if newMapOpen}

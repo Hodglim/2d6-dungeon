@@ -6,7 +6,7 @@ import { allowedExitEdges, placeExitsClockwise } from '../core/exits';
 import { sameEdge } from '../core/geometry';
 import type { ExecResult, History } from '../core/history';
 import type { IdFn } from '../core/ids';
-import { entranceCells, evaluatePlacement, shrinkToFit, slideRange, type PlacementResult } from '../core/placement';
+import { entranceCells, evaluatePlacement, ghostRect, shrinkToFit, slideRange, type PlacementResult } from '../core/placement';
 import {
   createEntranceAndRoom,
   createGapCorridor,
@@ -204,6 +204,25 @@ export class PlayFlow {
     const s = this.current;
     if (s.kind !== 'position' || !Number.isInteger(offset)) return;
     this.toPosition(s.source, s.size, s.w, s.h, offset);
+  }
+
+  /** Slide so the ghost covers the tapped square, or comes as close to it as the wall allows. */
+  slideTo(cell: Cell): void {
+    const s = this.current;
+    if (s.kind !== 'position') return;
+    const n = slideRange(this.base, this.door!, s.w, s.h);
+    let best = s.offset;
+    let bestDist = Infinity;
+    for (let o = 0; o < n; o++) {
+      const r = ghostRect(this.base, this.door!, s.w, s.h, o);
+      if (!r) continue;
+      const dist = Math.abs(cell.x + 0.5 - (r.x + r.w / 2)) + Math.abs(cell.y + 0.5 - (r.y + r.h / 2));
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = o;
+      }
+    }
+    if (best !== s.offset) this.toPosition(s.source, s.size, s.w, s.h, best);
   }
 
   shrink(): void {

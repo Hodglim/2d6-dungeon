@@ -418,3 +418,25 @@ describe('PlayFlow exit count is enforced', () => {
     expect(flow.finish(null)).toEqual({ ok: true });
   });
 });
+
+describe('PlayFlow slideTo (tap to slide the ghost)', () => {
+  it('slides so the ghost covers (or comes closest to) the tapped square', () => {
+    const { history, flow } = withEntrance();
+    flow.startFromExit(northExit(history.map).id);
+    flow.enterSize('3', '4'); // 3×4 north of the exit target (4,6): offsets 0..2
+    expect(expectKind(flow, 'position').offset).toBe(1);
+    flow.slideTo({ x: 6, y: 4 });
+    expect(expectKind(flow, 'position')).toMatchObject({ offset: 0, placement: { rect: { x: 4, y: 3, w: 3, h: 4 } } });
+    flow.slideTo({ x: 2, y: 5 });
+    expect(expectKind(flow, 'position').offset).toBe(2);
+    flow.slideTo({ x: 9, y: 0 }); // beyond the range: nearest end
+    expect(expectKind(flow, 'position').offset).toBe(0);
+  });
+
+  it('does nothing outside the position step', () => {
+    const { flow } = setup();
+    const before = flow.step;
+    flow.slideTo({ x: 1, y: 1 });
+    expect(flow.step).toBe(before);
+  });
+});
