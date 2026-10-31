@@ -1,4 +1,4 @@
-import { deriveWalls, isOpenExit, nextRoomNumber, openExits, roomAt } from '../../src/core/query';
+import { deriveWalls, isOpenExit, nextRoomNumber, openExits, roomAt, roomCentre } from '../../src/core/query';
 import { sameEdge } from '../../src/core/geometry';
 import { door, emptyMap, room, withContent } from './fixtures';
 
@@ -83,5 +83,11 @@ describe('nextRoomNumber after a deletion', () => {
   it('does not refill gaps', () => {
     const m = withContent(emptyMap(), [room('a', 1, 1, 1, 1, 'room', 1), room('c', 3, 3, 1, 1, 'room', 3)]);
     expect(nextRoomNumber(m)).toBe(4);
+  });
+});
+
+describe('roomCentre', () => {
+  it('is the middle square, rounding toward the top-left', () => {
+    expect(roomCentre(room('a', 2, 2, 4, 3))).toEqual({ x: 3, y: 3 });
   });
 });

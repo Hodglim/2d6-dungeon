@@ -59,3 +59,8 @@ export function exitTarget(map: DungeonMap, door: Door): Cell | null {
   const [a, b] = edgeCells(door);
   return dir === 'S' || dir === 'E' ? b : a;
 }
+
+/** The middle square of a room (rounding toward the top-left for even sizes). */
+export function roomCentre(room: Room): Cell {
+  return { x: room.x + Math.floor((room.w - 1) / 2), y: room.y + Math.floor((room.h - 1) / 2) };
+}

@@ -25,7 +25,7 @@ function room(
   offset: number,
   type: string,
   exits: Edge[],
-  opts: { passages?: boolean; exitType?: string } = {},
+  opts: { exitType?: string } = {},
 ): void {
   const door = must(doorAt(h.map, exit), `no door at ${JSON.stringify(exit)}`);
   const placement = evaluatePlacement(h.map, door, w, hgt, offset);
@@ -38,7 +38,6 @@ function room(
         room: { ...r, label: { type, unique: false, narrative: '' } },
         exits,
         exitType: opts.exitType ?? 'archway',
-        passages: opts.passages ?? false,
       },
       randomId,
     ),
@@ -54,20 +53,23 @@ function retype(h: History, edge: Edge, patch: Partial<{ type: string; secret: b
 export function demoMap(): DungeonMap {
   const h = new History(createMap(dungeonSystem, { width: 20, height: 16, seed: 42, title: 'Demo' }));
   h.execute(placeEntrance(h.map, dungeonSystem, { x: 9, y: 16 }, randomId));
-  // Room 1: Guard Room above the entrance, with three exits on passages.
+  // Room 1: Guard Room above the entrance, with three exits (each gets an exit square).
+  // Later rooms attach beyond an exit square, at its far door.
   room(h, { x: 9, y: 16, side: 'N' }, 6, 3, 2, 'Guard Room', [
     { x: 8, y: 13, side: 'N' },
     { x: 7, y: 14, side: 'W' },
     { x: 13, y: 15, side: 'W' },
-  ], { passages: true });
-  // Room 2: Shrine north of the first passage.
+  ]);
+  // Room 2: Shrine north of the first exit square.
   room(h, { x: 8, y: 12, side: 'N' }, 5, 4, 1, 'Shrine', [{ x: 7, y: 9, side: 'W' }, { x: 9, y: 8, side: 'N' }]);
   // Room 3: a narrow room whose label must move outside.
   room(h, { x: 6, y: 14, side: 'W' }, 2, 2, 1, 'Collapsed Armoury', []);
   // Room 4: west of the Shrine.
-  room(h, { x: 7, y: 9, side: 'W' }, 3, 3, 1, 'Crypt', []);
+  room(h, { x: 6, y: 9, side: 'W' }, 3, 3, 1, 'Crypt', []);
   // Room 5: a tall hall behind a secret door.
-  room(h, { x: 9, y: 8, side: 'N' }, 4, 6, 1, 'Great Hall', [{ x: 12, y: 3, side: 'W' }]);
+  room(h, { x: 9, y: 7, side: 'N' }, 4, 6, 1, 'Great Hall', [{ x: 12, y: 3, side: 'W' }]);
+  // Room 7: beyond the Great Hall's east exit.
+  room(h, { x: 13, y: 3, side: 'W' }, 3, 3, 1, 'Vault', []);
   // Room 6: rolled 3×2 but clipped to 3×1 by the Outer Boundary.
   room(h, { x: 14, y: 15, side: 'W' }, 3, 2, 0, 'Store', []);
 
