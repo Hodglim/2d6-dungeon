@@ -63,6 +63,30 @@ decision is needed before that plan's tasks get written.
 - The Svelte store wrapper must call subscribers immediately with the current value,
   which `History.subscribe` does not.
 
+## From the Plan 2 core review (2026-10-31)
+
+- **Plan 3: entry doors can't be removed.** `checkInvariants` rejects any edit that
+  removes a room's (or passage's) entry door. The Door tool should hide or disable
+  "remove" for entry doors and explain why, offering a retype to secret or locked instead.
+  Show `History.execute`'s reason string whenever a command is rejected.
+- **Plan 3: everything goes through `History.execute`.** Undo is one saved timeline, so
+  token moves, notes and door edits must never change the map outside it.
+- **Plan 3: the "only the entrance has a null `entryDoorId`" rule isn't enforced yet.**
+  Every play-flow room gets one, but the invariant also accepts null for rooms and passages.
+  Tightening it means updating many test fixtures. Do it when Plan 3 touches room creation.
+- **Plan 4: saved history size.** JSON loses snapshot sharing. 200 snapshots × ~25 KB
+  ≈ 5 MB, so use IndexedDB (not localStorage), and measure. Consider deltas or a smaller
+  cap if it's too big.
+- **Plan 4: validate a loaded `HistoryState`.** Check `current` and every past and future
+  snapshot with the file validator plus `checkInvariants`, check that labels are strings,
+  and cap lengths before calling `History.fromState` (which trusts its input). Keep one
+  source of truth: the campaign's map is the history's `current`.
+- **Plan 4: schema.** `entryDoorId` was added while still on schema version 1. That's
+  fine because no real saves exist yet. Bump the version and migrate (including saved
+  history snapshots) for any later model change.
+- **Plan 3: undo cap.** Beyond 200 steps the oldest undo is silently dropped. Consider
+  telling the player.
+
 ## Plan 4: Persistence
 
 - `History` holds a single `DungeonMap`. Autosave and JSON export must write
