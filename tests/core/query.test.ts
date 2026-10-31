@@ -1,4 +1,4 @@
-import { deriveWalls, isOpenExit, nextRoomNumber, openExits, roomAt, roomCentre } from '../../src/core/query';
+import { deriveWalls, isOpenExit, nextRoomNumber, openExits, roomAt, roomCentre, coverage } from '../../src/core/query';
 import { sameEdge } from '../../src/core/geometry';
 import { door, emptyMap, room, withContent } from './fixtures';
 
@@ -89,5 +89,17 @@ describe('nextRoomNumber after a deletion', () => {
 describe('roomCentre', () => {
   it('is the middle square, rounding toward the top-left', () => {
     expect(roomCentre(room('a', 2, 2, 4, 3))).toEqual({ x: 3, y: 3 });
+  });
+});
+
+describe('coverage', () => {
+  it('is 0 for an empty map', () => {
+    expect(coverage(emptyMap())).toBe(0);
+  });
+  it('counts a 5x4 room on 10x10 as 0.2', () => {
+    expect(coverage(withContent(emptyMap(), [room('a', 1, 1, 5, 4)]))).toBe(0.2);
+  });
+  it('does not count the entrance', () => {
+    expect(coverage(withContent(emptyMap(), [room('a', 1, 1, 5, 4), room('e', 7, 7, 1, 1, 'entrance')]))).toBe(0.2);
   });
 });

@@ -64,3 +64,11 @@ export function exitTarget(map: DungeonMap, door: Door): Cell | null {
 export function roomCentre(room: Room): Cell {
   return { x: room.x + Math.floor((room.w - 1) / 2), y: room.y + Math.floor((room.h - 1) / 2) };
 }
+
+/** Fraction of the map covered by room, corridor and passage floor (the entrance is not counted). */
+export function coverage(map: DungeonMap): number {
+  const squares = map.rooms
+    .filter((r) => r.kind === 'room' || r.kind === 'corridor' || r.kind === 'passage')
+    .reduce((n, r) => n + r.w * r.h, 0);
+  return squares / (map.width * map.height);
+}

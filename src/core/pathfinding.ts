@@ -4,7 +4,7 @@ import type { Cell, Direction, DungeonMap } from './types';
 
 const DIRS: Direction[] = ['N', 'E', 'S', 'W'];
 
-/** Can the token move one square from `from` in `dir`? Needs floor on both sides, and a non-secret door between different rooms. */
+/** Can the token move one square from `from` in `dir`? Needs floor on both sides, and an unlocked door between different rooms (secret doors only pass into the room they enter). */
 export function canStep(map: DungeonMap, from: Cell, dir: Direction): boolean {
   const to = step(from, dir);
   const a = roomAt(map, from);
@@ -12,7 +12,12 @@ export function canStep(map: DungeonMap, from: Cell, dir: Direction): boolean {
   if (!a || !b) return false;
   if (a.id === b.id) return true;
   const door = doorAt(map, cellEdge(from, dir));
-  return door !== undefined && !door.secret;
+  if (door === undefined) return false;
+  if (door.lock?.locked === true) return false;
+  if (!door.secret) return true;
+  // A secret door is one-way into the room it is the entry door of; otherwise it passes both ways.
+  if (b.entryDoorId === door.id) return true;
+  return !map.rooms.some((r) => r.entryDoorId === door.id);
 }
 
 const key = (c: Cell) => `${c.x},${c.y}`;

@@ -8,6 +8,15 @@ function twoRooms(secret = false) {
   return withContent(emptyMap(), [room('a', 1, 1, 2, 2), room('b', 3, 1, 2, 2)], [d]);
 }
 
+function secretEntry() {
+  const m = twoRooms(true);
+  return { ...m, rooms: m.rooms.map((r) => (r.id === 'b' ? { ...r, entryDoorId: 'd' } : r)) };
+}
+function lockedRooms(locked: boolean) {
+  const d = { ...door('d', 3, 2, 'W'), lock: { locked, note: '', quality: null } };
+  return withContent(emptyMap(), [room('a', 1, 1, 2, 2), room('b', 3, 1, 2, 2)], [d]);
+}
+
 describe('canStep', () => {
   it('moves freely inside a room', () => {
     expect(canStep(twoRooms(), { x: 1, y: 1 }, 'E')).toBe(true);
@@ -18,8 +27,18 @@ describe('canStep', () => {
   it('passes through a door', () => {
     expect(canStep(twoRooms(), { x: 2, y: 2 }, 'E')).toBe(true);
   });
-  it('is blocked by a secret door', () => {
-    expect(canStep(twoRooms(true), { x: 2, y: 2 }, 'E')).toBe(false);
+  it('passes a secret door that is nobody\'s entry door, both ways', () => {
+    expect(canStep(twoRooms(true), { x: 2, y: 2 }, 'E')).toBe(true);
+    expect(canStep(twoRooms(true), { x: 3, y: 2 }, 'W')).toBe(true);
+  });
+  it('passes a secret entry door into its room only', () => {
+    const m = secretEntry();
+    expect(canStep(m, { x: 2, y: 2 }, 'E')).toBe(true);
+    expect(canStep(m, { x: 3, y: 2 }, 'W')).toBe(false);
+  });
+  it('is blocked by a locked door; an opened one passes', () => {
+    expect(canStep(lockedRooms(true), { x: 2, y: 2 }, 'E')).toBe(false);
+    expect(canStep(lockedRooms(false), { x: 2, y: 2 }, 'E')).toBe(true);
   });
   it('cannot leave the floor', () => {
     expect(canStep(twoRooms(), { x: 1, y: 1 }, 'N')).toBe(false);
@@ -36,8 +55,12 @@ describe('findPath', () => {
     expect(path).toContainEqual({ x: 3, y: 2 });
     expect(path).toHaveLength(6);
   });
-  it('returns null when only a secret door connects', () => {
-    expect(findPath(twoRooms(true), { x: 1, y: 1 }, { x: 4, y: 1 })).toBeNull();
+  it('finds a path through a secret door that is nobody\'s entry door', () => {
+    expect(findPath(twoRooms(true), { x: 1, y: 1 }, { x: 4, y: 1 })).not.toBeNull();
+  });
+  it('returns null from b to a when the only connection is b\'s secret entry door', () => {
+    expect(findPath(secretEntry(), { x: 4, y: 1 }, { x: 1, y: 1 })).toBeNull();
+    expect(findPath(secretEntry(), { x: 1, y: 1 }, { x: 4, y: 1 })).not.toBeNull();
   });
   it('returns null for a target off the floor', () => {
     expect(findPath(twoRooms(), { x: 1, y: 1 }, { x: 8, y: 8 })).toBeNull();
