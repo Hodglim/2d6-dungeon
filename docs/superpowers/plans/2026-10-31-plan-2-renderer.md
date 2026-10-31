@@ -2480,10 +2480,16 @@ export default mount(App, { target });
 - [ ] **Step 7: Write a placeholder `src/App.svelte`**
 
 ```svelte
+<script lang="ts">
+  const title = '2D6 Map Maker';
+</script>
+
 <main>
-  <p>2D6 Map Maker</p>
+  <p>{title}</p>
 </main>
 ```
+
+(The `<script lang="ts">` block matters: `svelte-check` can't type a `.svelte` file without one, and would fail on the import in `main.ts`.)
 
 - [ ] **Step 8: Install and verify**
 
