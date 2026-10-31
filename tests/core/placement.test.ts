@@ -1,4 +1,4 @@
-import { entranceCells, evaluatePlacement, ghostRect, slideRange, validExitEdges } from '../../src/core/placement';
+import { entranceCells, evaluatePlacement, ghostRect, shrinkToFit, slideRange, validExitEdges } from '../../src/core/placement';
 import { exitDirection, exitTarget } from '../../src/core/query';
 import { door, emptyMap, room, withContent } from './fixtures';
 
@@ -121,5 +121,36 @@ describe('entranceCells', () => {
       { x: 1, y: 4 },
       { x: 2, y: 4 },
     ]);
+  });
+});
+
+describe('shrinkToFit', () => {
+  it('returns the rolled size unchanged when it already fits', () => {
+    const m = mapWithTopExit();
+    expect(shrinkToFit(m, m.doors[0]!, 5, 4, 2)).toEqual({ w: 5, h: 4, offset: 2 });
+  });
+  it('finds the largest fitting size when neighbours block', () => {
+    const m = withContent(
+      emptyMap(10, 10),
+      [room('a', 4, 4, 3, 2, 'room', 1), room('b', 6, 0, 4, 4, 'room', 2), room('c', 0, 0, 4, 4, 'room', 3)],
+      [door('d', 5, 4, 'N')],
+    );
+    const d = m.doors[0]!;
+    const r = shrinkToFit(m, d, 5, 4, 0)!;
+    expect(r).not.toBeNull();
+    expect(evaluatePlacement(m, d, r.w, r.h, r.offset).ok).toBe(true);
+    expect(r.w * r.h).toBeLessThan(20);
+    for (let w = 1; w <= 5; w++)
+      for (let h = 1; h <= 4; h++)
+        for (let o = 0; o < slideRange(m, d, w, h); o++)
+          if (evaluatePlacement(m, d, w, h, o).ok) expect(w * h).toBeLessThanOrEqual(r.w * r.h);
+  });
+  it('returns null when the square in front of the exit is floor', () => {
+    const m = withContent(
+      emptyMap(10, 10),
+      [room('a', 4, 4, 3, 2, 'room', 1), room('b', 5, 2, 2, 2, 'room', 2)],
+      [door('d', 5, 4, 'N')],
+    );
+    expect(shrinkToFit(m, m.doors[0]!, 3, 3, 0)).toBeNull();
   });
 });

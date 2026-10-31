@@ -77,6 +77,35 @@ export function evaluatePlacement(
 }
 
 /**
+ * Largest-area w'×h' (w'≤w, h'≤h) and slide offset that fits in front of the exit.
+ * Ties go to the larger width, then the offset closest to the requested one.
+ */
+export function shrinkToFit(
+  map: DungeonMap,
+  door: Door,
+  w: number,
+  h: number,
+  offset: number,
+): { w: number; h: number; offset: number } | null {
+  let best: { w: number; h: number; offset: number } | null = null;
+  for (let cw = w; cw >= 1; cw--) {
+    for (let ch = h; ch >= 1; ch--) {
+      const n = slideRange(map, door, cw, ch);
+      for (let o = 0; o < n; o++) {
+        if (!evaluatePlacement(map, door, cw, ch, o).ok) continue;
+        const better =
+          !best ||
+          cw * ch > best.w * best.h ||
+          (cw * ch === best.w * best.h &&
+            (cw > best.w || (cw === best.w && Math.abs(o - offset) < Math.abs(best.offset - offset))));
+        if (better) best = { w: cw, h: ch, offset: o };
+      }
+    }
+  }
+  return best;
+}
+
+/**
  * Wall edges of a room where an exit may be placed: not on the Outer Boundary and not
  * already a door. With passages on, the square beyond must also be empty.
  */
