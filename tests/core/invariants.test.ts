@@ -64,3 +64,20 @@ describe('checkInvariants', () => {
     expect(checkInvariants(m)).toBe('A map can have only one entrance');
   });
 });
+
+describe('entry door invariant', () => {
+  it('rejects a room whose entry door is missing or not on its wall', () => {
+    const missing = withContent(emptyMap(), [{ ...room('a', 2, 2, 2, 2, 'room', 1), entryDoorId: 'gone' }]);
+    expect(checkInvariants(missing)).toMatch(/lost the door/);
+    const elsewhere = withContent(
+      emptyMap(),
+      [{ ...room('a', 2, 2, 2, 2, 'room', 1), entryDoorId: 'd' }, room('b', 6, 6, 1, 1)],
+      [door('d', 6, 6, 'N')],
+    );
+    expect(checkInvariants(elsewhere)).toMatch(/lost the door/);
+  });
+  it('accepts a room whose entry door is on its wall', () => {
+    const ok = withContent(emptyMap(), [{ ...room('a', 2, 2, 2, 2, 'room', 1), entryDoorId: 'd' }], [door('d', 2, 4, 'N')]);
+    expect(checkInvariants(ok)).toBeNull();
+  });
+});

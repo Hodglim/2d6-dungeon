@@ -82,6 +82,7 @@ describe('serialize / parse', () => {
     ['room x 1.5', (c) => { c.maps[0].rooms[0].x = 1.5; }, 'a room is malformed'],
     ['room kind banana', (c) => { c.maps[0].rooms[0].kind = 'banana'; }, 'a room is malformed'],
     ['room label {}', (c) => { c.maps[0].rooms[0].label = {}; }, 'a room is malformed'],
+    ['room entryDoorId 5', (c) => { c.maps[0].rooms[0].entryDoorId = 5; }, 'a room is malformed'],
     ['door secret yes', (c) => { c.maps[0].doors.push({ ...okDoor, secret: 'yes' }); }, 'a door is malformed'],
     ['door lock partial', (c) => { c.maps[0].doors.push({ ...okDoor, lock: { locked: true } }); }, 'a door is malformed'],
     ['stairs dir sideways', (c) => { c.maps[0].features.push({ id: 'f1', x: 1, y: 1, kind: 'stairs', dir: 'sideways' }); }, 'a feature is malformed'],

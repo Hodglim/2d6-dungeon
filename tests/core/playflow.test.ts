@@ -43,8 +43,9 @@ describe('full play-flow round', () => {
     const placement = evaluatePlacement(h.map, exit, 3, 2, 1);
     expect(placement).toMatchObject({ ok: true, rect: { x: 3, y: 8, w: 3, h: 2 } });
 
-    const room = newRoom(h.map, placement.rect!, ids);
+    const room = newRoom(h.map, placement.rect!, exit, ids);
     expect(room.number).toBe(1);
+    expect(room.entryDoorId).toBe(exit.id);
 
     // Exits are chosen against a draft map that already contains the room.
     const draft = addRoom(room).apply(h.map);
@@ -77,7 +78,7 @@ describe('full play-flow round', () => {
     const exit = openExits(h.map)[0]!;
     // 1 wide × 4 tall fills y=1..4; a passage north of it sits at y=0, against the boundary.
     const placement = evaluatePlacement(h.map, exit, 1, 4, 0);
-    const room = newRoom(h.map, placement.rect!, ids);
+    const room = newRoom(h.map, placement.rect!, exit, ids);
     const cmd = createRoomFromExit(h.map, { room, exits: [{ x: 2, y: 1, side: 'N' }], exitType: 'archway', passages: true }, ids);
     expect(h.execute(cmd).ok).toBe(true);
     expect(h.map.rooms.find((r) => r.kind === 'passage')).toMatchObject({ x: 2, y: 0 });
@@ -102,5 +103,31 @@ describe('full play-flow round', () => {
     expect(h.execute(cmd).ok).toBe(true);
     expect(h.map.rooms.map((x) => x.kind)).toEqual(['room']);
     expect(openExits(h.map)).toHaveLength(2);
+  });
+});
+
+describe('entry doors', () => {
+  it('records the exit used for the room and for each passage', () => {
+    const h = new History(emptyMap(10, 10));
+    const ids = sequentialIds('n');
+    h.execute(placeEntrance(h.map, dungeonSystem, { x: 4, y: 10 }, ids));
+    const exit = openExits(h.map)[0]!;
+    const room = newRoom(h.map, evaluatePlacement(h.map, exit, 3, 2, 1).rect!, exit, ids);
+    h.execute(createRoomFromExit(h.map, { room, exits: [{ x: 4, y: 8, side: 'N' }], exitType: 'archway', passages: true }, ids));
+    const passage = h.map.rooms.find((r) => r.kind === 'passage')!;
+    const roomExit = h.map.doors.find((d) => d.x === 4 && d.y === 8 && d.side === 'N')!;
+    expect(h.map.rooms.find((r) => r.kind === 'room')!.entryDoorId).toBe(exit.id);
+    expect(passage.entryDoorId).toBe(roomExit.id);
+  });
+
+  it('frees the newest room number on undo', () => {
+    const h = new History(emptyMap(10, 10));
+    const ids = sequentialIds('u');
+    h.execute(placeEntrance(h.map, dungeonSystem, { x: 4, y: 10 }, ids));
+    const exit = openExits(h.map)[0]!;
+    const room = newRoom(h.map, evaluatePlacement(h.map, exit, 2, 2, 0).rect!, exit, ids);
+    h.execute(createRoomFromExit(h.map, { room, exits: [], exitType: 'archway', passages: false }, ids));
+    h.undo();
+    expect(newRoom(h.map, { x: 4, y: 8, w: 2, h: 2 }, exit, ids).number).toBe(1);
   });
 });

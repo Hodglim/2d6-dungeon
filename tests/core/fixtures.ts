@@ -16,7 +16,7 @@ export function room(
   kind: RoomKind = 'room',
   number = 0,
 ): Room {
-  return { id, number, kind, x, y, w, h, label: { type: '', unique: false, narrative: '' } };
+  return { id, number, kind, x, y, w, h, label: { type: '', unique: false, narrative: '' }, entryDoorId: null };
 }
 
 export function door(id: string, x: number, y: number, side: Side, type = 'archway'): Door {

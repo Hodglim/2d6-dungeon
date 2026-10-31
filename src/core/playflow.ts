@@ -27,6 +27,7 @@ export function placeEntrance(map: DungeonMap, system: GameSystem, cell: Cell, n
     w: 1,
     h: 1,
     label: { ...EMPTY_LABEL },
+    entryDoorId: null,
   };
   const inward = cellEdge(cell, entranceInwardDirection(system.entranceEdge));
   return compound('Place entrance', [
@@ -36,9 +37,19 @@ export function placeEntrance(map: DungeonMap, system: GameSystem, cell: Cell, n
   ]);
 }
 
-/** A new numbered room for the given (already clipped) rect, not yet added to the map. */
-export function newRoom(map: DungeonMap, rect: Rect, newId: IdFn): Room {
-  return { id: newId(), number: nextRoomNumber(map), kind: 'room', ...rect, label: { ...EMPTY_LABEL } };
+/**
+ * A new numbered room for the given (already clipped) rect, entered through `entryDoor`
+ * (the open exit it was placed against). Not yet added to the map.
+ */
+export function newRoom(map: DungeonMap, rect: Rect, entryDoor: Door, newId: IdFn): Room {
+  return {
+    id: newId(),
+    number: nextRoomNumber(map),
+    kind: 'room',
+    ...rect,
+    label: { ...EMPTY_LABEL },
+    entryDoorId: entryDoor.id,
+  };
 }
 
 export interface RoomPlan {
@@ -59,7 +70,8 @@ export function createRoomFromExit(map: DungeonMap, plan: RoomPlan, newId: IdFn)
   const cmds: Command[] = [addRoom(plan.room)];
   const perimeter = perimeterEdges(plan.room);
   for (const exit of plan.exits) {
-    cmds.push(addDoor(makeDoor(newId, exit, plan.exitType)));
+    const exitDoor = makeDoor(newId, exit, plan.exitType);
+    cmds.push(addDoor(exitDoor));
     if (!plan.passages) continue;
     const side = perimeter.find((p) => sameEdge(p.edge, exit));
     if (!side) continue;
@@ -73,6 +85,7 @@ export function createRoomFromExit(map: DungeonMap, plan: RoomPlan, newId: IdFn)
       w: 1,
       h: 1,
       label: { ...EMPTY_LABEL },
+      entryDoorId: exitDoor.id,
     };
     cmds.push(addRoom(passage));
     const far = cellEdge(cell, side.dir);

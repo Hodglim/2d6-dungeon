@@ -1,4 +1,4 @@
-import { clipRect, edgeKey, isBoundaryEdge, rectsOverlap } from './geometry';
+import { clipRect, edgeKey, isBoundaryEdge, perimeterEdges, rectsOverlap, sameEdge } from './geometry';
 import { roomAt, roomsAcross } from './query';
 import type { DungeonMap, Room } from './types';
 
@@ -51,6 +51,13 @@ export function checkInvariants(map: DungeonMap): string | null {
     }
     if (isBoundaryEdge(d, map.width, map.height) && a?.kind !== 'entrance' && b?.kind !== 'entrance') {
       return 'Exits cannot be placed on the Outer Boundary';
+    }
+  }
+  for (const r of map.rooms) {
+    if (r.entryDoorId === null) continue;
+    const entry = map.doors.find((d) => d.id === r.entryDoorId);
+    if (!entry || !perimeterEdges(r).some((p) => sameEdge(p.edge, entry))) {
+      return `${describeRoom(r)} has lost the door it was entered through`;
     }
   }
   for (const f of map.features) {

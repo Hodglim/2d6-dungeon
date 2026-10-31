@@ -34,6 +34,8 @@ export interface Room extends Rect {
   number: number;
   kind: RoomKind;
   label: RoomLabel;
+  /** The door this room was entered through (its label anchors there); null for the entrance. */
+  entryDoorId: string | null;
 }
 
 export interface DoorLock {

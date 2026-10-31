@@ -25,6 +25,7 @@ const ROOM_KINDS = ['room', 'passage', 'entrance'];
 function roomOk(r: unknown): boolean {
   if (!isObj(r) || !isStr(r.id) || !ROOM_KINDS.includes(r.kind as string)) return false;
   if (!isObj(r.label) || !isStr(r.label.type) || !isBool(r.label.unique) || !isStr(r.label.narrative)) return false;
+  if (r.entryDoorId !== null && !isStr(r.entryDoorId)) return false;
   return ['x', 'y', 'w', 'h', 'number'].every((k) => isInt(r[k]));
 }
 
