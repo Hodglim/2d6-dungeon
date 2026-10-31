@@ -1,6 +1,7 @@
 import {
   clipRect,
   edgeCells,
+  edgeKey,
   inBounds,
   isBoundaryEdge,
   perimeterEdges,
@@ -35,6 +36,7 @@ export function exitTarget(map: DungeonMap, door: Door): Cell | null {
 /** Number of slide positions for a w×h room against an exit. */
 export function slideRange(map: DungeonMap, door: Door, w: number, h: number): number {
   const dir = exitDirection(map, door);
+  if (!dir) return 0;
   return dir === 'N' || dir === 'S' ? w : h;
 }
 
@@ -88,7 +90,13 @@ export function evaluatePlacement(
   }
   const rect = clipRect(raw, map.width, map.height);
   if (!rect || !rectContains(rect, target)) {
-    return { ok: false, rect, rolled, clipped: true, reason: 'The room must connect to the exit' };
+    return {
+      ok: false,
+      rect,
+      rolled,
+      clipped: rect !== null && (rect.w !== w || rect.h !== h),
+      reason: 'The room must connect to the exit',
+    };
   }
   const clipped = rect.w !== w || rect.h !== h;
   const hit = firstOverlap(map, rect);
@@ -164,9 +172,18 @@ export function checkInvariants(map: DungeonMap): string | null {
       if (rectsOverlap(a, b)) return `${describeRoom(a)} overlaps ${describeRoom(b)}`;
     }
   }
+  if (map.rooms.filter((r) => r.kind === 'entrance').length > 1) return 'A map can have only one entrance';
+  const edgeKeys = new Set<string>();
   for (const d of map.doors) {
+    const key = edgeKey(d);
+    if (edgeKeys.has(key)) return 'Two doors share one edge';
+    edgeKeys.add(key);
     const [a, b] = roomsAcross(map, d);
     if (!a && !b) return 'A door is not attached to any room';
+    if (a && b && a.id === b.id) return 'A door is inside a room';
+    if ((a?.kind === 'entrance' || b?.kind === 'entrance') && !isBoundaryEdge(d, map.width, map.height)) {
+      return 'Doors on the entrance must lead into the map';
+    }
     if (isBoundaryEdge(d, map.width, map.height) && a?.kind !== 'entrance' && b?.kind !== 'entrance') {
       return 'Exits cannot be placed on the Outer Boundary';
     }

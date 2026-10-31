@@ -17,12 +17,32 @@ describe('History', () => {
     const h = new History(emptyMap());
     h.execute(addRoom(room('a', 1, 1, 3, 3)));
     const before = h.map;
+    const canUndoBefore = h.canUndo;
+    const listener = vi.fn();
+    h.subscribe(listener);
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const result = h.execute(addRoom(room('b', 2, 2, 3, 3)));
     warn.mockRestore();
     expect(result.ok).toBe(false);
     expect(h.map).toBe(before);
     expect(h.canRedo).toBe(false);
+    expect(h.canUndo).toBe(canUndoBefore);
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it('isolates throwing listeners', () => {
+    const h = new History(emptyMap());
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const second = vi.fn();
+    h.subscribe(() => {
+      throw new Error('boom');
+    });
+    h.subscribe(second);
+    const result = h.execute(addRoom(room('a', 1, 1, 1, 1)));
+    expect(err).toHaveBeenCalled();
+    err.mockRestore();
+    expect(result).toEqual({ ok: true });
+    expect(second).toHaveBeenCalledTimes(1);
   });
 
   it('clears redo after a new command', () => {

@@ -75,6 +75,12 @@ export class History {
   }
 
   private emit(): void {
-    for (const fn of this.listeners) fn(this.current);
+    for (const fn of [...this.listeners]) {
+      try {
+        fn(this.current);
+      } catch (err) {
+        console.error('History listener failed', err);
+      }
+    }
   }
 }

@@ -47,6 +47,35 @@ describe('item commands round-trip', () => {
   });
 });
 
+describe('removeItem undo guard and redo', () => {
+  it('does not duplicate when undo runs on a map that already has the item', () => {
+    const cmd = removeRoom(room('zz', 1, 1, 1, 1));
+    cmd.apply(emptyMap());
+    const withZz = withContent(emptyMap(), [room('zz', 1, 1, 1, 1)]);
+    expect(cmd.undo(withZz).rooms.filter((r) => r.id === 'zz')).toHaveLength(1);
+  });
+  it('removeRoom survives apply, undo, apply', () => {
+    const base = withContent(emptyMap(), [room('a', 1, 1, 2, 2), room('b', 4, 1, 2, 2)]);
+    const cmd = removeRoom(base.rooms[0]!);
+    const first = cmd.apply(base);
+    cmd.undo(first);
+    expect(cmd.apply(base)).toEqual(first);
+    expect(cmd.undo(first)).toEqual(base);
+  });
+  it('deleteRoom survives apply, undo, apply', () => {
+    const base = withContent(
+      emptyMap(),
+      [room('a', 1, 1, 2, 2), room('b', 3, 1, 2, 2)],
+      [door('d1', 3, 1, 'W'), door('d2', 1, 1, 'N')],
+    );
+    const cmd = deleteRoom(base, 'a')!;
+    const first = cmd.apply(base);
+    cmd.undo(first);
+    expect(cmd.apply(base)).toEqual(first);
+    expect(cmd.undo(first)).toEqual(base);
+  });
+});
+
 describe('compound', () => {
   it('applies in order and undoes in reverse', () => {
     const base = emptyMap();

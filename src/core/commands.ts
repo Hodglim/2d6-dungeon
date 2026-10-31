@@ -2,7 +2,9 @@ import { edgeCells, rectContains } from './geometry';
 import { roomAt } from './query';
 import type { Door, DungeonMap, Feature, Room, Token } from './types';
 
-/** A reversible change to a map. apply/undo are pure: they return a new map. */
+/** A reversible change to a map. apply/undo are pure: they return a new map.
+ * Commands may capture state during apply; undo must only be called after the matching apply
+ * (History guarantees this). */
 export interface Command {
   label: string;
   apply(map: DungeonMap): DungeonMap;
@@ -31,6 +33,7 @@ function removeItem<K extends Collection>(key: K, item: ItemOf<K>, label: string
     },
     undo: (m) => {
       const list = [...(m[key] as ItemOf<K>[])];
+      if (list.some((x) => x.id === item.id)) return m;
       list.splice(index < 0 ? list.length : index, 0, item);
       return { ...m, [key]: list };
     },
