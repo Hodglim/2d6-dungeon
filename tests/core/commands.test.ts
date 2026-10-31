@@ -9,66 +9,48 @@ import {
   updateDoor,
   updateRoom,
 } from '../../src/core/commands';
-import type { Command } from '../../src/core/commands';
-import type { DungeonMap } from '../../src/core/types';
 import { door, emptyMap, room, withContent } from './fixtures';
 
-function roundTrip(map: DungeonMap, cmd: Command) {
-  const after = cmd.apply(map);
-  expect(cmd.undo(after)).toEqual(map);
-  return after;
-}
-
-describe('item commands round-trip', () => {
+describe('item commands', () => {
   const base = withContent(emptyMap(), [room('a', 1, 1, 2, 2), room('b', 4, 1, 2, 2)], [door('d', 3, 1, 'W')]);
 
-  it('addRoom', () => {
-    const after = roundTrip(base, addRoom(room('c', 7, 7, 1, 1)));
+  it('addRoom appends', () => {
+    const after = addRoom(room('c', 7, 7, 1, 1)).apply(base);
     expect(after.rooms.map((r) => r.id)).toEqual(['a', 'b', 'c']);
   });
-  it('removeRoom restores the original position', () => {
-    const after = roundTrip(base, removeRoom(base.rooms[0]!));
-    expect(after.rooms.map((r) => r.id)).toEqual(['b']);
+  it('removeRoom removes and keeps the order of the rest', () => {
+    const three = withContent(emptyMap(), [room('a', 1, 1, 1, 1), room('b', 3, 1, 1, 1), room('c', 5, 1, 1, 1)]);
+    const after = removeRoom(three.rooms[1]!).apply(three);
+    expect(after.rooms.map((r) => r.id)).toEqual(['a', 'c']);
   });
-  it('updateRoom', () => {
-    const after = roundTrip(base, updateRoom(base.rooms[0]!, { ...base.rooms[0]!, w: 1 }));
+  it('updateRoom replaces by id', () => {
+    const after = updateRoom(base.rooms[0]!, { ...base.rooms[0]!, w: 1 }).apply(base);
     expect(after.rooms[0]!.w).toBe(1);
+    expect(after.rooms[1]).toBe(base.rooms[1]);
   });
   it('addDoor / removeDoor / updateDoor', () => {
-    roundTrip(base, addDoor(door('e', 1, 1, 'N')));
-    roundTrip(base, removeDoor(base.doors[0]!));
-    const after = roundTrip(base, updateDoor(base.doors[0]!, { ...base.doors[0]!, type: 'wooden' }));
+    expect(addDoor(door('e', 1, 1, 'N')).apply(base).doors.map((d) => d.id)).toEqual(['d', 'e']);
+    expect(removeDoor(base.doors[0]!).apply(base).doors).toEqual([]);
+    const after = updateDoor(base.doors[0]!, { ...base.doors[0]!, type: 'wooden' }).apply(base);
     expect(after.doors[0]!.type).toBe('wooden');
   });
   it('setToken', () => {
-    const after = roundTrip(base, setToken(null, { x: 1, y: 1, trail: [] }));
+    const after = setToken(null, { x: 1, y: 1, trail: [] }).apply(base);
     expect(after.token).toEqual({ x: 1, y: 1, trail: [] });
   });
-});
-
-describe('removeItem undo guard and redo', () => {
-  it('does not duplicate when undo runs on a map that already has the item', () => {
-    const cmd = removeRoom(room('zz', 1, 1, 1, 1));
-    cmd.apply(emptyMap());
-    const withZz = withContent(emptyMap(), [room('zz', 1, 1, 1, 1)]);
-    expect(cmd.undo(withZz).rooms.filter((r) => r.id === 'zz')).toHaveLength(1);
-  });
-  it('removeRoom survives apply, undo, apply', () => {
-    const base = withContent(emptyMap(), [room('a', 1, 1, 2, 2), room('b', 4, 1, 2, 2)]);
-    const cmd = removeRoom(base.rooms[0]!);
-    const first = cmd.apply(base);
-    cmd.undo(first);
-    expect(cmd.apply(base)).toEqual(first);
-    expect(cmd.undo(first)).toEqual(base);
+  it('does not mutate its input and shares untouched collections', () => {
+    const snapshot = structuredClone(base);
+    const after = addRoom(room('c', 7, 7, 1, 1)).apply(base);
+    expect(base).toEqual(snapshot);
+    expect(after.doors).toBe(base.doors);
+    expect(after.features).toBe(base.features);
   });
 });
 
 describe('compound', () => {
-  it('applies in order and undoes in reverse', () => {
-    const base = emptyMap();
+  it('applies in order', () => {
     const cmd = compound('two rooms', [addRoom(room('a', 1, 1, 1, 1)), addRoom(room('b', 3, 3, 1, 1))]);
-    const after = roundTrip(base, cmd);
-    expect(after.rooms.map((r) => r.id)).toEqual(['a', 'b']);
+    expect(cmd.apply(emptyMap()).rooms.map((r) => r.id)).toEqual(['a', 'b']);
   });
 });
 

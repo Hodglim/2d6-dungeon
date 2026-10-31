@@ -97,7 +97,7 @@ describe('History snapshots', () => {
 
   it('does not record a command that changes nothing', () => {
     const h = new History(emptyMap());
-    const noop = { label: 'Nothing', apply: (m: DungeonMap) => m, undo: (m: DungeonMap) => m };
+    const noop = { label: 'Nothing', apply: (m: DungeonMap) => m };
     expect(h.execute(noop)).toEqual({ ok: true });
     expect(h.canUndo).toBe(false);
   });
@@ -123,5 +123,49 @@ describe('History snapshots', () => {
     const first = h.map.rooms[0];
     h.execute(addRoom(room('b', 3, 3, 1, 1)));
     expect(h.map.rooms[0]).toBe(first);
+  });
+
+  it('fromState with a smaller cap keeps only the newest entries', () => {
+    const h = new History(emptyMap());
+    h.execute(addRoom(room('a', 0, 0, 1, 1)));
+    h.execute(addRoom(room('b', 2, 0, 1, 1)));
+    h.execute(addRoom(room('c', 4, 0, 1, 1)));
+    const restored = History.fromState(h.exportState(), 2);
+    expect(restored.undo()).toBe(true);
+    expect(restored.undo()).toBe(true);
+    expect(restored.canUndo).toBe(false);
+    expect(restored.map.rooms.map((r) => r.id)).toEqual(['a']);
+  });
+
+  it('keeps the newest label and drops the oldest when execute passes the cap', () => {
+    const h = new History(emptyMap(), 2);
+    h.execute(addRoom(room('a', 0, 0, 1, 1)));
+    h.execute(addRoom(room('b', 2, 0, 1, 1)));
+    h.execute({ ...addRoom(room('c', 4, 0, 1, 1)), label: 'Newest' });
+    expect(h.undoLabel).toBe('Newest');
+    expect(h.exportState().past).toHaveLength(2);
+    expect(h.exportState().past[0]!.map.rooms.map((r) => r.id)).toEqual(['a']);
+  });
+
+  it('a no-op neither notifies nor clears redo', () => {
+    const h = new History(emptyMap());
+    h.execute(addRoom(room('a', 1, 1, 1, 1)));
+    h.undo();
+    expect(h.canRedo).toBe(true);
+    const listener = vi.fn();
+    h.subscribe(listener);
+    h.execute({ label: 'Nothing', apply: (m: DungeonMap) => m });
+    expect(h.canRedo).toBe(true);
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it('exportState returns copies of the arrays', () => {
+    const h = new History(emptyMap());
+    const state = h.exportState();
+    state.past.push({ label: 'x', map: emptyMap() });
+    state.future.push({ label: 'y', map: emptyMap() });
+    expect(h.canUndo).toBe(false);
+    expect(h.canRedo).toBe(false);
+    expect(h.exportState().past).toHaveLength(0);
   });
 });

@@ -35,6 +35,9 @@ export class History {
     private readonly cap = HISTORY_CAP,
   ) {}
 
+  /** Restores an exported timeline, keeping only the newest `cap` past entries.
+   * Trusts its input: callers must validate a loaded state (structure and checkInvariants
+   * for every snapshot) before calling this. */
   static fromState(state: HistoryState, cap = HISTORY_CAP): History {
     const h = new History(state.current, cap);
     h.past = state.past.slice(-cap);

@@ -1,49 +1,28 @@
 import type { Door, DungeonMap, Feature, Room, Token } from './types';
 
-/** A reversible change to a map. apply/undo are pure: they return a new map.
- * Commands may capture state during apply; undo must only be called after the matching apply
- * (History guarantees this). */
+/** A change to a map. `apply` is pure: it returns a new map, sharing unchanged parts.
+ * Undo/redo is handled by History's snapshots. */
 export interface Command {
   label: string;
   apply(map: DungeonMap): DungeonMap;
-  undo(map: DungeonMap): DungeonMap;
 }
 
 type Collection = 'rooms' | 'doors' | 'features';
 type ItemOf<K extends Collection> = DungeonMap[K][number];
 
 function addItem<K extends Collection>(key: K, item: ItemOf<K>, label: string): Command {
-  return {
-    label,
-    apply: (m) => ({ ...m, [key]: [...m[key], item] }),
-    undo: (m) => ({ ...m, [key]: (m[key] as ItemOf<K>[]).filter((x) => x.id !== item.id) }),
-  };
+  return { label, apply: (m) => ({ ...m, [key]: [...m[key], item] }) };
 }
 
 function removeItem<K extends Collection>(key: K, item: ItemOf<K>, label: string): Command {
-  let index = -1;
-  return {
-    label,
-    apply: (m) => {
-      const list = m[key] as ItemOf<K>[];
-      index = list.findIndex((x) => x.id === item.id);
-      return { ...m, [key]: list.filter((x) => x.id !== item.id) };
-    },
-    undo: (m) => {
-      const list = [...(m[key] as ItemOf<K>[])];
-      if (list.some((x) => x.id === item.id)) return m;
-      list.splice(index < 0 ? list.length : index, 0, item);
-      return { ...m, [key]: list };
-    },
-  };
+  return { label, apply: (m) => ({ ...m, [key]: (m[key] as ItemOf<K>[]).filter((x) => x.id !== item.id) }) };
 }
 
 function updateItem<K extends Collection>(key: K, before: ItemOf<K>, after: ItemOf<K>, label: string): Command {
-  const swap = (from: ItemOf<K>, to: ItemOf<K>) => (m: DungeonMap) => ({
-    ...m,
-    [key]: (m[key] as ItemOf<K>[]).map((x) => (x.id === from.id ? to : x)),
-  });
-  return { label, apply: swap(before, after), undo: swap(after, before) };
+  return {
+    label,
+    apply: (m) => ({ ...m, [key]: (m[key] as ItemOf<K>[]).map((x) => (x.id === before.id ? after : x)) }),
+  };
 }
 
 export const addRoom = (room: Room) => addItem('rooms', room, 'Add room');
@@ -59,11 +38,7 @@ export const removeFeature = (f: Feature) => removeItem('features', f, `Remove $
 export const updateFeature = (before: Feature, after: Feature) => updateItem('features', before, after, `Edit ${after.kind}`);
 
 export function setToken(before: Token | null, after: Token | null): Command {
-  return {
-    label: 'Move token',
-    apply: (m) => ({ ...m, token: after }),
-    undo: (m) => ({ ...m, token: before }),
-  };
+  return { label: 'Move token', apply: (m) => ({ ...m, token: after }) };
 }
 
 export function updateMapInfo(
@@ -73,15 +48,13 @@ export function updateMapInfo(
   return {
     label: 'Edit map info',
     apply: (m) => ({ ...m, ...after }),
-    undo: (m) => ({ ...m, ...before }),
   };
 }
 
-/** Several commands applied in order and undone in reverse, as one undo step. */
+/** Several commands applied in order, as one undo step. */
 export function compound(label: string, commands: Command[]): Command {
   return {
     label,
     apply: (m) => commands.reduce((acc, c) => c.apply(acc), m),
-    undo: (m) => commands.reduceRight((acc, c) => c.undo(acc), m),
   };
 }
