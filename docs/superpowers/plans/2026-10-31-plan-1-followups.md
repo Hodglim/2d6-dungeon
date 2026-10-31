@@ -87,6 +87,37 @@ decision is needed before that plan's tasks get written.
 - **Plan 3: undo cap.** Beyond 200 steps the oldest undo is silently dropped. Consider
   telling the player.
 
+## From the Plan 2 renderer reviews (2026-10-31)
+
+Plan 3 (interaction) needs these from `MapRenderer`:
+- **An overlay hook.** A per-frame, uncached `setOverlay(fn)` in world units, for hover
+  highlights, the ghost room, path preview, selection and exit highlighting. It doesn't
+  exist yet.
+- **A pointer → world square helper** that accounts for the canvas rect and dpr, so tools
+  don't each repeat the maths.
+- **A separate exit-stub layer.** `fadedExits` depends on the token, so every token move
+  currently rebuilds the whole static cache. Move stubs into a cheap per-frame layer.
+- **Rebuilds without hitches.** Crossing a zoom bucket rebuilds the cache synchronously, and
+  a large map stutters during wheel or pinch zoom. Keep drawing the old cache scaled while
+  the new one builds (idle callback or chunks). Rebuild at most once per frame while dragging.
+- **Tiled or visible-area rendering** for deep zoom. The cache is capped at 4096 px per side
+  and 16M px in area (the iOS limit), so a 100×100 map zoomed far in is blurry.
+- **Input:**
+  - Pinch zoom with multi-pointer tracking: the viewer currently tracks one pointer.
+  - Handle the wheel event's `deltaMode`.
+  - Clamp the camera so the map can't be lost off-screen.
+  - An animated Fit.
+- **Layout:** use a ResizeObserver plus dpr changes (orientation, browser zoom), and re-fit on
+  the first non-zero size.
+- **Accessibility:** 44 px touch targets (the viewer's buttons are 32 px), `aria-label` on the
+  canvas and the toolbar.
+- **Shadow gradients** are created per wall edge. That's fine now; group edges by side if
+  profiling shows a cost.
+
+Plan 4 (export):
+- PNG export must apply the same canvas size limits (iOS). Tile or downscale very large
+  exports, and re-run label placement for each export with the export context.
+
 ## Plan 4: Persistence
 
 - `History` holds a single `DungeonMap`. Autosave and JSON export must write
