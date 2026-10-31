@@ -46,7 +46,7 @@ decision is needed before that plan's tasks get written.
 - ✅ Done in Plan 3: The exits dialog must filter exits already chosen in this step out of
   `validExitEdges(draft, …)`.
 - ✅ Done in Plan 3: The size and exits dialogs enforce `roomDieRange` and `maxExits`; the core doesn't.
-- ✅ Done in Plan 3: Decide whether locked doors block the token. Today only secret doors do.
+- ✅ Done in Plan 3: Decide whether locked doors block the token. Today only secret doors do. (decided: locked doors block the token until marked opened)
 - No command exists to change the grid size (spec §3). If it's added, it must check that
   every room still fits inside the new boundary.
 - ✅ Done in Plan 3: After the entrance is deleted the token becomes null; the UI needs a way to place it
@@ -57,15 +57,15 @@ decision is needed before that plan's tasks get written.
 
 ## From the Plan 2 core review (2026-10-31)
 
-- ✅ Done in Plan 3: **Plan 3: entry doors can't be removed.** `checkInvariants` rejects any edit that
+- ✅ Done in Plan 3: **entry doors can't be removed.** `checkInvariants` rejects any edit that
   removes a room's (or passage's) entry door. The Door tool should hide or disable
   "remove" for entry doors and explain why, offering a retype to secret or locked instead.
   Show `History.execute`'s reason string whenever a command is rejected.
-- ✅ Done in Plan 3: **Plan 3: everything goes through `History.execute`.** Undo is one saved timeline, so
+- ✅ Done in Plan 3: **everything goes through `History.execute`.** Undo is one saved timeline, so
   token moves, notes and door edits must never change the map outside it.
-- **Open (deferred from Plan 3 to avoid fixture churn): require non-null `entryDoorId` for every room except the entrance.** Original note: the "only the entrance has a null `entryDoorId`" rule isn't enforced yet.**
+- **Open (deferred from Plan 3 to avoid fixture churn): require non-null `entryDoorId` for every room except the entrance.** Original note: the "only the entrance has a null `entryDoorId`" rule isn't enforced yet.
   Every play-flow room gets one, but the invariant also accepts null for rooms and passages.
-  Tightening it means updating many test fixtures. Do it when Plan 3 touches room creation.
+  Tightening it means updating many test fixtures.
 - **Plan 4: saved history size.** JSON loses snapshot sharing. 200 snapshots × ~25 KB
   ≈ 5 MB, so use IndexedDB (not localStorage), and measure. Consider deltas or a smaller
   cap if it's too big.
@@ -101,7 +101,7 @@ Plan 3 (interaction) needs these from `MapRenderer`:
   - An animated Fit.
 - ✅ Done in Plan 3: **Layout:** use a ResizeObserver plus dpr changes (orientation, browser zoom), and re-fit on
   the first non-zero size.
-- ✅ Done in Plan 3: **Accessibility:** 44 px touch targets (the viewer's buttons are 32 px), `aria-label` on the
+- ✅ Done in Plan 3 (except dialog focus management and the menu ARIA pattern, which remain open): **Accessibility:** 44 px touch targets (the viewer's buttons are 32 px), `aria-label` on the
   canvas and the toolbar.
 - **Shadow gradients** are created per wall edge. That's fine now; group edges by side if
   profiling shows a cost.
