@@ -217,3 +217,41 @@ describe('gap corridor', () => {
     expect(createGapCorridor(map, map.doors[0]!, 3, sequentialIds('g'))).toBeNull();
   });
 });
+
+describe('corridor label and archway-only exits', () => {
+  function setup() {
+    const h = new History(emptyMap(12, 12));
+    const ids = sequentialIds('c');
+    h.execute(placeEntrance(h.map, dungeonSystem, { x: 4, y: 12 }, ids));
+    const exit = openExits(h.map)[0]!;
+    return { h, ids, exit };
+  }
+
+  it('labels a corridor "Add corridor" through createRoomAndWalk', () => {
+    const { h, ids, exit } = setup();
+    const r = newRoom(h.map, evaluatePlacement(h.map, exit, 1, 4, 0).rect!, exit, ids, 'corridor');
+    const { command } = createRoomAndWalk(h.map, { room: r, exits: [], exitType: 'archway' }, ids);
+    expect(h.execute(command).ok).toBe(true);
+    expect(h.undoLabel).toBe('Add corridor');
+  });
+
+  it('forces archways for a small room built with exitType wooden', () => {
+    const { h, ids, exit } = setup();
+    const r = newRoom(h.map, evaluatePlacement(h.map, exit, 3, 3, 1).rect!, exit, ids, 'room', 'small');
+    const top = { x: 4, y: 9, side: 'N' as const };
+    expect(h.execute(createRoomFromExit(h.map, { room: r, exits: [top], exitType: 'wooden' }, ids)).ok).toBe(true);
+    const added = h.map.doors.filter((d) => d.id !== exit.id);
+    expect(added).toHaveLength(2);
+    expect(added.every((d) => d.type === 'archway')).toBe(true);
+  });
+
+  it('forces archways for a corridor built with exitType wooden', () => {
+    const { h, ids, exit } = setup();
+    const r = newRoom(h.map, evaluatePlacement(h.map, exit, 3, 3, 1).rect!, exit, ids, 'corridor');
+    const top = { x: 4, y: 9, side: 'N' as const };
+    expect(h.execute(createRoomFromExit(h.map, { room: r, exits: [top], exitType: 'wooden' }, ids)).ok).toBe(true);
+    const added = h.map.doors.filter((d) => d.id !== exit.id);
+    expect(added).toHaveLength(2);
+    expect(added.every((d) => d.type === 'archway')).toBe(true);
+  });
+});

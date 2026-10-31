@@ -94,8 +94,10 @@ export interface RoomPlan {
 export function createRoomFromExit(map: DungeonMap, plan: RoomPlan, newId: IdFn): Command {
   const cmds: Command[] = [addRoom(plan.room)];
   const perimeter = perimeterEdges(plan.room);
+  // Small rooms and corridors get archway exits only, whatever was rolled.
+  const exitType = plan.room.kind === 'corridor' || plan.room.sizeClass === 'small' ? 'archway' : plan.exitType;
   for (const exit of plan.exits) {
-    const exitDoor = makeDoor(newId, exit, plan.exitType);
+    const exitDoor = makeDoor(newId, exit, exitType);
     cmds.push(addDoor(exitDoor));
     const side = perimeter.find((p) => sameEdge(p.edge, exit));
     if (!side) continue;
@@ -103,10 +105,10 @@ export function createRoomFromExit(map: DungeonMap, plan: RoomPlan, newId: IdFn)
     cmds.push(addRoom(passageRoom(newId, cell, exitDoor)));
     const far = cellEdge(cell, side.dir);
     if (!isBoundaryEdge(far, map.width, map.height) && !doorAt(map, far)) {
-      cmds.push(addDoor(makeDoor(newId, far, plan.exitType)));
+      cmds.push(addDoor(makeDoor(newId, far, exitType)));
     }
   }
-  return compound(`Add Room ${plan.room.number}`, cmds);
+  return compound(plan.room.kind === 'corridor' ? 'Add corridor' : `Add Room ${plan.room.number}`, cmds);
 }
 
 /** Commands moving the token from where it is to the centre of `room` (already in `map`). */
