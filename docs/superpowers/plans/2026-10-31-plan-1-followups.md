@@ -10,16 +10,16 @@ decision is needed before that plan's tasks get written.
   `createRoomFromExit` from the exit used. No v1 files exist yet, so stay on schema
   version 1 and don't write a migration. Labels prefer a spot next to the entry door, but
   **relocate to wherever the whole text box fits** when it's too long for that spot.
-- **Rooms are deleted newest-first only (user rule).** Only the highest-numbered room
-  (or the entrance once no rooms remain) can be deleted. Replace `deleteRoom` with
-  `deleteLatestRoom` semantics:
-  - remove the room, its passages (new `Room.parentId`) and every door on their walls
-    except the room's entry door, which becomes an open exit again
-  - remove features inside, and step the token back through the entry door if it stood
-    there
-- **Room numbering.** Under newest-first deletion, numbers stay 1…N with no gaps, so
-  the existing max + 1 rule is "lowest free number". No code change is needed beyond a
-  test.
+- **Rooms are removed only through Undo (user decision).** There is no delete-room tool:
+  - Remove `deleteRoom` from the core.
+  - Undo/redo is one timeline for every action.
+  - Room numbers stay 1…N because rooms only leave newest-first, so the existing max + 1
+    rule is correct. Add a test for it.
+- **Undo history is saved with the game (user decision).** Make `History`
+  snapshot-based: a list of past and future `{label, map}` entries, capped at 200, with
+  `exportState()` / `History.fromState()`. Commands keep `apply`; History stops relying on
+  `undo`. Plan 4 saves the history state alongside the campaign in IndexedDB. JSON export
+  excludes it.
 
 ## Plan 2: Renderer
 
@@ -62,7 +62,6 @@ decision is needed before that plan's tasks get written.
 - `History`: skip no-op commands, and expose `undoLabel` / `redoLabel` for tooltips.
 - The Svelte store wrapper must call subscribers immediately with the current value,
   which `History.subscribe` does not.
-- Remove `removeRoom` from the public exports, or rename it, so the UI uses `deleteRoom`.
 
 ## Plan 4: Persistence
 
