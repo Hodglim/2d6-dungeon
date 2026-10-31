@@ -46,7 +46,7 @@ decision is needed before that plan's tasks get written.
 - ✅ Done in Plan 3: The exits dialog must filter exits already chosen in this step out of
   `validExitEdges(draft, …)`.
 - ✅ Done in Plan 3: The size and exits dialogs enforce `roomDieRange` and `maxExits`; the core doesn't.
-- ✅ Done in Plan 3: Decide whether locked doors block the token. Today only secret doors do. (decided: locked doors block the token until marked opened)
+- ✅ Done in Plan 3: Decide whether locked doors block the token. (decided: locked doors block the token until marked opened)
 - No command exists to change the grid size (spec §3). If it's added, it must check that
   every room still fits inside the new boundary.
 - ✅ Done in Plan 3: After the entrance is deleted the token becomes null; the UI needs a way to place it
@@ -54,6 +54,9 @@ decision is needed before that plan's tasks get written.
 - ✅ Done in Plan 3: `History`: skip no-op commands, and expose `undoLabel` / `redoLabel` for tooltips.
 - ✅ Done in Plan 3: The Svelte store wrapper must call subscribers immediately with the current value,
   which `History.subscribe` does not.
+- Auto-zoom to the room during the position/exits steps (exit taps are ~30 px at the fitted
+  zoom on a 25×25 map).
+- `PlayFlow.dispose()` / `History.restore(state)` in place before Plan 4 swaps History instances.
 
 ## From the Plan 2 core review (2026-10-31)
 
@@ -136,12 +139,12 @@ Plan 4 (export):
 Minor findings from the Plan 3 reviews, not fixed:
 
 - resolveRoomSize silently ignores a missing required second roll; rollD66 test weak
-- shrinkToFit scores unclipped size (boundary-clipped candidate can beat a smaller clean fit)
+- ✅ Fixed in the final Plan 3 review: shrinkToFit scores unclipped size (boundary-clipped candidate can beat a smaller clean fit)
 - labels can cover feature icons; open padlock tight against labels; stubs draw above labels
-- exitStubs/fadedExits recomputed every frame
+- exitStubs/fadedExits recomputed every frame (the static cache is no longer rebuilt on token moves)
 - Ctrl+Z still active in some modal states; dialogs lack focus management; menu ARIA pattern incomplete
 - portrait rotation clamps but doesn't refit
-- gap mode still walks on floor taps; slide buttons don't disable at range ends; ExitsStep die error not cleared on wall tap
+- ✅ Fixed in the final Plan 3 review: gap mode still walks on floor taps. Open: slide buttons don't disable at range ends; ExitsStep die error not cleared on wall tap
 - entry-door note says "a passage" for exit-square doors; stairs and note can share a square; room selection highlight too heavy
 - visual.mjs relies on fixed sleeps
 
