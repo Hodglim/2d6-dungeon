@@ -141,6 +141,11 @@ describe('routePlayTap', () => {
     expect(routePlayTap(IDLE, m, tap(m, 8.5, 8.5), { x: 8.5, y: 8.5 }, { ...opts, gapMode: true })).toEqual({ kind: 'hint', text: 'Tap an open exit (highlighted)' });
   });
 
+  it('idle in gap mode: a floor square does not walk the token', () => {
+    const m = sample();
+    expect(routePlayTap(IDLE, m, tap(m, 2.5, 3.5), { x: 2.5, y: 3.5 }, { ...opts, gapMode: true })).toEqual({ kind: 'hint', text: 'Tap an open exit (highlighted)' });
+  });
+
   it('position slides the ghost; exits toggles the nearest allowed or chosen edge; other steps ignore taps', () => {
     const m = sample();
     const position = { kind: 'position' } as Step;

@@ -4,6 +4,7 @@ import { openExits } from '../../src/core/query';
 import type { Door, DungeonMap, Room } from '../../src/core/types';
 import { PlayFlow, type Step } from '../../src/interaction/playflow';
 import { mulberry32 } from '../../src/render/rng';
+import { classify } from '../../src/systems/dungeon/rules';
 import { door, emptyMap, room, withContent } from '../core/fixtures';
 
 function setup(map: DungeonMap = emptyMap(10, 10)) {
@@ -116,6 +117,20 @@ describe('PlayFlow room path', () => {
     expect(seen).not.toContain('label');
     expect(flow.step.kind).toBe('idle');
     expect(history.undoLabel).toBe('Add corridor');
+  });
+
+  it('swap is a no-op for a corridor roll (corridors keep their orientation), but swaps rooms', () => {
+    const { history, flow } = withEntrance();
+    flow.startFromExit(northExit(history.map).id);
+    flow.enterSize('1', '4');
+    const before = expectKind(flow, 'position');
+    flow.swap();
+    expect(flow.step).toBe(before);
+    flow.cancel();
+    flow.startFromExit(northExit(history.map).id);
+    flow.enterSize('3', '4');
+    flow.swap();
+    expect(expectKind(flow, 'position')).toMatchObject({ w: 4, h: 3 });
   });
 
   it("count '1' gives 0 exits and goes straight to the label", () => {
@@ -328,6 +343,21 @@ describe('PlayFlow tight spaces (Review Focus 3)', () => {
   });
 });
 
+describe('PlayFlow double six', () => {
+  it("6-6 is not re-rolled but is a double roll, so a 36-square room is 'large'", () => {
+    const roomA: Room = { ...room('A', 2, 2, 3, 3, 'room', 1), entryDoorId: null };
+    const { flow } = setup(withContent(emptyMap(20, 20), [roomA], [door('dA', 3, 5, 'N')]));
+    flow.startFromExit('dA');
+    flow.enterSize('6', '6');
+    const pos = expectKind(flow, 'position');
+    expect(pos.size).toMatchObject({ w: 6, h: 6, doubled: false, fromDouble: true });
+    expect(pos.placement).toMatchObject({ ok: true, rect: { w: 6, h: 6 } });
+    expect(classify(pos.placement.rect!, pos.size)).toBe('large');
+    flow.place();
+    expect(expectKind(flow, 'exitCount').draft.sizeClass).toBe('large');
+  });
+});
+
 describe('PlayFlow gap corridor', () => {
   it('startGap → length 2 → placeGap is one Add corridor step', () => {
     const { history, flow } = withEntrance();
@@ -337,6 +367,26 @@ describe('PlayFlow gap corridor', () => {
     expect(flow.placeGap()).toEqual({ ok: true });
     expect(history.undoLabel).toBe('Add corridor');
     expect(flow.step.kind).toBe('idle');
+  });
+
+  it('stops lengthening at the Outer Boundary', () => {
+    const { history, flow } = withEntrance();
+    flow.startGap(northExit(history.map).id); // exit square (4,6): rows 0..6 to the north
+    expect(expectKind(flow, 'gap').maxLength).toBe(7);
+    flow.setGapLength(7);
+    expect(expectKind(flow, 'gap')).toMatchObject({ length: 7, rect: { x: 4, y: 0, w: 1, h: 7 } });
+    flow.setGapLength(8);
+    expect(expectKind(flow, 'gap')).toMatchObject({ length: 7, rect: { h: 7 } });
+  });
+
+  it('keeps the attempted rect when the corridor collides', () => {
+    const { history, flow } = withEntrance();
+    const map = history.map;
+    history.execute({ label: 'Add room', apply: (m) => ({ ...m, rooms: [...m.rooms, room('B', 3, 2, 3, 2, 'room', 9)] }) });
+    expect(history.map).not.toBe(map);
+    flow.startGap(northExit(history.map).id);
+    flow.setGapLength(4); // rows 3..6: hits B at row 3
+    expect(expectKind(flow, 'gap')).toMatchObject({ length: 4, rect: null, attempt: { x: 4, y: 3, w: 1, h: 4 } });
   });
 });
 

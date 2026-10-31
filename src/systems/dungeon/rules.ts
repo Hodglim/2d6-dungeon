@@ -13,7 +13,10 @@ export interface RoomSize {
   w: number;
   h: number;
   corridor: boolean;
+  /** A second roll was added (non-six doubles). */
   doubled: boolean;
+  /** The first roll was a double (6-6 and 1-1 included; never the entrance): counts for 'large'. */
+  fromDouble: boolean;
 }
 
 export function rollD6(rng: Rng): number {
@@ -51,7 +54,7 @@ export function clampEntranceArea(w: number, h: number): { w: number; h: number 
 export function resolveRoomSize(first: D66, second: D66 | null, entrance: boolean): RoomSize {
   if (entrance) {
     const { w, h } = clampEntranceArea(first.primary, first.secondary);
-    return { w, h, corridor: false, doubled: false };
+    return { w, h, corridor: false, doubled: false, fromDouble: false };
   }
   const isDouble = first.primary === first.secondary;
   const corridor = !isDouble && (first.primary === 1 || first.secondary === 1);
@@ -61,6 +64,7 @@ export function resolveRoomSize(first: D66, second: D66 | null, entrance: boolea
     h: first.secondary + (doubled ? second.secondary : 0),
     corridor,
     doubled,
+    fromDouble: isDouble,
   };
 }
 
@@ -68,7 +72,7 @@ export function classify(rect: { w: number; h: number }, size: RoomSize): SizeCl
   if (size.corridor || Math.min(rect.w, rect.h) === 1) return 'corridor';
   const area = rect.w * rect.h;
   if (area <= 6) return 'small';
-  if (area >= 32 && size.doubled) return 'large';
+  if (area >= 32 && size.fromDouble) return 'large';
   return 'normal';
 }
 

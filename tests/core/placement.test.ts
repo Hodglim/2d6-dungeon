@@ -108,6 +108,21 @@ describe('entranceCells', () => {
 });
 
 describe('shrinkToFit', () => {
+  it('scores by the clipped area, so a clean 2×2 beats a 5×1 clipped to 3×1', () => {
+    // East-facing exit at (5,5) on an 8-wide map: 3 columns (5..7) before the boundary.
+    // 1×1 blockers at (7,4) and (7,6) stop every 2-high room deeper than 2.
+    const m = withContent(
+      emptyMap(8, 10),
+      [room('a', 2, 4, 3, 3, 'room', 1), room('b', 7, 4, 1, 1, 'room', 2), room('c', 7, 6, 1, 1, 'room', 3)],
+      [door('d', 5, 5, 'W')],
+    );
+    const d = m.doors[0]!;
+    expect(evaluatePlacement(m, d, 5, 1, 0)).toMatchObject({ ok: true, clipped: true, rect: { w: 3, h: 1 } });
+    const fit = shrinkToFit(m, d, 5, 2, 0)!;
+    expect(fit).toMatchObject({ w: 2, h: 2 });
+    const placed = evaluatePlacement(m, d, fit.w, fit.h, fit.offset);
+    expect(placed).toMatchObject({ ok: true, rect: { w: 2, h: 2 } });
+  });
   it('returns the rolled size unchanged when it already fits', () => {
     const m = mapWithTopExit();
     expect(shrinkToFit(m, m.doors[0]!, 5, 4, 2)).toEqual({ w: 5, h: 4, offset: 2 });

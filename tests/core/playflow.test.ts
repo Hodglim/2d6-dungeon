@@ -5,7 +5,9 @@ import {
   createGapCorridor,
   createRoomAndWalk,
   createRoomFromExit,
+  gapCorridorGhost,
   gapCorridorRect,
+  maxGapLength,
   newRoom,
   placeEntrance,
 } from '../../src/core/playflow';
@@ -210,6 +212,17 @@ describe('gap corridor', () => {
     const h = new History(map);
     expect(h.execute(createGapCorridor(map, map.doors[0]!, 3, sequentialIds('g'))!).ok).toBe(true);
     expect(h.map.doors).toContainEqual(expect.objectContaining({ x: 4, y: 3, side: 'N', type: 'archway' }));
+  });
+  it('maxGapLength runs from the exit to the Outer Boundary', () => {
+    const map = withExit(); // exit square (4,5), going north: rows 0..5
+    expect(maxGapLength(map, map.doors[0]!)).toBe(6);
+    expect(maxGapLength(map, door('nope', 0, 0, 'N'))).toBe(0);
+  });
+  it('gapCorridorGhost is the attempted rect even when it collides', () => {
+    const base = withExit();
+    const map = withContent(base, [...base.rooms, room('B', 4, 4, 1, 1, 'room', 2)], base.doors);
+    expect(gapCorridorRect(map, map.doors[0]!, 3)).toBeNull();
+    expect(gapCorridorGhost(map, map.doors[0]!, 3)).toEqual({ x: 4, y: 3, w: 1, h: 3 });
   });
   it('is null when it would overlap', () => {
     const base = withExit();

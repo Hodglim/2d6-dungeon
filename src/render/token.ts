@@ -29,6 +29,16 @@ export function pathPosition(path: Cell[], distance: number): { x: number; y: nu
 }
 
 /**
+ * The trail to draw `passed` squares into a walk along `path`. The move is committed before
+ * it animates, so `committed` already ends with the path's squares (all but its last); drop
+ * those, then add back only the squares passed so far.
+ */
+export function walkTrail(committed: Cell[], path: Cell[], passed: number): Cell[] {
+  const before = committed.slice(0, Math.max(0, committed.length - Math.max(0, path.length - 1)));
+  return [...before, ...path.slice(0, Math.max(0, passed))];
+}
+
+/**
  * Footprints for a trail of squares walked, heading towards the token. Feet alternate left
  * and right of the square centre. Squares that are no longer floor are skipped.
  */

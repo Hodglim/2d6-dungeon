@@ -36,7 +36,9 @@
 <div class="row">
   <button aria-label={horizontal ? 'Slide left' : 'Slide up'} onclick={() => flow.slide(step.offset + 1)}>{horizontal ? '◀' : '▲'}</button>
   <button aria-label={horizontal ? 'Slide right' : 'Slide down'} onclick={() => flow.slide(step.offset - 1)}>{horizontal ? '▶' : '▼'}</button>
-  <button onclick={() => flow.swap()}>Swap W/H</button>
+  {#if !step.size.corridor}
+    <button onclick={() => flow.swap()}>Swap W/H</button>
+  {/if}
 </div>
 <div class="row">
   {#if step.canShrink}

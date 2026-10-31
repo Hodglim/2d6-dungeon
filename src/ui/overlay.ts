@@ -46,7 +46,9 @@ export function overlayFor(step: Step, map: DungeonMap): OverlayShape[] {
     case 'label':
       return chosenShapes(step.draft.room, step.chosen);
     case 'gap':
-      return step.rect ? [{ kind: 'rect', at: step.rect, tone: 'ok' }] : [];
+      if (step.rect) return [{ kind: 'rect', at: step.rect, tone: 'ok' }];
+      // Show the collision: the attempted corridor in red.
+      return step.attempt ? [{ kind: 'rect', at: step.attempt, tone: 'bad' }] : [];
     case 'exitCount':
     case 'exitType':
       return [];

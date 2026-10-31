@@ -11,8 +11,10 @@ import {
   createEntranceAndRoom,
   createGapCorridor,
   createRoomAndWalk,
+  gapCorridorGhost,
   gapCorridorRect,
   makeDoor,
+  maxGapLength,
   newRoom,
   placeEntrance,
 } from '../core/playflow';
@@ -69,7 +71,17 @@ export type Step =
       error: string | null;
     }
   | { kind: 'label'; draft: Draft; chosen: Edge[]; exitType: string; dropped: number }
-  | { kind: 'gap'; door: Door; length: number; rect: Rect | null };
+  | {
+      kind: 'gap';
+      door: Door;
+      length: number;
+      /** The corridor to place, or null when it collides. */
+      rect: Rect | null;
+      /** The corridor attempted at this length, drawn red when `rect` is null. */
+      attempt: Rect | null;
+      /** Longest length before the Outer Boundary would clip it. */
+      maxLength: number;
+    };
 
 const BAD_DIE = 'Enter a whole number from 1 to 6';
 const IDLE: Step = { kind: 'idle', error: null };
@@ -194,9 +206,10 @@ export class PlayFlow {
     this.set({ kind: 'position', source, size, w, h, offset: o, placement, canShrink });
   }
 
+  /** Swaps width and height. Corridors keep their rolled orientation, so it does nothing for them. */
   swap(): void {
     const s = this.current;
-    if (s.kind !== 'position') return;
+    if (s.kind !== 'position' || s.size.corridor) return;
     this.toPosition(s.source, s.size, s.h, s.w, null);
   }
 
@@ -374,13 +387,23 @@ export class PlayFlow {
     if (this.current.kind !== 'idle') return;
     const door = this.openExit(doorId);
     if (!door) return;
-    this.set({ kind: 'gap', door, length: 1, rect: gapCorridorRect(this.history.map, door, 1) });
+    const map = this.history.map;
+    this.set({
+      kind: 'gap',
+      door,
+      length: 1,
+      rect: gapCorridorRect(map, door, 1),
+      attempt: gapCorridorGhost(map, door, 1),
+      maxLength: maxGapLength(map, door),
+    });
   }
 
+  /** Ignored past maxLength, where the boundary would clip the corridor and it would not grow. */
   setGapLength(n: number): void {
     const s = this.current;
-    if (s.kind !== 'gap' || !Number.isInteger(n) || n < 1) return;
-    this.set({ ...s, length: n, rect: gapCorridorRect(this.history.map, s.door, n) });
+    if (s.kind !== 'gap' || !Number.isInteger(n) || n < 1 || n > s.maxLength) return;
+    const map = this.history.map;
+    this.set({ ...s, length: n, rect: gapCorridorRect(map, s.door, n), attempt: gapCorridorGhost(map, s.door, n) });
   }
 
   placeGap(): ExecResult {

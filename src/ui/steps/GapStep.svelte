@@ -16,7 +16,7 @@
 <div class="row length">
   <button aria-label="Shorter" disabled={step.length <= 1} onclick={() => flow.setGapLength(step.length - 1)}>−</button>
   <output aria-label="Length">{step.length}</output>
-  <button aria-label="Longer" onclick={() => flow.setGapLength(step.length + 1)}>+</button>
+  <button aria-label="Longer" disabled={step.length >= step.maxLength} onclick={() => flow.setGapLength(step.length + 1)}>+</button>
 </div>
 {#if !step.rect}
   <p class="error" role="alert">The corridor doesn't fit there</p>

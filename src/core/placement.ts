@@ -77,8 +77,9 @@ export function evaluatePlacement(
 }
 
 /**
- * Largest-area w'×h' (w'≤w, h'≤h) and slide offset that fits in front of the exit.
- * Ties go to the larger width, then the offset closest to the requested one.
+ * The w'×h' (w'≤w, h'≤h) and slide offset that fits in front of the exit with the largest
+ * placed (boundary-clipped) area. Ties go to the larger placed width, then the offset
+ * closest to the requested one.
  */
 export function shrinkToFit(
   map: DungeonMap,
@@ -87,22 +88,26 @@ export function shrinkToFit(
   h: number,
   offset: number,
 ): { w: number; h: number; offset: number } | null {
-  let best: { w: number; h: number; offset: number } | null = null;
+  let best: { w: number; h: number; offset: number; rect: Rect } | null = null;
   for (let cw = w; cw >= 1; cw--) {
     for (let ch = h; ch >= 1; ch--) {
       const n = slideRange(map, door, cw, ch);
       for (let o = 0; o < n; o++) {
-        if (!evaluatePlacement(map, door, cw, ch, o).ok) continue;
+        const p = evaluatePlacement(map, door, cw, ch, o);
+        if (!p.ok || !p.rect) continue;
+        const area = p.rect.w * p.rect.h;
+        const bestArea = best ? best.rect.w * best.rect.h : -1;
         const better =
           !best ||
-          cw * ch > best.w * best.h ||
-          (cw * ch === best.w * best.h &&
-            (cw > best.w || (cw === best.w && Math.abs(o - offset) < Math.abs(best.offset - offset))));
-        if (better) best = { w: cw, h: ch, offset: o };
+          area > bestArea ||
+          (area === bestArea &&
+            (p.rect.w > best.rect.w ||
+              (p.rect.w === best.rect.w && Math.abs(o - offset) < Math.abs(best.offset - offset))));
+        if (better) best = { w: cw, h: ch, offset: o, rect: p.rect };
       }
     }
   }
-  return best;
+  return best && { w: best.w, h: best.h, offset: best.offset };
 }
 
 export function entranceInwardDirection(edge: Direction): Direction {

@@ -25,7 +25,7 @@ import { floorDecals, floorTiles } from './floor';
 import { hatchStrokes } from './hatching';
 import { type MeasureText, placeLabels } from './labels';
 import type { Theme } from './theme';
-import { footprints, pathPosition } from './token';
+import { footprints, pathPosition, walkTrail } from './token';
 import { wallSegments, wallShadows } from './walls';
 
 export interface DisplayToggles {
@@ -103,11 +103,31 @@ export function renderStatic(
   }
 }
 
-/** Open exits not on the walls of the room the token stands in are drawn faded. */
-export function fadedExits(map: DungeonMap): Set<string> {
-  const here = map.token ? roomAt(map, map.token) : undefined;
+/**
+ * Open exits not on the walls of the room the token stands in are drawn faded. `at` is the
+ * token's square (defaults to the map's token; mid-walk, the animated token's square).
+ */
+export function fadedExits(map: DungeonMap, at: Cell | null = map.token): Set<string> {
+  const here = at ? roomAt(map, at) : undefined;
   const edges = here ? perimeterEdges(here) : [];
   return new Set(map.doors.filter((d) => !edges.some((p) => sameEdge(p.edge, d))).map((d) => d.id));
+}
+
+/**
+ * Whether the static layers (cached offscreen) may look different between two maps.
+ * Commands share unchanged arrays, so a token move or a map-info edit compares equal.
+ */
+export function staticChanged(prev: DungeonMap | null, next: DungeonMap): boolean {
+  return (
+    !prev ||
+    prev.rooms !== next.rooms ||
+    prev.doors !== next.doors ||
+    prev.features !== next.features ||
+    prev.seed !== next.seed ||
+    prev.width !== next.width ||
+    prev.height !== next.height ||
+    prev.themeId !== next.themeId
+  );
 }
 
 interface Walk {
@@ -152,8 +172,8 @@ export class MapRenderer {
   setMap(map: DungeonMap): void {
     if (map === this.map) return;
     this.cancelWalk();
+    if (staticChanged(this.map, map)) this.cacheDirty = true;
     this.map = map;
-    this.cacheDirty = true;
     this.invalidate();
   }
 
@@ -261,12 +281,16 @@ export class MapRenderer {
 
   private drawDynamic(map: DungeonMap, time: number): void {
     const { ctx } = this;
+    const token = this.tokenState(map, time);
     ctx.save();
-    drawExitStubs(ctx, exitStubs(map), this.theme, fadedExits(map));
+    drawExitStubs(ctx, exitStubs(map), this.theme, fadedExits(map, token?.at ?? null));
     ctx.restore();
-    ctx.save();
-    this.drawToken(map, time);
-    ctx.restore();
+    if (token) {
+      ctx.save();
+      if (this.toggles.footprints) drawFootprints(ctx, footprints(map, token.trail, token.at), this.theme);
+      if (this.toggles.token) drawToken(ctx, token.pos.x, token.pos.y, this.theme, time);
+      ctx.restore();
+    }
     if (this.overlay) {
       ctx.save();
       this.overlay(ctx, time);
@@ -274,34 +298,32 @@ export class MapRenderer {
     }
   }
 
-  private drawToken(map: DungeonMap, time: number): void {
+  /**
+   * Where the token is drawn this frame. Mid-walk the map already holds the move's result,
+   * so the trail is the pre-walk one plus the squares passed so far.
+   */
+  private tokenState(map: DungeonMap, time: number): { pos: Point; trail: Cell[]; at: Cell } | null {
     const token = map.token;
-    if (!token) return;
-    let pos = { x: token.x + 0.5, y: token.y + 0.5 };
-    let trail = token.trail;
-    let at: Cell = token;
-    if (this.walk) {
-      // rAF timestamps can be slightly earlier than walk.start (performance.now()).
-      const travelled = Math.max(0, ((time - this.walk.start) / 1000) * WALK_SPEED);
-      const p = pathPosition(this.walk.path, travelled);
-      pos = p;
-      const passed = Math.min(this.walk.path.length - 1, Math.floor(travelled));
-      trail = [...token.trail, ...this.walk.path.slice(0, passed)];
-      at = this.walk.path[passed]!;
-      if (p.done) {
-        const done = this.walk.onDone;
-        this.walk = null;
-        queueMicrotask(() => {
-          try {
-            done();
-          } catch (err) {
-            console.error('Walk completion failed', err);
-          }
-        });
-      }
+    if (!token) return null;
+    if (!this.walk) return { pos: { x: token.x + 0.5, y: token.y + 0.5 }, trail: token.trail, at: token };
+    const { path } = this.walk;
+    // rAF timestamps can be slightly earlier than walk.start (performance.now()).
+    const travelled = Math.max(0, ((time - this.walk.start) / 1000) * WALK_SPEED);
+    const p = pathPosition(path, travelled);
+    const passed = Math.min(path.length - 1, Math.floor(travelled));
+    const state = { pos: { x: p.x, y: p.y }, trail: walkTrail(token.trail, path, passed), at: path[passed]! };
+    if (p.done) {
+      const done = this.walk.onDone;
+      this.walk = null;
+      queueMicrotask(() => {
+        try {
+          done();
+        } catch (err) {
+          console.error('Walk completion failed', err);
+        }
+      });
     }
-    if (this.toggles.footprints) drawFootprints(this.ctx, footprints(map, trail, at), this.theme);
-    if (this.toggles.token) drawToken(this.ctx, pos.x, pos.y, this.theme, time);
+    return state;
   }
 
   /** Zoom levels are bucketed (×√2 steps) so panning never re-renders and zooming rarely does. */

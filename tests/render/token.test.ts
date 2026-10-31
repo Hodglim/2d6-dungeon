@@ -1,4 +1,4 @@
-import { footprints, pathPosition } from '../../src/render/token';
+import { footprints, pathPosition, walkTrail } from '../../src/render/token';
 import { emptyMap, room, withContent } from '../core/fixtures';
 
 describe('pathPosition', () => {
@@ -40,5 +40,23 @@ describe('footprints', () => {
   it('skips squares that are no longer floor', () => {
     const prints = footprints(map, [{ x: 9, y: 9 }, { x: 0, y: 0 }], { x: 1, y: 0 });
     expect(prints).toHaveLength(1);
+  });
+});
+
+describe('walkTrail', () => {
+  const c = (x: number, y: number) => ({ x, y });
+  // The move is committed before the walk animates, so the trail already ends with the path
+  // (minus its destination).
+  const path = [c(1, 1), c(2, 1), c(3, 1), c(4, 1)];
+  const committed = [c(0, 0), c(0, 1), c(1, 1), c(2, 1), c(3, 1)];
+
+  it('starts from the pre-walk trail and adds only the squares passed so far', () => {
+    expect(walkTrail(committed, path, 0)).toEqual([c(0, 0), c(0, 1)]);
+    expect(walkTrail(committed, path, 2)).toEqual([c(0, 0), c(0, 1), c(1, 1), c(2, 1)]);
+    expect(walkTrail(committed, path, 3)).toEqual(committed);
+  });
+  it('never slices below an empty trail', () => {
+    expect(walkTrail([c(1, 1)], path, 1)).toEqual([c(1, 1)]);
+    expect(walkTrail([], path, 0)).toEqual([]);
   });
 });

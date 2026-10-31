@@ -85,6 +85,17 @@ describe('overlayFor', () => {
     expect(step.rect).not.toBeNull();
     expect(overlayFor(step, flow.draftMap)).toEqual([{ kind: 'rect', at: step.rect, tone: 'ok' }]);
   });
+
+  it('gap that collides shows the attempted corridor in red', () => {
+    const { history, flow } = withEntrance();
+    history.execute({ label: 'Add room', apply: (m) => ({ ...m, rooms: [...m.rooms, room('B', 3, 2, 3, 2, 'room', 9)] }) });
+    const north = openExits(history.map).find((d) => d.x === 4 && d.y === 7 && d.side === 'N')!;
+    flow.startGap(north.id);
+    flow.setGapLength(4);
+    const step = flow.step as Extract<Step, { kind: 'gap' }>;
+    expect(step.rect).toBeNull();
+    expect(overlayFor(step, flow.draftMap)).toEqual([{ kind: 'rect', at: { x: 4, y: 3, w: 1, h: 4 }, tone: 'bad' }]);
+  });
 });
 
 describe('selectionOverlay', () => {

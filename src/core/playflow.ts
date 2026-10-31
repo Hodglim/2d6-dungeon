@@ -1,8 +1,8 @@
 import { addDoor, addRoom, compound, setToken, type Command } from './commands';
 import { cellEdge, edgeCells, isBoundaryEdge, perimeterEdges, sameEdge, step } from './geometry';
 import type { IdFn } from './ids';
-import { doorAt, exitDirection, nextRoomNumber, roomAt, roomCentre, roomsAcross } from './query';
-import { entranceInwardDirection, evaluatePlacement } from './placement';
+import { doorAt, exitDirection, exitTarget, nextRoomNumber, roomAt, roomCentre, roomsAcross } from './query';
+import { entranceInwardDirection, evaluatePlacement, ghostRect } from './placement';
 import { findPath } from './pathfinding';
 import { moveToken } from './token';
 import type { GameSystem } from './system';
@@ -159,6 +159,31 @@ export function createEntranceAndRoom(
 }
 
 /** Rect for a corridor running straight out of an open exit: 1 wide, `length` long, clipped at the boundary; null on overlap. */
+/** The unclipped rect a gap corridor of this length would take (even if it collides). */
+export function gapCorridorGhost(map: DungeonMap, door: Door, length: number): Rect | null {
+  const dir = exitDirection(map, door);
+  if (!dir) return null;
+  const vertical = dir === 'N' || dir === 'S';
+  return ghostRect(map, door, vertical ? 1 : length, vertical ? length : 1, 0);
+}
+
+/** Longest gap corridor before the Outer Boundary would clip it (0 if not an open exit). */
+export function maxGapLength(map: DungeonMap, door: Door): number {
+  const dir = exitDirection(map, door);
+  const t = exitTarget(map, door);
+  if (!dir || !t) return 0;
+  switch (dir) {
+    case 'N':
+      return t.y + 1;
+    case 'S':
+      return map.height - t.y;
+    case 'W':
+      return t.x + 1;
+    case 'E':
+      return map.width - t.x;
+  }
+}
+
 export function gapCorridorRect(map: DungeonMap, door: Door, length: number): Rect | null {
   const dir = exitDirection(map, door);
   if (!dir) return null;

@@ -14,7 +14,7 @@ import {
 } from '../../src/systems/dungeon/rules';
 
 const d = (primary: number, secondary: number) => ({ primary, secondary });
-const size = (o: Partial<RoomSize>): RoomSize => ({ w: 0, h: 0, corridor: false, doubled: false, ...o });
+const size = (o: Partial<RoomSize>): RoomSize => ({ w: 0, h: 0, corridor: false, doubled: false, fromDouble: false, ...o });
 
 describe('parseDie', () => {
   it('accepts 1..6 only', () => {
@@ -56,26 +56,27 @@ describe('needsSecondRoll', () => {
 
 describe('resolveRoomSize', () => {
   it('adds the second roll on doubles', () => {
-    expect(resolveRoomSize(d(4, 4), d(3, 2), false)).toEqual({ w: 7, h: 6, corridor: false, doubled: true });
-    expect(resolveRoomSize(d(1, 1), d(2, 5), false)).toEqual({ w: 3, h: 6, corridor: false, doubled: true });
+    expect(resolveRoomSize(d(4, 4), d(3, 2), false)).toEqual({ w: 7, h: 6, corridor: false, doubled: true, fromDouble: true });
+    expect(resolveRoomSize(d(1, 1), d(2, 5), false)).toEqual({ w: 3, h: 6, corridor: false, doubled: true, fromDouble: true });
   });
   it('flags corridors from the first roll', () => {
-    expect(resolveRoomSize(d(1, 4), null, false)).toEqual({ w: 1, h: 4, corridor: true, doubled: false });
+    expect(resolveRoomSize(d(1, 4), null, false)).toEqual({ w: 1, h: 4, corridor: true, doubled: false, fromDouble: false });
   });
   it('leaves 6-6 alone', () => {
-    expect(resolveRoomSize(d(6, 6), null, false)).toEqual({ w: 6, h: 6, corridor: false, doubled: false });
+    expect(resolveRoomSize(d(6, 6), null, false)).toEqual({ w: 6, h: 6, corridor: false, doubled: false, fromDouble: true });
   });
   it('clamps the entrance area to 6..12', () => {
     const a = resolveRoomSize(d(5, 3), null, true);
     expect(a.w * a.h).toBeGreaterThanOrEqual(6);
     expect(a.w * a.h).toBeLessThanOrEqual(12);
     expect(a.doubled).toBe(false);
+    expect(a.fromDouble).toBe(false);
     expect(a.corridor).toBe(false);
     const b = resolveRoomSize(d(1, 2), null, true);
     expect(b.w * b.h).toBeGreaterThanOrEqual(6);
     const c = resolveRoomSize(d(6, 5), null, true);
     expect(c.w * c.h).toBeLessThanOrEqual(12);
-    expect(resolveRoomSize(d(4, 4), null, true)).toEqual({ w: 3, h: 4, corridor: false, doubled: false });
+    expect(resolveRoomSize(d(4, 4), null, true)).toEqual({ w: 3, h: 4, corridor: false, doubled: false, fromDouble: false });
   });
 });
 
@@ -90,8 +91,10 @@ describe('classify', () => {
   it('orders corridor, small, large, normal', () => {
     expect(classify({ w: 1, h: 5 }, size({}))).toBe('corridor');
     expect(classify({ w: 3, h: 2 }, size({}))).toBe('small');
-    expect(classify({ w: 8, h: 4 }, size({ doubled: true }))).toBe('large');
+    expect(classify({ w: 8, h: 4 }, size({ doubled: true, fromDouble: true }))).toBe('large');
     expect(classify({ w: 8, h: 4 }, size({ doubled: false }))).toBe('normal');
+    // A 6-6 is a double roll (not re-rolled): 36 squares is large.
+    expect(classify({ w: 6, h: 6 }, size({ doubled: false, fromDouble: true }))).toBe('large');
     expect(classify({ w: 3, h: 4 }, size({ corridor: true }))).toBe('corridor');
   });
 });

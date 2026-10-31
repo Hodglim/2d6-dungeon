@@ -68,7 +68,7 @@ export function routePlayTap(
       if (map.rooms.length === 0) return { kind: 'startEntrance', cell: p.cell }; // the flow explains a bad square
       const exit = nearestEdge(openExits(map), world);
       if (exit) return { kind: opts.gapMode ? 'startGap' : 'startExit', doorId: exit.id };
-      if (p.room) return { kind: 'walk', cell: p.cell };
+      if (p.room && !opts.gapMode) return { kind: 'walk', cell: p.cell };
       return { kind: 'hint', text: opts.gapMode ? 'Tap an open exit (highlighted)' : 'Tap an open exit, or a floor square to walk there' };
     }
     case 'position':
