@@ -166,7 +166,7 @@ The entrance is a 1×1 room of kind `entrance` placed **one square outside** the
 4. **Position:** a ghost room snaps to touch the exit, and dragging slides it along the wall.
    - The ghost shows its **clipped** shape live at the Outer Boundary, along with the resulting size ("rolled 6×5 → placed 6×3").
    - Overlap turns the ghost red, shows a reason in the status bar ("overlaps Room 3") and disables confirm.
-   - Width and height can be swapped, or resized manually if needed. Confirm with a tap or the Place button.
+   - Rooms are placed exactly as rolled (red die width, blue die height). The ghost follows the mouse, or a one-finger drag, snapping to valid positions and stopping at the nearest valid one; a tap and the arrow buttons also slide it. Confirm with a tap or the Place button.
    - The ghost must keep at least one row or column of floor in front of the chosen exit, so the room actually connects. A clip that would leave zero area is invalid.
 5. **Exits:** dialog for count (0–3), door type (defaults to the map default) and a "create 1-square passages" toggle. Valid wall squares are highlighted: room perimeter, not on the Outer Boundary, not already a door. Tap to place each one.
    - With passages on, each exit gets a 1×1 `passage` room beyond it, whose far edge carries a new open exit.

@@ -225,7 +225,7 @@ Landscape tablet first:
 |------|-------------|-----------|
 | 0. Start | "Tap a square on the bottom edge to place the entrance" (empty map), or "Tap an open exit" | Valid entrance squares, or the open exits highlighted |
 | 1. Size roll | Red and blue dice. **Type** the two values, or **Roll for me**. If doubles (not 6-6, not on the entrance room): "Double! Roll again" asks for a second pair and shows the sum. A corridor result is announced. | — |
-| 2. Position | Rolled size (and the final size if clipped or shrunk), class badge (normal, small, large or corridor), **Swap W/H**, **Shrink to fit** if blocked, **Place** | Ghost room against the exit. Drag or tap to slide it along the wall. Red with a reason ("Overlaps Room 3") when invalid. |
+| 2. Position | Rolled size (and the final size if clipped or shrunk), class badge (normal, small, large or corridor), **Shrink to fit** if blocked, **Place** | Ghost room against the exit. The ghost follows the mouse, or a one-finger drag, snapping to valid positions and stopping at the nearest valid one; a tap and the arrow buttons also slide it. Rooms are placed exactly as rolled. Red with a reason ("Overlaps Room 3") when invalid. |
 | 3. Exit count | D6, typed or **Roll for me**, giving 0–3. Skipped for the entrance room (fixed at 3). | — |
 | 4. Exit type | Seven door-type buttons with their symbols. Skipped (archway) for small rooms, corridors and the entrance room. | — |
 | 5. Place exits | "Place 2 exits". **Place for me**, which uses the clockwise D6 (typed or rolled), or tap highlighted walls. Shows dropped exits ("1 exit couldn't be placed"). | Valid exit squares highlighted. Each placed exit shows its exit square. |

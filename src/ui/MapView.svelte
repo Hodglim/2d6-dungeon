@@ -36,7 +36,7 @@
   /** Active pointers by pointerId, in canvas-local CSS px. At most two are tracked. */
   const pointers = new Map<number, Point>();
   /** The gesture in progress: a possible tap (until it moves past TAP_SLOP), a pan, or a pinch. */
-  let gesture: { start: Point; moved: boolean; tap: boolean } | null = null;
+  let gesture: { start: Point; moved: boolean; tap: boolean; ignore: boolean } | null = null;
 
   /** The renderer, for later overlay / token-walk wiring. */
   export function getRenderer(): MapRenderer | null {
@@ -138,7 +138,7 @@
     canvas.setPointerCapture(e.pointerId);
     const p = local(e);
     pointers.set(e.pointerId, p);
-    if (pointers.size === 1) gesture = { start: p, moved: false, tap: true };
+    if (pointers.size === 1) gesture = { start: p, moved: false, tap: true, ignore: false };
     else if (gesture) gesture.tap = false; // a second finger makes it a pinch, never a tap
   }
 
@@ -153,6 +153,10 @@
     if (!renderer || !gesture) return;
     const p = local(e);
     if (pointers.size === 1) {
+      if (gesture.ignore) {
+        pointers.set(e.pointerId, p); // the finger left over from a pinch does nothing until it lifts
+        return;
+      }
       if (!gesture.moved && Math.hypot(p.x - gesture.start.x, p.y - gesture.start.y) >= TAP_SLOP) {
         gesture.moved = true;
         gesture.tap = false;
@@ -175,7 +179,10 @@
     const wasTap = e.type === 'pointerup' && pointers.size === 1 && gesture?.tap === true;
     pointers.delete(e.pointerId);
     if (pointers.size === 0) gesture = null;
-    else if (gesture) gesture.moved = true; // the remaining finger keeps panning, no jump
+    else if (gesture) {
+      gesture.moved = true; // the remaining finger keeps panning, no jump
+      gesture.ignore = dragsGhost; // but while the ghost is dragged it must not make the ghost jump
+    }
     if (wasTap && renderer && ontap) {
       const world = renderer.screenToWorldPoint(e.clientX, e.clientY);
       ontap(pick(map, world), world);
