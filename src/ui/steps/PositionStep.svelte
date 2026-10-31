@@ -29,7 +29,7 @@
 {#if resized && rect}
   <p>Final size <strong>{rect.w} × {rect.h}</strong>{step.placement.clipped ? ' (clipped at the edge)' : ''}</p>
 {/if}
-<p>Drag on the map, or tap it, to slide the room along the wall.</p>
+<p>Move the room along the wall by moving the mouse or dragging, then click or tap to place it.</p>
 {#if !step.placement.ok}
   <p class="error" role="alert">{step.placement.reason ?? 'It does not fit here'}</p>
 {/if}

@@ -180,8 +180,10 @@ if (ghostTouch === ghostMouse) problems.push('one-finger drag did not move the g
 if ((await canvasAttr('data-camera')) !== camBefore) problems.push('one-finger drag panned the camera');
 await stepIs('position', 'dragging the ghost');
 await shot('13-ghost-follows.png');
-await panelButton('Place');
-await stepIs('exitCount', 'placing room 2');
+// A mouse click on a valid spot slides the ghost there and places the room.
+const [tx, ty, tw, th] = (await ghostOf()).split(',').map(Number);
+await tapWorld(tx + tw / 2, ty + th / 2);
+await stepIs('exitCount', 'clicking to place room 2');
 await typeDice('5'); // two exits
 await panelButton('Use this');
 await stepIs('exitType', 'the exit count');

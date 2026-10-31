@@ -146,10 +146,10 @@ describe('routePlayTap', () => {
     expect(routePlayTap(IDLE, m, tap(m, 2.5, 3.5), { x: 2.5, y: 3.5 }, { ...opts, gapMode: true })).toEqual({ kind: 'hint', text: 'Tap an open exit (highlighted)' });
   });
 
-  it('position slides the ghost; exits toggles the nearest allowed or chosen edge; other steps ignore taps', () => {
+  it('position slides the ghost and places it (slideAndPlace); exits toggles the nearest allowed or chosen edge; other steps ignore taps', () => {
     const m = sample();
     const position = { kind: 'position' } as Step;
-    expect(routePlayTap(position, m, tap(m, 6.5, 6.5), { x: 6.5, y: 6.5 }, opts)).toEqual({ kind: 'slide', cell: { x: 6, y: 6 } });
+    expect(routePlayTap(position, m, tap(m, 6.5, 6.5), { x: 6.5, y: 6.5 }, opts)).toEqual({ kind: 'slideAndPlace', cell: { x: 6, y: 6 } });
     const allowed = { x: 5, y: 3, side: 'W' as const };
     const chosen = { x: 2, y: 3, side: 'W' as const };
     const exits = { kind: 'exits', chosen: [chosen] } as unknown as Step;

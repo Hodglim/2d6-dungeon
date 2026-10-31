@@ -32,7 +32,7 @@ export type PlayTap =
   | { kind: 'startExit'; doorId: string }
   | { kind: 'startGap'; doorId: string }
   | { kind: 'walk'; cell: Cell }
-  | { kind: 'slide'; cell: Cell }
+  | { kind: 'slideAndPlace'; cell: Cell }
   | { kind: 'toggleExit'; edge: Edge }
   | { kind: 'hint'; text: string }
   /** A tap that doesn't belong to the current step. */
@@ -72,7 +72,7 @@ export function routePlayTap(
       return { kind: 'hint', text: opts.gapMode ? 'Tap an open exit (highlighted)' : 'Tap an open exit, or a floor square to walk there' };
     }
     case 'position':
-      return { kind: 'slide', cell: p.cell };
+      return { kind: 'slideAndPlace', cell: p.cell };
     case 'exits': {
       const e = nearestEdge([...opts.allowedExits, ...step.chosen], world);
       return e ? { kind: 'toggleExit', edge: e } : { kind: 'ignore' };

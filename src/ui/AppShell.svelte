@@ -131,8 +131,10 @@
         return flow.startGap(action.doorId);
       case 'walk':
         return walkTo(action.cell);
-      case 'slide':
-        return flow.slideTo(action.cell);
+      case 'slideAndPlace':
+        flow.slideTo(action.cell);
+        if (flow.step.kind === 'position' && flow.step.placement.ok) flow.place();
+        return;
       case 'toggleExit':
         return flow.toggleExit(action.edge);
       case 'hint':
