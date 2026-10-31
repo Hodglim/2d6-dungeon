@@ -1,5 +1,6 @@
 import { addRoom } from '../../src/core/commands';
-import { History } from '../../src/core/history';
+import { History, type HistoryState } from '../../src/core/history';
+import type { DungeonMap } from '../../src/core/types';
 import { emptyMap, room } from './fixtures';
 
 describe('History', () => {
@@ -80,5 +81,47 @@ describe('History', () => {
     h.reset(emptyMap(5, 5));
     expect(h.map.width).toBe(5);
     expect(h.canUndo).toBe(false);
+  });
+});
+
+describe('History snapshots', () => {
+  it('labels undo and redo with the action', () => {
+    const h = new History(emptyMap());
+    expect(h.undoLabel).toBeNull();
+    h.execute(addRoom(room('a', 1, 1, 1, 1)));
+    expect(h.undoLabel).toBe('Add room');
+    h.undo();
+    expect(h.undoLabel).toBeNull();
+    expect(h.redoLabel).toBe('Add room');
+  });
+
+  it('does not record a command that changes nothing', () => {
+    const h = new History(emptyMap());
+    const noop = { label: 'Nothing', apply: (m: DungeonMap) => m, undo: (m: DungeonMap) => m };
+    expect(h.execute(noop)).toEqual({ ok: true });
+    expect(h.canUndo).toBe(false);
+  });
+
+  it('exports and restores the whole timeline', () => {
+    const h = new History(emptyMap());
+    h.execute(addRoom(room('a', 1, 1, 1, 1)));
+    h.execute(addRoom(room('b', 3, 3, 1, 1)));
+    h.undo();
+    const state = JSON.parse(JSON.stringify(h.exportState())) as HistoryState;
+    const restored = History.fromState(state);
+    expect(restored.map.rooms.map((r) => r.id)).toEqual(['a']);
+    expect(restored.redo()).toBe(true);
+    expect(restored.map.rooms.map((r) => r.id)).toEqual(['a', 'b']);
+    expect(restored.undo()).toBe(true);
+    expect(restored.undo()).toBe(true);
+    expect(restored.map.rooms).toEqual([]);
+  });
+
+  it('shares unchanged parts between snapshots', () => {
+    const h = new History(emptyMap());
+    h.execute(addRoom(room('a', 1, 1, 1, 1)));
+    const first = h.map.rooms[0];
+    h.execute(addRoom(room('b', 3, 3, 1, 1)));
+    expect(h.map.rooms[0]).toBe(first);
   });
 });

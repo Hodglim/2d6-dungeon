@@ -1,5 +1,3 @@
-import { edgeCells, rectContains } from './geometry';
-import { roomAt } from './query';
 import type { Door, DungeonMap, Feature, Room, Token } from './types';
 
 /** A reversible change to a map. apply/undo are pure: they return a new map.
@@ -86,28 +84,4 @@ export function compound(label: string, commands: Command[]): Command {
     apply: (m) => commands.reduce((acc, c) => c.apply(acc), m),
     undo: (m) => commands.reduceRight((acc, c) => c.undo(acc), m),
   };
-}
-
-/**
- * Delete a room plus everything that would be left dangling: doors with no room on
- * either side after deletion (and, for the entrance, its boundary door), features inside
- * it, and the token if it stands there.
- */
-export function deleteRoom(map: DungeonMap, roomId: string): Command | null {
-  const room = map.rooms.find((r) => r.id === roomId);
-  if (!room) return null;
-  const without: DungeonMap = { ...map, rooms: map.rooms.filter((r) => r.id !== roomId) };
-  const orphanDoors = map.doors.filter((d) => {
-    const cells = edgeCells(d);
-    if (room.kind === 'entrance' && cells.some((c) => rectContains(room, c))) return true;
-    return cells.every((c) => !roomAt(without, c));
-  });
-  const features = map.features.filter((f) => rectContains(room, f));
-  const cmds: Command[] = [
-    ...orphanDoors.map(removeDoor),
-    ...features.map(removeFeature),
-  ];
-  if (map.token && rectContains(room, map.token)) cmds.push(setToken(map.token, null));
-  cmds.push(removeRoom(room));
-  return compound('Delete room', cmds);
 }

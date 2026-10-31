@@ -1,10 +1,8 @@
-import { checkInvariants } from '../../src/core/invariants';
 import {
   addDoor,
   addFeature,
   addRoom,
   compound,
-  deleteRoom,
   removeDoor,
   removeRoom,
   setToken,
@@ -63,18 +61,6 @@ describe('removeItem undo guard and redo', () => {
     expect(cmd.apply(base)).toEqual(first);
     expect(cmd.undo(first)).toEqual(base);
   });
-  it('deleteRoom survives apply, undo, apply', () => {
-    const base = withContent(
-      emptyMap(),
-      [room('a', 1, 1, 2, 2), room('b', 3, 1, 2, 2)],
-      [door('d1', 3, 1, 'W'), door('d2', 1, 1, 'N')],
-    );
-    const cmd = deleteRoom(base, 'a')!;
-    const first = cmd.apply(base);
-    cmd.undo(first);
-    expect(cmd.apply(base)).toEqual(first);
-    expect(cmd.undo(first)).toEqual(base);
-  });
 });
 
 describe('compound', () => {
@@ -86,46 +72,8 @@ describe('compound', () => {
   });
 });
 
-describe('deleteRoom', () => {
-  it('removes orphaned doors, features inside, and the token', () => {
-    const base: DungeonMap = {
-      ...withContent(
-        emptyMap(),
-        [room('a', 1, 1, 2, 2), room('b', 3, 1, 2, 2)],
-        // d1 joins a and b (survives); d2 is an open exit on a (orphaned when a goes).
-        [door('d1', 3, 1, 'W'), door('d2', 1, 1, 'N')],
-      ),
-      features: [{ id: 'n', kind: 'note', x: 1, y: 1, text: 'hi' }],
-      token: { x: 2, y: 2, trail: [] },
-    };
-    const cmd = deleteRoom(base, 'a')!;
-    const after = roundTrip(base, cmd);
-    expect(after.rooms.map((r) => r.id)).toEqual(['b']);
-    expect(after.doors.map((d) => d.id)).toEqual(['d1']);
-    expect(after.features).toEqual([]);
-    expect(after.token).toBeNull();
-  });
-  it('returns null for an unknown room', () => {
-    expect(deleteRoom(emptyMap(), 'nope')).toBeNull();
-  });
-});
-
 describe('addFeature', () => {
   it('labels by kind', () => {
     expect(addFeature({ id: 's', kind: 'stairs', x: 1, y: 1, dir: 'down' }).label).toBe('Add stairs');
-  });
-});
-
-describe('deleteRoom on the entrance', () => {
-  it('removes the entrance and its boundary door even when a room is attached', () => {
-    const base = withContent(
-      emptyMap(10, 10),
-      [room('e', 4, 10, 1, 1, 'entrance'), room('a', 3, 8, 3, 2, 'room', 1)],
-      [door('d', 4, 10, 'N')],
-    );
-    const after = roundTrip(base, deleteRoom(base, 'e')!);
-    expect(after.rooms.map((r) => r.id)).toEqual(['a']);
-    expect(after.doors).toEqual([]);
-    expect(checkInvariants(after)).toBeNull();
   });
 });
