@@ -60,4 +60,10 @@ describe('placeExitsClockwise', () => {
     expect(r.exits).toHaveLength(1);
     expect(r.dropped).toBe(2);
   });
+  it('skips an invalid wall and continues to the next valid one', () => {
+    const m = withContent(emptyMap(10, 10), [a, room('c', 1, 3, 2, 3, 'room', 2)], [entry]);
+    const r = placeExitsClockwise(m, 'a', 2, 0);
+    expect(r.exits.map((e) => e.side + e.x + ',' + e.y)).toEqual(['N4,3', 'W7,4']);
+    expect(r.dropped).toBe(0);
+  });
 });

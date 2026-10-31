@@ -49,7 +49,7 @@ export function placeExitsClockwise(
   const entry = entryWall(map, room);
   const ei = entry ? CLOCKWISE.indexOf(entry) : 3;
   const walls = [1, 2, 3].map((k) => CLOCKWISE[(ei + k) % 4]!);
-  for (let k = 0; k < count && k < 3; k++) {
+  for (let k = 0; k < 3 && exits.length < count; k++) {
     const wall = walls[(firstWall + k) % 3]!;
     const onWall = allowedExitEdges(map, roomId, exits).filter(
       (e) => perimeterEdges(room).find((p) => sameEdge(p.edge, e))?.dir === wall,
