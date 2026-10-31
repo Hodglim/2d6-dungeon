@@ -1,4 +1,4 @@
-import { createCampaign, createMap, CURRENT_SCHEMA_VERSION } from '../../src/core/campaign';
+import { createCampaign, createMap, CURRENT_SCHEMA_VERSION, MAX_MAP_SIZE } from '../../src/core/campaign';
 import { sequentialIds } from '../../src/core/ids';
 import { dungeonSystem } from '../../src/systems/dungeon';
 
@@ -35,5 +35,13 @@ describe('createCampaign', () => {
     expect(c.maps).toHaveLength(1);
     expect(c.activeMapId).toBe(c.maps[0]!.id);
     expect(c.hero).toBeNull();
+  });
+});
+
+describe('createMap size limits', () => {
+  it('clamps width and height to 1..MAX_MAP_SIZE', () => {
+    const m = createMap(dungeonSystem, { width: 500, height: 0 });
+    expect(m.width).toBe(MAX_MAP_SIZE);
+    expect(m.height).toBe(1);
   });
 });

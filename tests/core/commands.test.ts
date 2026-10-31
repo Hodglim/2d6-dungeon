@@ -1,3 +1,4 @@
+import { checkInvariants } from '../../src/core/rules';
 import {
   addDoor,
   addFeature,
@@ -112,5 +113,19 @@ describe('deleteRoom', () => {
 describe('addFeature', () => {
   it('labels by kind', () => {
     expect(addFeature({ id: 's', kind: 'stairs', x: 1, y: 1, dir: 'down' }).label).toBe('Add stairs');
+  });
+});
+
+describe('deleteRoom on the entrance', () => {
+  it('removes the entrance and its boundary door even when a room is attached', () => {
+    const base = withContent(
+      emptyMap(10, 10),
+      [room('e', 4, 10, 1, 1, 'entrance'), room('a', 3, 8, 3, 2, 'room', 1)],
+      [door('d', 4, 10, 'N')],
+    );
+    const after = roundTrip(base, deleteRoom(base, 'e')!);
+    expect(after.rooms.map((r) => r.id)).toEqual(['a']);
+    expect(after.doors).toEqual([]);
+    expect(checkInvariants(after)).toBeNull();
   });
 });

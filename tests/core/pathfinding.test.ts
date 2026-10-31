@@ -134,3 +134,14 @@ describe('findPath through passages and the entrance', () => {
     ]);
   });
 });
+
+describe('moveToken path validation', () => {
+  it('rejects a path that jumps through a wall', () => {
+    const m = { ...twoRooms(), token: { x: 2, y: 1, trail: [] } };
+    expect(moveToken(m, [{ x: 2, y: 1 }, { x: 3, y: 1 }])).toBeNull();
+  });
+  it('rejects a path that skips squares', () => {
+    const m = { ...twoRooms(), token: { x: 1, y: 1, trail: [] } };
+    expect(moveToken(m, [{ x: 1, y: 1 }, { x: 2, y: 2 }])).toBeNull();
+  });
+});

@@ -16,6 +16,11 @@ export interface NewMapOptions {
   newId?: IdFn;
 }
 
+/** Map dimensions are whole squares in 1..MAX_MAP_SIZE (the limit parseCampaign enforces). */
+function clampSize(n: number): number {
+  return Math.min(MAX_MAP_SIZE, Math.max(1, Math.round(n)));
+}
+
 export function createMap(system: GameSystem, opts: NewMapOptions = {}): DungeonMap {
   const newId = opts.newId ?? randomId;
   return {
@@ -23,8 +28,8 @@ export function createMap(system: GameSystem, opts: NewMapOptions = {}): Dungeon
     title: opts.title ?? '',
     hero: opts.hero ?? '',
     level: opts.level ?? '',
-    width: opts.width ?? system.defaultMapSize.width,
-    height: opts.height ?? system.defaultMapSize.height,
+    width: clampSize(opts.width ?? system.defaultMapSize.width),
+    height: clampSize(opts.height ?? system.defaultMapSize.height),
     themeId: system.defaultThemeId,
     defaultDoorType: system.defaultDoorType,
     seed: opts.seed ?? Math.floor(Math.random() * 2 ** 31),

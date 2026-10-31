@@ -90,13 +90,18 @@ export function compound(label: string, commands: Command[]): Command {
 
 /**
  * Delete a room plus everything that would be left dangling: doors with no room on
- * either side, features inside it, and the token if it stands there.
+ * either side after deletion (and, for the entrance, its boundary door), features inside
+ * it, and the token if it stands there.
  */
 export function deleteRoom(map: DungeonMap, roomId: string): Command | null {
   const room = map.rooms.find((r) => r.id === roomId);
   if (!room) return null;
   const without: DungeonMap = { ...map, rooms: map.rooms.filter((r) => r.id !== roomId) };
-  const orphanDoors = map.doors.filter((d) => edgeCells(d).every((c) => !roomAt(without, c)));
+  const orphanDoors = map.doors.filter((d) => {
+    const cells = edgeCells(d);
+    if (room.kind === 'entrance' && cells.some((c) => rectContains(room, c))) return true;
+    return cells.every((c) => !roomAt(without, c));
+  });
   const features = map.features.filter((f) => rectContains(room, f));
   const cmds: Command[] = [
     ...orphanDoors.map(removeDoor),
