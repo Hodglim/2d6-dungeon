@@ -1,7 +1,7 @@
-import { clipRect, inBounds, isBoundaryEdge, perimeterEdges, rectContains, rectsOverlap, step } from './geometry';
+import { clipRect, rectContains, rectsOverlap } from './geometry';
 import { describeRoom } from './invariants';
-import { doorAt, exitDirection, exitTarget, roomAt } from './query';
-import type { Cell, Direction, Door, DungeonMap, Edge, Rect, Room } from './types';
+import { exitDirection, exitTarget } from './query';
+import type { Cell, Direction, Door, DungeonMap, Rect, Room } from './types';
 
 /** Number of slide positions for a w×h room against an exit. */
 export function slideRange(map: DungeonMap, door: Door, w: number, h: number): number {
@@ -103,25 +103,6 @@ export function shrinkToFit(
     }
   }
   return best;
-}
-
-/**
- * Wall edges of a room where an exit may be placed: not on the Outer Boundary and not
- * already a door. With passages on, the square beyond must also be empty.
- */
-export function validExitEdges(map: DungeonMap, roomId: string, passages: boolean): Edge[] {
-  const room = map.rooms.find((r) => r.id === roomId);
-  if (!room) return [];
-  return perimeterEdges(room)
-    .filter(({ edge, inside, dir }) => {
-      if (isBoundaryEdge(edge, map.width, map.height)) return false;
-      if (doorAt(map, edge)) return false;
-      const beyond = step(inside, dir);
-      if (!inBounds(beyond, map.width, map.height)) return false;
-      if (passages && roomAt(map, beyond)) return false;
-      return true;
-    })
-    .map(({ edge }) => edge);
 }
 
 export function entranceInwardDirection(edge: Direction): Direction {

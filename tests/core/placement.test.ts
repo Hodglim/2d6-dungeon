@@ -1,4 +1,4 @@
-import { entranceCells, evaluatePlacement, ghostRect, shrinkToFit, slideRange, validExitEdges } from '../../src/core/placement';
+import { entranceCells, evaluatePlacement, ghostRect, shrinkToFit, slideRange } from '../../src/core/placement';
 import { exitDirection, exitTarget } from '../../src/core/query';
 import { door, emptyMap, room, withContent } from './fixtures';
 
@@ -93,23 +93,6 @@ describe('evaluatePlacement', () => {
       [door('d', 5, 4, 'N')],
     );
     expect(evaluatePlacement(m, m.doors[0]!, 2, 2, 0).ok).toBe(true);
-  });
-});
-
-describe('validExitEdges', () => {
-  it('excludes Outer Boundary edges and existing doors', () => {
-    // 2x1 room in the top-left corner: top and left edges are boundary.
-    const m = withContent(emptyMap(5, 5), [room('a', 0, 0, 2, 1)], [door('d', 0, 1, 'N')]);
-    const edges = validExitEdges(m, 'a', false);
-    // Perimeter: 2 top (boundary), 2 bottom (one is a door), 1 left (boundary), 1 right.
-    expect(edges).toEqual(expect.arrayContaining([{ x: 1, y: 1, side: 'N' }, { x: 2, y: 0, side: 'W' }]));
-    expect(edges).toHaveLength(2);
-  });
-  it('allows an exit into a neighbouring room without passages but not with them', () => {
-    const m = withContent(emptyMap(), [room('a', 2, 2, 1, 1), room('b', 3, 2, 1, 1)]);
-    const shared = { x: 3, y: 2, side: 'W' };
-    expect(validExitEdges(m, 'a', false)).toContainEqual(shared);
-    expect(validExitEdges(m, 'a', true)).not.toContainEqual(shared);
   });
 });
 

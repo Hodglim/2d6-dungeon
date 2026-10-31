@@ -38,32 +38,32 @@ decision is needed before that plan's tasks get written.
 
 ## Plan 3: Interaction and UI
 
-- **Rooms can't be moved or resized (user decision, 2026-10-31).** A placed room stays
+- ✅ Done in Plan 3: **Rooms can't be moved or resized (user decision, 2026-10-31).** A placed room stays
   exactly as rolled and positioned. Mistakes are fixed with Undo and re-placing. The
   Select tool only inspects and relabels rooms, so no `moveRoom` or `resizeRoom` is needed.
-- Add a `canPlaceDoor(map, edge)` query for the Door tool. A valid edge is a wall edge,
+- ✅ Done in Plan 3: Add a `canPlaceDoor(map, edge)` query for the Door tool. A valid edge is a wall edge,
   not on the Outer Boundary, with no existing door.
-- The exits dialog must filter exits already chosen in this step out of
+- ✅ Done in Plan 3: The exits dialog must filter exits already chosen in this step out of
   `validExitEdges(draft, …)`.
-- The size and exits dialogs enforce `roomDieRange` and `maxExits`; the core doesn't.
-- Decide whether locked doors block the token. Today only secret doors do.
+- ✅ Done in Plan 3: The size and exits dialogs enforce `roomDieRange` and `maxExits`; the core doesn't.
+- ✅ Done in Plan 3: Decide whether locked doors block the token. Today only secret doors do.
 - No command exists to change the grid size (spec §3). If it's added, it must check that
   every room still fits inside the new boundary.
-- After the entrance is deleted the token becomes null; the UI needs a way to place it
+- ✅ Done in Plan 3: After the entrance is deleted the token becomes null; the UI needs a way to place it
   again.
-- `History`: skip no-op commands, and expose `undoLabel` / `redoLabel` for tooltips.
-- The Svelte store wrapper must call subscribers immediately with the current value,
+- ✅ Done in Plan 3: `History`: skip no-op commands, and expose `undoLabel` / `redoLabel` for tooltips.
+- ✅ Done in Plan 3: The Svelte store wrapper must call subscribers immediately with the current value,
   which `History.subscribe` does not.
 
 ## From the Plan 2 core review (2026-10-31)
 
-- **Plan 3: entry doors can't be removed.** `checkInvariants` rejects any edit that
+- ✅ Done in Plan 3: **Plan 3: entry doors can't be removed.** `checkInvariants` rejects any edit that
   removes a room's (or passage's) entry door. The Door tool should hide or disable
   "remove" for entry doors and explain why, offering a retype to secret or locked instead.
   Show `History.execute`'s reason string whenever a command is rejected.
-- **Plan 3: everything goes through `History.execute`.** Undo is one saved timeline, so
+- ✅ Done in Plan 3: **Plan 3: everything goes through `History.execute`.** Undo is one saved timeline, so
   token moves, notes and door edits must never change the map outside it.
-- **Plan 3: the "only the entrance has a null `entryDoorId`" rule isn't enforced yet.**
+- **Open (deferred from Plan 3 to avoid fixture churn): require non-null `entryDoorId` for every room except the entrance.** Original note: the "only the entrance has a null `entryDoorId`" rule isn't enforced yet.**
   Every play-flow room gets one, but the invariant also accepts null for rooms and passages.
   Tightening it means updating many test fixtures. Do it when Plan 3 touches room creation.
 - **Plan 4: saved history size.** JSON loses snapshot sharing. 200 snapshots × ~25 KB
@@ -82,26 +82,26 @@ decision is needed before that plan's tasks get written.
 ## From the Plan 2 renderer reviews (2026-10-31)
 
 Plan 3 (interaction) needs these from `MapRenderer`:
-- **An overlay hook.** A per-frame, uncached `setOverlay(fn)` in world units, for hover
+- ✅ Done in Plan 3: **An overlay hook.** A per-frame, uncached `setOverlay(fn)` in world units, for hover
   highlights, the ghost room, path preview, selection and exit highlighting. It doesn't
   exist yet.
-- **A pointer → world square helper** that accounts for the canvas rect and dpr, so tools
+- ✅ Done in Plan 3: **A pointer → world square helper** that accounts for the canvas rect and dpr, so tools
   don't each repeat the maths.
-- **A separate exit-stub layer.** `fadedExits` depends on the token, so every token move
+- ✅ Done in Plan 3: **A separate exit-stub layer.** `fadedExits` depends on the token, so every token move
   currently rebuilds the whole static cache. Move stubs into a cheap per-frame layer.
 - **Rebuilds without hitches.** Crossing a zoom bucket rebuilds the cache synchronously, and
   a large map stutters during wheel or pinch zoom. Keep drawing the old cache scaled while
   the new one builds (idle callback or chunks). Rebuild at most once per frame while dragging.
 - **Tiled or visible-area rendering** for deep zoom. The cache is capped at 4096 px per side
   and 16M px in area (the iOS limit), so a 100×100 map zoomed far in is blurry.
-- **Input:**
+- ✅ Done in Plan 3 (except the animated Fit): **Input:**
   - Pinch zoom with multi-pointer tracking: the viewer currently tracks one pointer.
   - Handle the wheel event's `deltaMode`.
   - Clamp the camera so the map can't be lost off-screen.
   - An animated Fit.
-- **Layout:** use a ResizeObserver plus dpr changes (orientation, browser zoom), and re-fit on
+- ✅ Done in Plan 3: **Layout:** use a ResizeObserver plus dpr changes (orientation, browser zoom), and re-fit on
   the first non-zero size.
-- **Accessibility:** 44 px touch targets (the viewer's buttons are 32 px), `aria-label` on the
+- ✅ Done in Plan 3: **Accessibility:** 44 px touch targets (the viewer's buttons are 32 px), `aria-label` on the
   canvas and the toolbar.
 - **Shadow gradients** are created per wall edge. That's fine now; group edges by side if
   profiling shows a cost.
@@ -130,6 +130,20 @@ Plan 4 (export):
 - `History.subscribe` also fires on `reset`, so skip the autosave triggered by loading.
 - An imported file may place the entrance on any edge, not just the system's entrance
   edge. Accepted for v1; revisit when Void arrives.
+
+## Plan 3 deferred minors
+
+Minor findings from the Plan 3 reviews, not fixed:
+
+- resolveRoomSize silently ignores a missing required second roll; rollD66 test weak
+- shrinkToFit scores unclipped size (boundary-clipped candidate can beat a smaller clean fit)
+- labels can cover feature icons; open padlock tight against labels; stubs draw above labels
+- exitStubs/fadedExits recomputed every frame
+- Ctrl+Z still active in some modal states; dialogs lack focus management; menu ARIA pattern incomplete
+- portrait rotation clamps but doesn't refit
+- gap mode still walks on floor taps; slide buttons don't disable at range ends; ExitsStep die error not cleared on wall tap
+- entry-door note says "a passage" for exit-square doors; stairs and note can share a square; room selection highlight too heavy
+- visual.mjs relies on fixed sleeps
 
 ## Performance notes (no action needed yet)
 

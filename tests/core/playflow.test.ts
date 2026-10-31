@@ -10,7 +10,8 @@ import {
   placeEntrance,
 } from '../../src/core/playflow';
 import { openExits } from '../../src/core/query';
-import { evaluatePlacement, validExitEdges } from '../../src/core/placement';
+import { evaluatePlacement } from '../../src/core/placement';
+import { allowedExitEdges } from '../../src/core/exits';
 import { addRoom, setToken } from '../../src/core/commands';
 import { dungeonSystem } from '../../src/systems/dungeon';
 import { door, emptyMap, room, withContent } from './fixtures';
@@ -57,7 +58,7 @@ describe('full play-flow round', () => {
 
     // Exits are chosen against a draft map that already contains the room.
     const draft = addRoom(room).apply(h.map);
-    const valid = validExitEdges(draft, room.id, true);
+    const valid = allowedExitEdges(draft, room.id, []);
     const top = { x: 4, y: 8, side: 'N' as const };
     expect(valid).toContainEqual(top);
 
