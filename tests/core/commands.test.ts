@@ -1,4 +1,4 @@
-import { checkInvariants } from '../../src/core/rules';
+import { checkInvariants } from '../../src/core/invariants';
 import {
   addDoor,
   addFeature,

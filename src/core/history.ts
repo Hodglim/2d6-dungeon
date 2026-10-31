@@ -1,5 +1,5 @@
 import type { Command } from './commands';
-import { checkInvariants } from './rules';
+import { checkInvariants } from './invariants';
 import type { DungeonMap } from './types';
 
 export type ExecResult = { ok: true } | { ok: false; reason: string };

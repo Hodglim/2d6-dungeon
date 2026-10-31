@@ -2,7 +2,7 @@ import { History } from '../../src/core/history';
 import { sequentialIds } from '../../src/core/ids';
 import { createRoomFromExit, newRoom, placeEntrance } from '../../src/core/playflow';
 import { openExits } from '../../src/core/query';
-import { evaluatePlacement, validExitEdges } from '../../src/core/rules';
+import { evaluatePlacement, validExitEdges } from '../../src/core/placement';
 import { addRoom } from '../../src/core/commands';
 import { dungeonSystem } from '../../src/systems/dungeon';
 import { door, emptyMap, room, withContent } from './fixtures';

@@ -2,7 +2,7 @@ import { addDoor, addRoom, compound, setToken, type Command } from './commands';
 import { cellEdge, isBoundaryEdge, perimeterEdges, sameEdge, step } from './geometry';
 import type { IdFn } from './ids';
 import { doorAt, nextRoomNumber } from './query';
-import { entranceInwardDirection } from './rules';
+import { entranceInwardDirection } from './placement';
 import type { GameSystem } from './system';
 import type { Cell, Door, DungeonMap, Edge, Rect, Room, RoomLabel } from './types';
 

@@ -1,5 +1,5 @@
 import { CURRENT_SCHEMA_VERSION, MAX_MAP_SIZE } from './campaign';
-import { checkInvariants } from './rules';
+import { checkInvariants } from './invariants';
 import type { Campaign } from './types';
 
 /** migrations[n] upgrades a raw campaign object from schema version n to n + 1. */

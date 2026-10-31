@@ -1,5 +1,5 @@
 import { edgeCells, edgeKey, perimeterEdges, rectContains, sameEdge } from './geometry';
-import type { Cell, Door, DungeonMap, Edge, Room } from './types';
+import type { Cell, Direction, Door, DungeonMap, Edge, Room } from './types';
 
 export function roomAt(map: DungeonMap, c: Cell): Room | undefined {
   return map.rooms.find((r) => rectContains(r, c));
@@ -42,4 +42,20 @@ export function deriveWalls(map: DungeonMap): Edge[] {
 
 export function nextRoomNumber(map: DungeonMap): number {
   return map.rooms.reduce((max, r) => (r.kind === 'room' ? Math.max(max, r.number) : max), 0) + 1;
+}
+
+/** Direction pointing out of an open exit, away from the room it belongs to. */
+export function exitDirection(map: DungeonMap, door: Door): Direction | null {
+  const [a, b] = roomsAcross(map, door);
+  if (a && !b) return door.side === 'N' ? 'S' : 'E';
+  if (!a && b) return door.side === 'N' ? 'N' : 'W';
+  return null;
+}
+
+/** The empty square just beyond an open exit. */
+export function exitTarget(map: DungeonMap, door: Door): Cell | null {
+  const dir = exitDirection(map, door);
+  if (!dir) return null;
+  const [a, b] = edgeCells(door);
+  return dir === 'S' || dir === 'E' ? b : a;
 }
