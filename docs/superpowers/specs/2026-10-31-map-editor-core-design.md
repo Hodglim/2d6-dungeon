@@ -31,7 +31,7 @@ Rulebook content (tables, monsters, rules text) the user extracts from their pur
 ### In v1
 - Dungeon map with a configurable grid (default 25×25), Outer Boundary, and an entrance outside the boundary.
 - **Guided play flow** (primary): entrance → pick open exit → enter room size → position → exits → label.
-- **Edit tools** (fallback): select, move, resize rooms (rooms are never deleted directly — Undo removes them newest-first); add, remove and retype doors; stairs; locks; secret doors; notes; token.
+- **Edit tools** (fallback): rooms are never moved, resized or deleted after placement — mistakes are fixed with Undo (newest-first) and re-placing; add, remove and retype doors; stairs; locks; secret doors; notes; token.
 - Door types: archway, wooden, metal, reinforced, curtain, portcullis, stone slab.
 - Room labels: number, room type, unique/boss flag, narrative note.
 - **Classic** theme: dot grid, hatched rock, ink walls with inner shadow, textured floors, footprints.
@@ -176,7 +176,7 @@ The entrance is a 1×1 room of kind `entrance` placed **one square outside** the
 The whole flow (steps 3–6) commits as **one undoable compound command**. Esc or Cancel aborts at any step with no change.
 
 ### Edit tools
-Select (move by dragging, resize handles; no delete — rooms are removed only via Undo, see §6), Door (tap a wall edge to add a door or change its type), Stairs, Lock, Secret, Note, Token. Edits are validated with the same rules: moves and resizes cannot create overlaps or cross the boundary.
+Select (inspect and relabel a room; rooms cannot be moved, resized or deleted — fix mistakes with Undo, see §6), Door (tap a wall edge to add a door or change its type), Stairs, Lock, Secret, Note, Token. Edits are validated with the same rules (History rejects any edit that breaks an invariant).
 
 ### Token
 Tapping an explored floor square moves the token along an A* path through doors. Secret doors are passable only if the player has revealed them; in v1 a secret door is impassable until its `secret` flag is cleared. The token animates square by square and appends each square to the footprint trail.

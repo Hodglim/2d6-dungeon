@@ -38,17 +38,9 @@ decision is needed before that plan's tasks get written.
 
 ## Plan 3: Interaction and UI
 
-- **First task: `moveRoom` / `resizeRoom` builders.** `updateRoom` only changes the
-  rectangle. Proposed policy (confirm with the user when writing Plan 3):
-  - A move translates the room's own perimeter doors, the features inside it and the
-    token, as one compound step.
-  - A resize deletes doors that no longer sit on the room's perimeter. If that would
-    disconnect another room (a door shared with a neighbour), it is rejected with a
-    reason instead.
-  - A resize that leaves the token or a feature outside the room is rejected with a
-    reason.
-  - Shrinking a room away from its entry door must not silently make the old door an
-    open exit again. Reject it, or require the user to delete the door first.
+- **Rooms can't be moved or resized (user decision, 2026-10-31).** A placed room stays
+  exactly as rolled and positioned. Mistakes are fixed with Undo and re-placing. The
+  Select tool only inspects and relabels rooms, so no `moveRoom` or `resizeRoom` is needed.
 - Add a `canPlaceDoor(map, edge)` query for the Door tool. A valid edge is a wall edge,
   not on the Outer Boundary, with no existing door.
 - The exits dialog must filter exits already chosen in this step out of
