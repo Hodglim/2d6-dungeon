@@ -247,7 +247,8 @@ export class MapRenderer {
     let trail = token.trail;
     let at: Cell = token;
     if (this.walk) {
-      const travelled = ((time - this.walk.start) / 1000) * WALK_SPEED;
+      // rAF timestamps can be slightly earlier than walk.start (performance.now()).
+      const travelled = Math.max(0, ((time - this.walk.start) / 1000) * WALK_SPEED);
       const p = pathPosition(this.walk.path, travelled);
       pos = p;
       const passed = Math.min(this.walk.path.length - 1, Math.floor(travelled));

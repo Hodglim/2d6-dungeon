@@ -57,7 +57,8 @@
     drag = { x: e.clientX, y: e.clientY };
   }
 
-  function onPointerUp() {
+  function onPointerUp(e: PointerEvent) {
+    if (!e.isPrimary) return;
     drag = null;
   }
 
