@@ -209,7 +209,7 @@ function drawLock(ctx: CanvasRenderingContext2D, g: DoorGlyph, theme: Theme): vo
     // Open shackle: swung up and clear of the left side.
     ctx.moveTo(0.05, -0.04);
     ctx.lineTo(0.05, -0.1);
-    ctx.arc(0, -0.1, 0.05, 0, Math.PI);
+    ctx.arc(0, -0.1, 0.05, 0, Math.PI, true);
     ctx.lineTo(-0.05, -0.075);
   }
   ctx.stroke();
