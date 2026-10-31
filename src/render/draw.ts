@@ -49,13 +49,15 @@ export function drawPaper(ctx: CanvasRenderingContext2D, map: DungeonMap, theme:
   ctx.fillRect(b.x - 2, b.y - 2, b.w + 4, b.h + 4);
   if (grid) {
     ctx.fillStyle = theme.gridDot;
+    const r = 0.03;
+    ctx.beginPath();
     for (let y = b.y; y <= b.y + b.h; y++) {
       for (let x = b.x; x <= b.x + b.w; x++) {
-        ctx.beginPath();
-        ctx.arc(x, y, 0.03, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.moveTo(x + r, y);
+        ctx.arc(x, y, r, 0, Math.PI * 2);
       }
     }
+    ctx.fill();
   }
   ctx.save();
   ctx.strokeStyle = theme.boundary;
@@ -138,8 +140,8 @@ export function drawShadows(ctx: CanvasRenderingContext2D, shadows: ShadowEdge[]
   for (const { seg, inward } of shadows) {
     const horizontal = seg.y1 === seg.y2;
     const sign = inward === 'S' || inward === 'E' ? 1 : -1;
-    const x0 = horizontal ? seg.x1 : seg.x1;
-    const y0 = horizontal ? seg.y1 : seg.y1;
+    const x0 = seg.x1;
+    const y0 = seg.y1;
     const g = horizontal
       ? ctx.createLinearGradient(0, y0, 0, y0 + depth * sign)
       : ctx.createLinearGradient(x0, 0, x0 + depth * sign, 0);

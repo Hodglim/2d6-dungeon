@@ -9,6 +9,8 @@ export type DoorSymbol = (ctx: CanvasRenderingContext2D, theme: Theme) => void;
 export interface Theme {
   id: string;
   name: string;
+  /** Canvas colour outside the map area. */
+  backdrop: string;
   paper: string;
   gridDot: string;
   boundary: string;

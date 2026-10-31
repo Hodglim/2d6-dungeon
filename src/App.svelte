@@ -9,7 +9,7 @@
   import { classicTheme } from './systems/dungeon/classic';
 
   let canvas: HTMLCanvasElement;
-  let renderer: MapRenderer | null = null;
+  let renderer = $state.raw<MapRenderer | null>(null);
   let map: DungeonMap = demoMap();
   let toggles: DisplayToggles = $state({ ...DEFAULT_TOGGLES });
   let drag: { x: number; y: number } | null = null;
@@ -46,12 +46,13 @@
   }
 
   function onPointerDown(e: PointerEvent) {
+    if (e.button !== 0 || !e.isPrimary) return;
     drag = { x: e.clientX, y: e.clientY };
     canvas.setPointerCapture(e.pointerId);
   }
 
   function onPointerMove(e: PointerEvent) {
-    if (!drag || !renderer) return;
+    if (!e.isPrimary || !drag || !renderer) return;
     renderer.setCamera(panBy(renderer.camera, e.clientX - drag.x, e.clientY - drag.y));
     drag = { x: e.clientX, y: e.clientY };
   }

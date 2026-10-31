@@ -49,6 +49,22 @@ export const DEFAULT_TOGGLES: DisplayToggles = {
 /** Squares per second when the token walks. */
 export const WALK_SPEED = 4;
 
+/** Largest cache canvas side (iOS Safari silently renders blank beyond ~4096² / 16.7M px). */
+const MAX_CACHE_SIDE = 4096;
+const MAX_CACHE_AREA = 16_000_000;
+/** Minimum interval between idle frames, for the token pulse. */
+const IDLE_FRAME_MS = 66;
+
+/**
+ * Effective cache resolution (px per square): the wanted one, clamped so the cache canvas
+ * (world plus a one-square margin each side) stays within iOS-safe limits.
+ */
+export function cacheScaleFor(wantedPxPerSquare: number, worldW: number, worldH: number): number {
+  const w = worldW + 2;
+  const h = worldH + 2;
+  return Math.min(wantedPxPerSquare, MAX_CACHE_SIDE / w, MAX_CACHE_SIDE / h, Math.sqrt(MAX_CACHE_AREA / (w * h)));
+}
+
 /** A label measurer backed by a canvas context. */
 export function canvasMeasure(ctx: CanvasRenderingContext2D, theme: Theme): MeasureText {
   return (text) => ({
@@ -62,16 +78,23 @@ export function canvasMeasure(ctx: CanvasRenderingContext2D, theme: Theme): Meas
  * on-screen cache and, later, PNG export. The context must already map 1 unit = 1 square.
  */
 export function renderStatic(ctx: CanvasRenderingContext2D, map: DungeonMap, theme: Theme, toggles: DisplayToggles): void {
-  drawPaper(ctx, map, theme, toggles.grid);
-  if (toggles.hatching && theme.rockStyle === 'hatch') drawHatching(ctx, hatchStrokes(map, theme.hatchReach), theme);
-  drawFloors(ctx, floorTiles(map, theme.floor.length), theme);
-  if (toggles.decals) drawDecals(ctx, floorDecals(map), theme);
-  if (toggles.shadows) drawShadows(ctx, wallShadows(map), theme);
-  drawWalls(ctx, wallSegments(map), theme);
-  drawDoors(ctx, doorGlyphs(map), theme);
-  drawExitStubs(ctx, exitStubs(map), theme, fadedExits(map));
-  drawFeatures(ctx, map.features, theme);
-  drawLabels(ctx, placeLabels(map, canvasMeasure(ctx, theme)), theme);
+  const layers: (() => void)[] = [
+    () => { drawPaper(ctx, map, theme, toggles.grid); },
+    () => { if (toggles.hatching && theme.rockStyle === 'hatch') drawHatching(ctx, hatchStrokes(map, theme.hatchReach), theme); },
+    () => { drawFloors(ctx, floorTiles(map, theme.floor.length), theme); },
+    () => { if (toggles.decals) drawDecals(ctx, floorDecals(map), theme); },
+    () => { if (toggles.shadows) drawShadows(ctx, wallShadows(map), theme); },
+    () => { drawWalls(ctx, wallSegments(map), theme); },
+    () => { drawDoors(ctx, doorGlyphs(map), theme); },
+    () => { drawExitStubs(ctx, exitStubs(map), theme, fadedExits(map)); },
+    () => { drawFeatures(ctx, map.features, theme); },
+    () => { drawLabels(ctx, placeLabels(map, canvasMeasure(ctx, theme)), theme); },
+  ];
+  for (const layer of layers) {
+    ctx.save();
+    layer();
+    ctx.restore();
+  }
 }
 
 /** Open exits not on the walls of the room the token stands in are drawn faded. */
@@ -103,6 +126,8 @@ export class MapRenderer {
   private cacheDirty = true;
   private walk: Walk | null = null;
   private frame = 0;
+  private needsDraw = true;
+  private lastDraw = -Infinity;
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
@@ -119,22 +144,32 @@ export class MapRenderer {
 
   setMap(map: DungeonMap): void {
     if (map === this.map) return;
+    this.cancelWalk();
     this.map = map;
     this.cacheDirty = true;
+    this.invalidate();
+  }
+
+  /** Request a redraw on the next animation frame. */
+  invalidate(): void {
+    this.needsDraw = true;
   }
 
   setTheme(theme: Theme): void {
     this.theme = theme;
     this.cacheDirty = true;
+    this.invalidate();
   }
 
   setToggles(toggles: DisplayToggles): void {
     this.toggles = { ...toggles };
     this.cacheDirty = true;
+    this.invalidate();
   }
 
   setCamera(cam: Camera): void {
     this.cam = cam;
+    this.invalidate();
   }
 
   /** Size the canvas backing store to its CSS size × devicePixelRatio. */
@@ -142,16 +177,26 @@ export class MapRenderer {
     this.dpr = dpr;
     this.canvas.width = Math.round(cssW * dpr);
     this.canvas.height = Math.round(cssH * dpr);
+    this.invalidate();
   }
 
   fit(): void {
     if (!this.map) return;
     this.cam = fitCamera(worldBounds(this.map), this.canvas.width / this.dpr, this.canvas.height / this.dpr);
+    this.invalidate();
   }
 
   /** Animate the token along `path` (starting at the token), then call onDone to commit the move. */
   walkToken(path: Cell[], onDone: () => void): void {
+    this.cancelWalk();
     this.walk = { path, start: performance.now(), onDone };
+    this.invalidate();
+  }
+
+  /** Drop the active walk without calling its onDone. */
+  cancelWalk(): void {
+    this.walk = null;
+    this.invalidate();
   }
 
   get walking(): boolean {
@@ -160,8 +205,16 @@ export class MapRenderer {
 
   start(): void {
     const loop = (t: number) => {
-      this.draw(t);
       this.frame = requestAnimationFrame(loop);
+      const idleDue = !!this.map?.token && this.toggles.token && t - this.lastDraw >= IDLE_FRAME_MS;
+      if (!this.needsDraw && !this.walk && !idleDue) return;
+      this.needsDraw = false;
+      this.lastDraw = t;
+      try {
+        this.draw(t);
+      } catch (err) {
+        console.error('Map render failed', err);
+      }
     };
     this.frame = requestAnimationFrame(loop);
   }
@@ -173,7 +226,7 @@ export class MapRenderer {
   private draw(time: number): void {
     const { ctx, map } = this;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.fillStyle = '#e9e9e6';
+    ctx.fillStyle = this.theme.backdrop;
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
     if (!map) return;
     this.ensureCache();
@@ -203,7 +256,13 @@ export class MapRenderer {
       if (p.done) {
         const done = this.walk.onDone;
         this.walk = null;
-        done();
+        queueMicrotask(() => {
+          try {
+            done();
+          } catch (err) {
+            console.error('Walk completion failed', err);
+          }
+        });
       }
     }
     if (this.toggles.footprints) drawFootprints(this.ctx, footprints(map, trail, at), this.theme);
@@ -215,10 +274,9 @@ export class MapRenderer {
     const map = this.map;
     if (!map) return;
     const wanted = Math.min(96, Math.pow(Math.SQRT2, Math.ceil(Math.log(this.cam.scale * this.dpr) / Math.log(Math.SQRT2))));
-    if (!this.cacheDirty && this.cache && wanted === this.cacheScale) return;
     const b = worldBounds(map);
-    const maxPx = 8192;
-    const scale = Math.min(wanted, maxPx / (b.w + 2), maxPx / (b.h + 2));
+    const scale = cacheScaleFor(wanted, b.w, b.h);
+    if (!this.cacheDirty && this.cache && scale === this.cacheScale) return;
     const cache = this.cache ?? document.createElement('canvas');
     cache.width = Math.ceil((b.w + 2) * scale);
     cache.height = Math.ceil((b.h + 2) * scale);
@@ -227,7 +285,7 @@ export class MapRenderer {
     cctx.setTransform(scale, 0, 0, scale, -(b.x - 1) * scale, -(b.y - 1) * scale);
     renderStatic(cctx, map, this.theme, this.toggles);
     this.cache = cache;
-    this.cacheScale = wanted;
+    this.cacheScale = scale;
     this.cacheDirty = false;
   }
 }

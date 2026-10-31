@@ -91,6 +91,7 @@ const midline = (ctx: CanvasRenderingContext2D) => {
 export const classicTheme: Theme = {
   id: 'classic',
   name: 'Classic',
+  backdrop: '#e9e9e6',
   paper: '#ffffff',
   gridDot: 'rgba(60, 60, 60, 0.35)',
   boundary: 'rgba(60, 60, 60, 0.45)',
