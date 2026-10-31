@@ -31,7 +31,7 @@ Rulebook content (tables, monsters, rules text) the user extracts from their pur
 ### In v1
 - Dungeon map with a configurable grid (default 25×25), Outer Boundary, and an entrance outside the boundary.
 - **Guided play flow** (primary): entrance → pick open exit → enter room size → position → exits → label.
-- **Edit tools** (fallback): select, move, resize, delete rooms; add, remove and retype doors; stairs; locks; secret doors; notes; token.
+- **Edit tools** (fallback): select, move, resize rooms; delete the most recent room (rooms are deleted newest-first only); add, remove and retype doors; stairs; locks; secret doors; notes; token.
 - Door types: archway, wooden, metal, reinforced, curtain, portcullis, stone slab.
 - Room labels: number, room type, unique/boss flag, narrative note.
 - **Classic** theme: dot grid, hatched rock, ink walls with inner shadow, textured floors, footprints.
@@ -120,6 +120,7 @@ interface Room {
   x: number; y: number; w: number; h: number;     // rectangles only
   label: { type: string; unique: boolean; narrative: string };
   entryDoorId: string | null;     // door the room was entered through (labels anchor here)
+  parentId: string | null;        // passages: the room whose step created them; otherwise null
 }
 
 interface Door {                   // lives on an edge; stored canonically
@@ -139,7 +140,8 @@ interface Token { x: number; y: number; trail: { x: number; y: number }[] }  // 
 ### Derived (never stored)
 - **Walls:** an edge is a wall if it separates floor from rock, or two different rooms, and has no door on it.
 - **Open exit:** a door with a room on exactly one side.
-- **Room numbers:** a new room takes the **lowest free number**. Deleting a room deletes its number and its narrative, freeing that number for re-use; other rooms are never renumbered.
+- **Room numbers:** rooms are numbered 1…N in the order added. Because only the most recent room can be deleted, numbers never have gaps: deleting Room N frees number N (and its narrative) for the next room. Other rooms are never renumbered.
+- **Deleting rooms (newest first only):** only the highest-numbered room can be deleted (or the entrance, once no rooms remain). Deleting it removes everything its play-flow step added — the room, its passages (`parentId`), and doors on their walls — except its entry door, which stays as an open exit on the previous room. If the token stands in the removed area it steps back through the entry door. Free edits (stairs, notes, extra doors, locks) are not ordered and can be removed any time.
 
 ### Entrance
 The entrance is a 1×1 room of kind `entrance` placed **one square outside** the Outer Boundary on `system.entranceEdge`. For Dungeon that is y = height, at any x from 0 to width−1. Its inward-facing edge carries an open exit. This is the only sanctioned crossing of the boundary.
@@ -175,7 +177,7 @@ The entrance is a 1×1 room of kind `entrance` placed **one square outside** the
 The whole flow (steps 3–6) commits as **one undoable compound command**. Esc or Cancel aborts at any step with no change.
 
 ### Edit tools
-Select (move by dragging, resize handles, delete), Door (tap a wall edge to add a door or change its type), Stairs, Lock, Secret, Note, Token. Edits are validated with the same rules: moves and resizes cannot create overlaps or cross the boundary.
+Select (move by dragging, resize handles; delete only for the most recent room, see §6), Door (tap a wall edge to add a door or change its type), Stairs, Lock, Secret, Note, Token. Edits are validated with the same rules: moves and resizes cannot create overlaps or cross the boundary.
 
 ### Token
 Tapping an explored floor square moves the token along an A* path through doors. Secret doors are passable only if the player has revealed them; in v1 a secret door is impassable until its `secret` flag is cleared. The token animates square by square and appends each square to the footprint trail.

@@ -10,9 +10,16 @@ decision is needed before that plan's tasks get written.
   `createRoomFromExit` from the exit used. No v1 files exist yet, so stay on schema
   version 1 and don't write a migration. Labels prefer a spot next to the entry door, but
   **relocate to wherever the whole text box fits** when it's too long for that spot.
-- **Room numbering: lowest free number.** Deleting a room deletes its number and
-  narrative, and that number becomes free. `nextRoomNumber` returns the lowest unused
-  number (rooms 1, 3 → 2), not max + 1.
+- **Rooms are deleted newest-first only (user rule).** Only the highest-numbered room
+  (or the entrance once no rooms remain) can be deleted. Replace `deleteRoom` with
+  `deleteLatestRoom` semantics:
+  - remove the room, its passages (new `Room.parentId`) and every door on their walls
+    except the room's entry door, which becomes an open exit again
+  - remove features inside, and step the token back through the entry door if it stood
+    there
+- **Room numbering.** Under newest-first deletion, numbers stay 1…N with no gaps, so
+  the existing max + 1 rule is "lowest free number". No code change is needed beyond a
+  test.
 
 ## Plan 2: Renderer
 
