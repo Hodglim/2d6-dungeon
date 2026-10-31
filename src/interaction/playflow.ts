@@ -197,36 +197,56 @@ export class PlayFlow {
 
   // ---- step 2: position ----
 
+  /** Offsets along the wall where the w×h room can be placed as is. */
+  private validOffsets(w: number, h: number): number[] {
+    const door = this.door!;
+    const n = slideRange(this.base, door, w, h);
+    const out: number[] = [];
+    for (let o = 0; o < n; o++) if (evaluatePlacement(this.base, door, w, h, o).ok) out.push(o);
+    return out;
+  }
+
+  /** `offset` null starts in the middle, moved to the nearest valid offset when the middle is blocked. */
   private toPosition(source: Source, size: RoomSize, w: number, h: number, offset: number | null): void {
     const door = this.door!;
     const range = slideRange(this.base, door, w, h);
-    const o = Math.max(0, Math.min(offset ?? Math.floor((range - 1) / 2), range - 1));
+    const middle = Math.floor((range - 1) / 2);
+    let o = Math.max(0, Math.min(offset ?? middle, range - 1));
+    if (offset === null) {
+      const valid = this.validOffsets(w, h);
+      if (valid.length > 0 && !valid.includes(o)) {
+        o = valid.reduce((best, v) => (Math.abs(v - middle) < Math.abs(best - middle) ? v : best));
+      }
+    }
     const placement = evaluatePlacement(this.base, door, w, h, o);
     const canShrink = !placement.ok && shrinkToFit(this.base, door, w, h, o) !== null;
     this.set({ kind: 'position', source, size, w, h, offset: o, placement, canShrink });
   }
 
-  /** Swaps width and height. Corridors keep their rolled orientation, so it does nothing for them. */
-  swap(): void {
-    const s = this.current;
-    if (s.kind !== 'position' || s.size.corridor) return;
-    this.toPosition(s.source, s.size, s.h, s.w, null);
-  }
-
+  /**
+   * The arrow buttons: a request above (below) the current offset steps to the next valid
+   * offset in that direction, or stays put when there is none. With no valid offset at all
+   * it clamps, so a red ghost can still be moved.
+   */
   slide(offset: number): void {
     const s = this.current;
-    if (s.kind !== 'position' || !Number.isInteger(offset)) return;
-    this.toPosition(s.source, s.size, s.w, s.h, offset);
+    if (s.kind !== 'position' || !Number.isInteger(offset) || offset === s.offset) return;
+    const valid = this.validOffsets(s.w, s.h);
+    if (valid.length === 0) return this.toPosition(s.source, s.size, s.w, s.h, offset);
+    const next = offset > s.offset ? valid.find((v) => v > s.offset) : [...valid].reverse().find((v) => v < s.offset);
+    if (next !== undefined) this.toPosition(s.source, s.size, s.w, s.h, next);
   }
 
-  /** Slide so the ghost covers the tapped square, or comes as close to it as the wall allows. */
+  /** Slide to the valid offset whose ghost is nearest the cell (nearest of any kind when none is valid). */
   slideTo(cell: Cell): void {
     const s = this.current;
     if (s.kind !== 'position') return;
     const n = slideRange(this.base, this.door!, s.w, s.h);
+    const valid = this.validOffsets(s.w, s.h);
+    const candidates = valid.length > 0 ? valid : Array.from({ length: n }, (_, o) => o);
     let best = s.offset;
     let bestDist = Infinity;
-    for (let o = 0; o < n; o++) {
+    for (const o of candidates) {
       const r = ghostRect(this.base, this.door!, s.w, s.h, o);
       if (!r) continue;
       const dist = Math.abs(cell.x + 0.5 - (r.x + r.w / 2)) + Math.abs(cell.y + 0.5 - (r.y + r.h / 2));

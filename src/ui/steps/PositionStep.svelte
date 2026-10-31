@@ -29,16 +29,13 @@
 {#if resized && rect}
   <p>Final size <strong>{rect.w} × {rect.h}</strong>{step.placement.clipped ? ' (clipped at the edge)' : ''}</p>
 {/if}
-<p>Tap the map to slide the room along the wall.</p>
+<p>Drag on the map, or tap it, to slide the room along the wall.</p>
 {#if !step.placement.ok}
   <p class="error" role="alert">{step.placement.reason ?? 'It does not fit here'}</p>
 {/if}
 <div class="row">
   <button aria-label={horizontal ? 'Slide left' : 'Slide up'} onclick={() => flow.slide(step.offset + 1)}>{horizontal ? '◀' : '▲'}</button>
   <button aria-label={horizontal ? 'Slide right' : 'Slide down'} onclick={() => flow.slide(step.offset - 1)}>{horizontal ? '▶' : '▼'}</button>
-  {#if !step.size.corridor}
-    <button onclick={() => flow.swap()}>Swap W/H</button>
-  {/if}
 </div>
 <div class="row">
   {#if step.canShrink}

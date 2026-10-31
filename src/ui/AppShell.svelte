@@ -105,6 +105,12 @@
     history.reset(demoMap());
   }
 
+  /** Pointer over the map (or dragging it, at the position step): the ghost follows. Nothing else reacts. */
+  function onHover(world: Point) {
+    if (modalOpen || step.kind !== 'position') return;
+    flow.slideTo({ x: Math.floor(world.x), y: Math.floor(world.y) });
+  }
+
   function onTap(p: Pick, world: Point) {
     const renderer = mapView?.getRenderer();
     // A tap during the token's walk only stops the animation; the model is already final.
@@ -251,7 +257,11 @@
       />
     {/if}
   </div>
-  <MapView bind:this={mapView} map={shownMap} {toggles} ontap={onTap} />
+  <MapView bind:this={mapView} map={shownMap} {toggles} ontap={onTap}
+    onhover={onHover}
+    dragsGhost={step.kind === 'position'}
+    ghost={step.kind === 'position' ? step.placement.rect : null}
+  />
   <StepPanel
     {tool}
     map={$view.map}

@@ -11,9 +11,15 @@
     toggles: DisplayToggles;
     /** A tap: what's under it, plus the exact world point (squares) for nearest-edge snapping. */
     ontap?: (pick: Pick, world: Point) => void;
+    /** The pointer is over the map (mouse, no button) or dragging the ghost (see `dragsGhost`). */
+    onhover?: (world: Point) => void;
+    /** When true, a one-pointer drag reports `onhover` instead of panning the camera. */
+    dragsGhost?: boolean;
+    /** The draft room's rect, exposed as `data-ghost` for scripts/visual.mjs. */
+    ghost?: { x: number; y: number; w: number; h: number } | null;
   }
 
-  let { map, toggles, ontap }: Props = $props();
+  let { map, toggles, ontap, onhover, dragsGhost = false, ghost = null }: Props = $props();
 
   /** A primary pointer that moves less than this (CSS px) before lifting is a tap. */
   const TAP_SLOP = 8;
@@ -138,14 +144,21 @@
 
   function onPointerMove(e: PointerEvent) {
     const prev = pointers.get(e.pointerId);
-    if (!prev || !renderer || !gesture) return;
+    if (!prev) {
+      if (e.pointerType === 'mouse' && e.buttons === 0 && renderer && onhover) {
+        onhover(renderer.screenToWorldPoint(e.clientX, e.clientY));
+      }
+      return;
+    }
+    if (!renderer || !gesture) return;
     const p = local(e);
     if (pointers.size === 1) {
       if (!gesture.moved && Math.hypot(p.x - gesture.start.x, p.y - gesture.start.y) >= TAP_SLOP) {
         gesture.moved = true;
         gesture.tap = false;
       }
-      if (gesture.moved) setCamera(panBy(renderer.camera, p.x - prev.x, p.y - prev.y));
+      if (gesture.moved && dragsGhost && onhover) onhover(renderer.screenToWorldPoint(e.clientX, e.clientY));
+      else if (gesture.moved) setCamera(panBy(renderer.camera, p.x - prev.x, p.y - prev.y));
       pointers.set(e.pointerId, p);
       return;
     }
@@ -177,6 +190,7 @@
     onpointermove={onPointerMove}
     onpointerup={onPointerUp}
     onpointercancel={onPointerUp}
+    data-ghost={ghost ? `${ghost.x},${ghost.y},${ghost.w},${ghost.h}` : undefined}
     aria-label="Map"
   ></canvas>
 </div>

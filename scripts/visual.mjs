@@ -118,6 +118,68 @@ if (!(await page.isVisible('aside.panel .double'))) problems.push('doubles did n
 await typeDice('2', '1');
 await panelButton('Use these');
 await stepIs('position', 'entering room 2 dice');
+
+// 3b. Ghost follows the pointer: mouse hover and a one-finger drag slide it, never pan.
+const canvasAttr = (n) => page.getAttribute('canvas', n);
+const ghostOf = async () => (await canvasAttr('data-ghost')) ?? '';
+const hoverAt = async (wx, wy) =>
+  page.$eval(
+    'canvas',
+    (c, [x, y]) => {
+      const [cx, cy, s] = (c.dataset.camera ?? '').split(',').map(Number);
+      const r = c.getBoundingClientRect();
+      return { x: r.left + (x - cx) * s, y: r.top + (y - cy) * s };
+    },
+    [wx, wy],
+  );
+const camBefore = await canvasAttr('data-camera');
+const ghostStart = await ghostOf();
+console.log(`Ghost at start: ${ghostStart}`);
+// Room 2 is 6x5 north of the exit at (12,20); the exit square is x=12. Move well to the left.
+const [gx, gy, gw, gh] = ghostStart.split(',').map(Number);
+const left = await hoverAt(gx + 0.5, gy + gh / 2);
+await page.mouse.move(left.x + 60, left.y);
+await page.mouse.move(left.x, left.y, { steps: 6 });
+await page.waitForTimeout(250);
+const ghostMouse = await ghostOf();
+console.log(`Ghost after mouse hover: ${ghostMouse}`);
+if (ghostMouse === ghostStart) problems.push('mouse hover did not move the ghost');
+if ((await canvasAttr('data-camera')) !== camBefore) problems.push('mouse hover panned the camera');
+await stepIs('position', 'hovering the ghost');
+// One-finger touch drag back to the right end of the wall, via CDP touch events.
+const cdp = await page.context().newCDPSession(page).catch(() => null);
+const right = await hoverAt(gx + gw - 0.5, gy + gh / 2);
+const touchDrag = async (from, to) => {
+  if (cdp) {
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [from] });
+    for (let i = 1; i <= 8; i++) {
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: from.x + ((to.x - from.x) * i) / 8, y: from.y + ((to.y - from.y) * i) / 8 }] });
+    }
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  } else {
+    // Firefox has no CDP: dispatch pointer events with pointerType touch on the canvas.
+    await page.$eval(
+      'canvas',
+      (c, [a, b]) => {
+        const fire = (type, p) =>
+          c.dispatchEvent(new PointerEvent(type, { pointerId: 7, pointerType: 'touch', isPrimary: true, bubbles: true, clientX: p.x, clientY: p.y, buttons: type === 'pointerup' ? 0 : 1, button: 0 }));
+        c.setPointerCapture = () => {};
+        fire('pointerdown', a);
+        for (let i = 1; i <= 8; i++) fire('pointermove', { x: a.x + ((b.x - a.x) * i) / 8, y: a.y + ((b.y - a.y) * i) / 8 });
+        fire('pointerup', b);
+      },
+      [from, to],
+    );
+  }
+  await page.waitForTimeout(250);
+};
+await touchDrag(left, right);
+const ghostTouch = await ghostOf();
+console.log(`Ghost after touch drag: ${ghostTouch}`);
+if (ghostTouch === ghostMouse) problems.push('one-finger drag did not move the ghost');
+if ((await canvasAttr('data-camera')) !== camBefore) problems.push('one-finger drag panned the camera');
+await stepIs('position', 'dragging the ghost');
+await shot('13-ghost-follows.png');
 await panelButton('Place');
 await stepIs('exitCount', 'placing room 2');
 await typeDice('5'); // two exits

@@ -119,18 +119,9 @@ describe('PlayFlow room path', () => {
     expect(history.undoLabel).toBe('Add corridor');
   });
 
-  it('swap is a no-op for a corridor roll (corridors keep their orientation), but swaps rooms', () => {
-    const { history, flow } = withEntrance();
-    flow.startFromExit(northExit(history.map).id);
-    flow.enterSize('1', '4');
-    const before = expectKind(flow, 'position');
-    flow.swap();
-    expect(flow.step).toBe(before);
-    flow.cancel();
-    flow.startFromExit(northExit(history.map).id);
-    flow.enterSize('3', '4');
-    flow.swap();
-    expect(expectKind(flow, 'position')).toMatchObject({ w: 4, h: 3 });
+  it('rooms are placed exactly as rolled: PlayFlow has no swap', () => {
+    const { flow } = setup();
+    expect('swap' in flow).toBe(false);
   });
 
   it("count '1' gives 0 exits and goes straight to the label", () => {
@@ -488,5 +479,76 @@ describe('PlayFlow slideTo (tap to slide the ghost)', () => {
     const before = flow.step;
     flow.slideTo({ x: 1, y: 1 });
     expect(flow.step).toBe(before);
+  });
+});
+
+describe('PlayFlow snapping to valid positions', () => {
+  // Room A at x2..4 y2..4, open exit at (3,5) facing south. A 4×2 room has offsets 0..3 with
+  // ghost x = 3 - offset. A blocker at x5 blocks offsets 0 and 1, leaving 2 and 3 valid.
+  const roomA: Room = { ...room('A', 2, 2, 3, 3, 'room', 1), entryDoorId: null };
+  const exitA = door('dA', 3, 5, 'N');
+  const blockedStart = () => {
+    const map = withContent(emptyMap(10, 10), [roomA, room('B', 5, 5, 1, 1, 'room', 2)], [exitA]);
+    const s = setup(map);
+    s.flow.startFromExit('dA');
+    s.flow.enterSize('4', '2');
+    return s.flow;
+  };
+  const allBlocked = () => {
+    const map = withContent(emptyMap(10, 10), [roomA, room('B', 5, 5, 1, 1, 'room', 2), room('C', 1, 5, 1, 1, 'room', 3)], [exitA]);
+    const s = setup(map);
+    s.flow.startFromExit('dA');
+    s.flow.enterSize('4', '2');
+    return s.flow;
+  };
+
+  it('starts at the valid offset nearest the middle when the middle is blocked', () => {
+    expect(expectKind(blockedStart(), 'position')).toMatchObject({ offset: 2, placement: { ok: true } });
+  });
+
+  it('slideTo over a blocked offset lands on the nearest valid one', () => {
+    const flow = blockedStart();
+    flow.slideTo({ x: 6, y: 5 }); // nearest centre is offset 0, which is blocked
+    expect(expectKind(flow, 'position')).toMatchObject({ offset: 2, placement: { ok: true } });
+  });
+
+  it('slideTo far past the end of the wall stays at the last valid offset', () => {
+    const flow = blockedStart();
+    flow.slideTo({ x: -9, y: 5 });
+    expect(expectKind(flow, 'position').offset).toBe(3);
+    flow.slideTo({ x: 30, y: 5 });
+    expect(expectKind(flow, 'position')).toMatchObject({ offset: 2, placement: { ok: true } });
+  });
+
+  it('an arrow step moves one valid position, however far the requested offset is', () => {
+    const flow = blockedStart();
+    flow.slide(9);
+    expect(expectKind(flow, 'position').offset).toBe(3);
+    flow.slide(-9);
+    expect(expectKind(flow, 'position').offset).toBe(2);
+  });
+
+  it('an arrow step skips blocked offsets and does not move past the last valid one', () => {
+    const flow = blockedStart();
+    flow.slide(1); // offsets 1 and 0 are blocked
+    expect(expectKind(flow, 'position').offset).toBe(2);
+    flow.slide(3);
+    flow.slide(4);
+    expect(expectKind(flow, 'position').offset).toBe(3);
+  });
+
+  it('with every offset blocked the ghost still moves (red) and can shrink', () => {
+    const flow = allBlocked();
+    expect(expectKind(flow, 'position')).toMatchObject({ offset: 1, placement: { ok: false }, canShrink: true });
+    flow.slideTo({ x: 30, y: 5 });
+    expect(expectKind(flow, 'position')).toMatchObject({ offset: 0, placement: { ok: false }, canShrink: true });
+    flow.slide(1);
+    expect(expectKind(flow, 'position').offset).toBe(1);
+  });
+
+  it('shrink restarts at a valid offset', () => {
+    const flow = allBlocked();
+    flow.shrink();
+    expect(expectKind(flow, 'position').placement.ok).toBe(true);
   });
 });
