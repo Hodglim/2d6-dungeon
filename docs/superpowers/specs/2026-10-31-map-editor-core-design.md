@@ -71,19 +71,24 @@ Dependency rules:
 
 ### GameSystem interface (v1 surface)
 
+Rules-facing only, so `core/` stays canvas-free. Themes (with their draw functions) live in a render-side registry keyed by system id (Plan 2).
+
 ```ts
 interface GameSystem {
   id: string;                       // 'dungeon'
   name: string;
   doorTypes: { id: string; name: string }[];
-  featureTypes: string[];           // 'stairs' | 'note' in v1
-  themes: Theme[];
+  defaultDoorType: string;
   defaultThemeId: string;
   entranceEdge: 'N' | 'S' | 'E' | 'W';   // Dungeon: 'S' (bottom)
   defaultMapSize: { width: number; height: number };
+  roomDieRange: { min: number; max: number };  // Dungeon: 1–6 per die
+  maxExits: number;                 // Dungeon: 3
   // Parts 2–3 will add: tables, dice definitions, generators, heroSheet schema
 }
 ```
+
+Feature kinds (`stairs`, `note`) are fixed by the core `Feature` type in v1.
 
 ## 6. Data model
 
