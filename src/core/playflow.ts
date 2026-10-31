@@ -6,7 +6,7 @@ import { entranceInwardDirection, evaluatePlacement } from './placement';
 import { findPath } from './pathfinding';
 import { moveToken } from './token';
 import type { GameSystem } from './system';
-import type { Cell, Direction, Door, DungeonMap, Edge, Rect, Room, RoomLabel } from './types';
+import type { Cell, Direction, Door, DungeonMap, Edge, Rect, Room, RoomLabel, SizeClass } from './types';
 
 const EMPTY_LABEL: RoomLabel = { type: '', unique: false, narrative: '' };
 
@@ -132,7 +132,10 @@ export function createRoomAndWalk(
   return { command: compound(roomCmd.label, [roomCmd, walk.command]), path: walk.path };
 }
 
-/** Entrance square + entrance room (+ its exits and the token's walk) as ONE command labelled "Add entrance". */
+/**
+ * Entrance square + entrance room (+ its exits and the token's walk) as ONE command labelled "Add entrance".
+ * `opts` sets the room's size class (default 'normal') and label (default type "Entrance Room").
+ */
 export function createEntranceAndRoom(
   map: DungeonMap,
   system: GameSystem,
@@ -140,14 +143,15 @@ export function createEntranceAndRoom(
   rect: Rect,
   exits: Edge[],
   newId: IdFn,
+  opts: { sizeClass?: SizeClass; label?: RoomLabel } = {},
 ): { command: Command; path: Cell[] | null } {
   const entranceCmd = placeEntrance(map, system, cell, newId);
   const m1 = entranceCmd.apply(map);
   const inward = cellEdge(cell, entranceInwardDirection(system.entranceEdge));
   const entryDoor = doorAt(m1, inward);
   if (!entryDoor) throw new Error('Entrance door missing');
-  const room = newRoom(m1, rect, entryDoor, newId);
-  room.label = { ...EMPTY_LABEL, type: 'Entrance Room' };
+  const room = newRoom(m1, rect, entryDoor, newId, 'room', opts.sizeClass ?? 'normal');
+  room.label = opts.label ? { ...opts.label } : { ...EMPTY_LABEL, type: 'Entrance Room' };
   const roomCmd = createRoomFromExit(m1, { room, exits, exitType: 'archway' }, newId);
   const walk = walkToCentre(roomCmd.apply(m1), room);
   const cmds = [entranceCmd, roomCmd, ...(walk.command ? [walk.command] : [])];
