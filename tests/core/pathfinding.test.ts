@@ -78,3 +78,59 @@ describe('moveToken', () => {
     expect(moveToken(m, [{ x: 1, y: 1 }])).toBeNull();
   });
 });
+
+describe('moveToken edge cases', () => {
+  it('rejects a stale path that does not start at the token', () => {
+    const m = { ...twoRooms(), token: { x: 2, y: 2, trail: [] } };
+    expect(
+      moveToken(m, [
+        { x: 1, y: 1 },
+        { x: 2, y: 1 },
+      ]),
+    ).toBeNull();
+  });
+  it('returns null when there is no token', () => {
+    expect(
+      moveToken(twoRooms(), [
+        { x: 1, y: 1 },
+        { x: 2, y: 1 },
+      ]),
+    ).toBeNull();
+  });
+  it('keeps the most recent squares when the trail is capped', () => {
+    const old = Array.from({ length: TRAIL_CAP }, (_, i) => ({ x: 1, y: i }));
+    const m = { ...twoRooms(), token: { x: 1, y: 1, trail: old } };
+    const trail = moveToken(m, [
+      { x: 1, y: 1 },
+      { x: 2, y: 1 },
+    ])!.apply(m).token!.trail;
+    expect(trail[trail.length - 1]).toEqual({ x: 1, y: 1 });
+    expect(trail[0]).toEqual({ x: 1, y: 1 }); // old[0] (y:0) dropped; old[1] is now first
+  });
+});
+
+describe('findPath through passages and the entrance', () => {
+  it('walks from the entrance through a passage into a room', () => {
+    // 10x10 map: entrance at (4,10), room at (3,7) 3x3, passage at (4,6), room above at (4,4) 1x2.
+    const m = withContent(
+      emptyMap(10, 10),
+      [
+        room('e', 4, 10, 1, 1, 'entrance'),
+        room('a', 3, 7, 3, 3, 'room', 1),
+        room('p', 4, 6, 1, 1, 'passage'),
+        room('b', 4, 4, 1, 2, 'room', 2),
+      ],
+      [door('d1', 4, 10, 'N'), door('d2', 4, 7, 'N'), door('d3', 4, 6, 'N')],
+    );
+    const path = findPath(m, { x: 4, y: 10 }, { x: 4, y: 4 });
+    expect(path).toEqual([
+      { x: 4, y: 10 },
+      { x: 4, y: 9 },
+      { x: 4, y: 8 },
+      { x: 4, y: 7 },
+      { x: 4, y: 6 },
+      { x: 4, y: 5 },
+      { x: 4, y: 4 },
+    ]);
+  });
+});
