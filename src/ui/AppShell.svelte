@@ -1,25 +1,27 @@
 <script lang="ts">
   import { demoMap } from '../app/demo';
   import { createMap } from '../core/campaign';
-  import { rectContains, sameEdge } from '../core/geometry';
+  import { addFeature, type Command } from '../core/commands';
+  import { rectContains } from '../core/geometry';
   import { type ExecResult, History } from '../core/history';
   import { randomId } from '../core/ids';
   import { findPath } from '../core/pathfinding';
-  import { coverage, openExits } from '../core/query';
+  import { coverage } from '../core/query';
   import { moveToken } from '../core/token';
-  import type { Cell, DungeonMap, Edge } from '../core/types';
+  import type { Cell, DungeonMap } from '../core/types';
   import { PlayFlow, type Step } from '../interaction/playflow';
   import type { Point } from '../render/camera';
   import type { Pick } from '../render/hit';
   import { DEFAULT_TOGGLES, type DisplayToggles } from '../render/renderer';
   import { dungeonSystem } from '../systems/dungeon';
   import { classicTheme } from '../systems/dungeon/classic';
-  import { drawOverlay, overlayFor } from './overlay';
+  import { drawOverlay, overlayFor, selectionOverlay } from './overlay';
   import { historyStore, type Tool } from './historyStore';
   import MapView from './MapView.svelte';
   import Menu from './Menu.svelte';
   import NewMapDialog, { type NewMapValues } from './NewMapDialog.svelte';
   import StepPanel from './StepPanel.svelte';
+  import { resolveSelection, routeEditorTap, routePlayTap, type Selection } from './tapRouting';
   import Toolbar from './Toolbar.svelte';
 
   const history = new History(createMap(dungeonSystem, { width: 25, height: 25 }));
@@ -39,6 +41,10 @@
   let notice = $state<string | null>(null);
   /** The next exit tap starts a gap corridor instead of a room. */
   let gapMode = $state(false);
+  /** What the Door, Stairs, Note or Select tool has picked for the panel to edit. */
+  let selection = $state.raw<Selection | null>(null);
+  /** The selection against the committed map: gone after an Undo that removed its target. */
+  const liveSelection = $derived(resolveSelection($view.map, selection));
 
   flow.subscribe((s) => {
     step = s;
@@ -67,7 +73,7 @@
     const renderer = mapView?.getRenderer();
     if (!renderer) return;
     void $view.map; // re-run on every committed change (idle exit highlights)
-    const shapes = tool === 'play' ? overlayFor(step, flow.draftMap) : [];
+    const shapes = tool === 'play' ? overlayFor(step, flow.draftMap) : selectionOverlay($view.map, liveSelection);
     renderer.setOverlay(shapes.length ? (ctx) => drawOverlay(ctx, shapes, classicTheme) : null);
   });
 
@@ -77,6 +83,7 @@
       gapMode = false;
     }
     notice = null;
+    selection = null;
     tool = t;
   }
 
@@ -98,24 +105,6 @@
     history.reset(demoMap());
   }
 
-  /** Squares: a tap snaps to the nearest candidate edge whose midpoint is within this distance. */
-  const EDGE_SNAP = 0.7;
-
-  function nearestEdge(edges: Edge[], w: Point): Edge | null {
-    let best: Edge | null = null;
-    let bestDist = EDGE_SNAP;
-    for (const e of edges) {
-      const mx = e.side === 'N' ? e.x + 0.5 : e.x;
-      const my = e.side === 'N' ? e.y : e.y + 0.5;
-      const d = Math.hypot(w.x - mx, w.y - my);
-      if (d < bestDist) {
-        bestDist = d;
-        best = e;
-      }
-    }
-    return best;
-  }
-
   function onTap(p: Pick, world: Point) {
     const renderer = mapView?.getRenderer();
     // A tap during the token's walk only stops the animation; the model is already final.
@@ -123,40 +112,59 @@
       renderer.cancelWalk();
       return;
     }
-    if (modalOpen || tool !== 'play') return; // other tools are wired in later tasks
+    if (modalOpen) return;
     notice = null;
-    const s = flow.step;
-    switch (s.kind) {
-      case 'idle':
-        return idleTap(p, world);
-      case 'position':
-        return flow.slideTo(p.cell);
-      case 'exits': {
-        const e = nearestEdge([...flow.allowedExits, ...s.chosen], world);
-        if (e) flow.toggleExit(e);
+    if (tool !== 'play') return editorTap(tool, p, world);
+    const action = routePlayTap(flow.step, history.map, p, world, { gapMode, allowedExits: flow.allowedExits });
+    switch (action.kind) {
+      case 'startEntrance':
+        return flow.startEntrance(action.cell); // the flow explains an invalid square
+      case 'startExit':
+        return flow.startFromExit(action.doorId);
+      case 'startGap':
+        return flow.startGap(action.doorId);
+      case 'walk':
+        return walkTo(action.cell);
+      case 'slide':
+        return flow.slideTo(action.cell);
+      case 'toggleExit':
+        return flow.toggleExit(action.edge);
+      case 'hint':
+        notice = action.text;
         return;
-      }
-      default:
+      case 'ignore':
         return; // taps that don't belong to the step are ignored
     }
   }
 
-  function idleTap(p: Pick, world: Point) {
-    const map = history.map;
-    if (map.rooms.length === 0) {
-      flow.startEntrance(p.cell); // the flow explains an invalid square
-      return;
+  function editorTap(t: Exclude<Tool, 'play'>, p: Pick, world: Point) {
+    const action = routeEditorTap(t, history.map, p, world);
+    switch (action.kind) {
+      case 'select':
+        selection = action.selection;
+        return;
+      case 'addStairs': {
+        const f = { id: randomId(), kind: 'stairs' as const, x: action.cell.x, y: action.cell.y, dir: 'down' as const };
+        selection = exec(addFeature(f)) ? { kind: 'feature', featureId: f.id } : null;
+        return;
+      }
+      case 'hint':
+        selection = null;
+        notice = action.text;
+        return;
     }
-    const exits = openExits(map);
-    const edge = nearestEdge(exits, world);
-    const exit = edge ? exits.find((d) => sameEdge(d, edge)) : undefined;
-    if (exit) {
-      if (gapMode) flow.startGap(exit.id);
-      else flow.startFromExit(exit.id);
-      return;
+  }
+
+  /** Runs an editor tool's command through History; a rejection's reason goes in the panel. */
+  function exec(cmd: Command | null): boolean {
+    notice = null;
+    if (!cmd) {
+      notice = "That change can't be made here";
+      return false;
     }
-    if (p.room) return walkTo(p.cell);
-    notice = gapMode ? 'Tap an open exit (highlighted)' : 'Tap an open exit, or a floor square to walk there';
+    const res = history.execute(cmd);
+    if (!res.ok) notice = res.reason;
+    return res.ok;
   }
 
   function walkTo(cell: Cell) {
@@ -256,6 +264,9 @@
       notice = null;
     }}
     oncommit={commit}
+    selection={liveSelection}
+    onexec={exec}
+    onselect={(sel) => (selection = sel)}
     collapsed={panelCollapsed}
     ontoggle={() => (panelCollapsed = !panelCollapsed)}
   />

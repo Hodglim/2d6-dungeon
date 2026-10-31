@@ -4,8 +4,8 @@ import { openExits } from '../../src/core/query';
 import type { Edge } from '../../src/core/types';
 import { PlayFlow, type Step } from '../../src/interaction/playflow';
 import { mulberry32 } from '../../src/render/rng';
-import { overlayFor, type OverlayShape } from '../../src/ui/overlay';
-import { emptyMap } from '../core/fixtures';
+import { overlayFor, selectionOverlay, type OverlayShape } from '../../src/ui/overlay';
+import { door, emptyMap, room, withContent } from '../core/fixtures';
 
 function setup() {
   const history = new History(emptyMap(10, 10));
@@ -84,5 +84,35 @@ describe('overlayFor', () => {
     const step = flow.step as Extract<Step, { kind: 'gap' }>;
     expect(step.rect).not.toBeNull();
     expect(overlayFor(step, flow.draftMap)).toEqual([{ kind: 'rect', at: step.rect, tone: 'ok' }]);
+  });
+});
+
+describe('selectionOverlay', () => {
+  const base = () => {
+    const r1 = room('r1', 2, 2, 3, 3, 'room', 1);
+    const m = withContent(emptyMap(10, 10), [r1], [door('d1', 3, 2, 'N')]);
+    return { ...m, features: [{ id: 'n1', kind: 'note' as const, x: 3, y: 3, text: 'x' }] };
+  };
+
+  it('is empty with nothing selected', () => {
+    expect(selectionOverlay(base(), null)).toEqual([]);
+  });
+
+  it('highlights a selected door edge, room rect, feature or new-note square', () => {
+    const m = base();
+    expect(selectionOverlay(m, { kind: 'door', doorId: 'd1' })).toEqual([{ kind: 'edge', at: { x: 3, y: 2, side: 'N' }, tone: 'highlight' }]);
+    expect(selectionOverlay(m, { kind: 'room', roomId: 'r1' })).toEqual([{ kind: 'rect', at: { x: 2, y: 2, w: 3, h: 3 }, tone: 'highlight' }]);
+    expect(selectionOverlay(m, { kind: 'feature', featureId: 'n1' })).toEqual([{ kind: 'cell', at: { x: 3, y: 3 }, tone: 'highlight' }]);
+    expect(selectionOverlay(m, { kind: 'newNote', cell: { x: 4, y: 4 } })).toEqual([{ kind: 'cell', at: { x: 4, y: 4 }, tone: 'highlight' }]);
+  });
+
+  it('marks a wall green when the Door tool can add a door there, red when it refuses', () => {
+    const m = base();
+    expect(selectionOverlay(m, { kind: 'wall', edge: { x: 2, y: 3, side: 'W' } })).toEqual([{ kind: 'edge', at: { x: 2, y: 3, side: 'W' }, tone: 'ok' }]);
+    expect(selectionOverlay(m, { kind: 'wall', edge: { x: 3, y: 3, side: 'N' } })).toEqual([{ kind: 'edge', at: { x: 3, y: 3, side: 'N' }, tone: 'bad' }]);
+  });
+
+  it('is empty when the selected thing is gone', () => {
+    expect(selectionOverlay(base(), { kind: 'door', doorId: 'gone' })).toEqual([]);
   });
 });

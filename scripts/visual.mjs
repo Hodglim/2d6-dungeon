@@ -1,7 +1,8 @@
 // Usage: node scripts/visual.mjs <url> <outDir>
 // Drives the app in headless Firefox at the reference tablet viewport (1180×820, dpr 2,
 // touch), saves screenshots and asserts every toolbar and step-panel button is at least
-// 44×44 CSS px. Plays an entrance plus a second room by tapping the map and typing dice.
+// 44×44 CSS px. Plays an entrance plus a second room by tapping the map and typing dice,
+// then uses the Door, Stairs, Note and Select tools on it.
 // Exits non-zero on undersized buttons, a wrong play-flow step, the panel overlapping the
 // map, or any page error.
 import { mkdirSync } from 'node:fs';
@@ -159,6 +160,85 @@ console.log(`Undo button after Ctrl+Z: ${undoLabel}`);
 if (!undoLabel?.includes('Add entrance')) problems.push(`Ctrl+Z did not undo Room 2: "${undoLabel}"`);
 await page.keyboard.press('Control+Shift+z');
 await page.waitForTimeout(300);
+
+// 5b. Editor tools on the two-room map (entrance room x11–13 y21–24; Room 2 y15–19 entered
+// through the door at (12,20); Room 2's north exit at (12,15) leads to an exit square at (12,14)).
+const useTool = (name) => page.click(`header.toolbar button.tool:text-is("${name}")`);
+const undoText = async () => (await page.textContent('header.toolbar button.history'))?.trim() ?? '';
+const expectUndo = async (label, where) => {
+  const got = await undoText();
+  console.log(`Undo button after ${where}: ${got}`);
+  if (!got.includes(label)) problems.push(`after ${where}: expected Undo "${label}", got "${got}"`);
+};
+const removeButtons = () => page.locator('aside.panel button:has-text("Remove")').count();
+
+// Door: lock Room 2's north exit with quality 7 (closed padlock with a 7).
+await useTool('Door');
+await tapWorld(12.5, 15);
+if (!(await page.isVisible('aside.panel [data-editor="door"] >> text=Padlock'))) problems.push('door editor did not open on a door tap');
+await panelButton('Locked');
+await expectUndo('Edit door', 'locking the door');
+await page.fill('aside.panel input[name="quality"]', '7');
+await panelButton('Set');
+await expectUndo('Edit door', 'setting quality 7');
+await checkPanel('door editor');
+// Zoom in on the door so the padlock and its number are legible in the screenshot.
+const doorAt = await page.$eval('canvas', (c) => {
+  const [cx, cy, s] = (c.dataset.camera ?? '').split(',').map(Number);
+  const r = c.getBoundingClientRect();
+  return { x: r.left + (12.5 - cx) * s, y: r.top + (15 - cy) * s };
+});
+await page.mouse.move(doorAt.x, doorAt.y);
+await page.mouse.wheel(0, -600);
+await page.waitForTimeout(500);
+await shot('11-door-locked.png');
+await page.mouse.wheel(0, 600); // and back out, so the rest of the map stays in view
+await page.waitForTimeout(500);
+
+// An entry door (Room 2 was entered through (12,20)) has no Remove button, and says why.
+await tapWorld(12.5, 20);
+if (!(await page.isVisible('aside.panel [data-editor="door"]'))) problems.push("door editor did not open on Room 2's entry door");
+const entryRemove = await removeButtons();
+console.log(`Remove buttons for Room 2's entry door: ${entryRemove}`);
+if (entryRemove !== 0) problems.push(`entry door shows ${entryRemove} Remove button(s)`);
+if (!(await page.isVisible('aside.panel >> text=This is how Room 2 was entered'))) problems.push('entry door note missing');
+// The open exit beyond the exit square is nobody's entry door: it can be removed.
+await tapWorld(12.5, 14);
+if ((await removeButtons()) !== 1) problems.push('a non-entry door has no Remove button');
+// A bare edge inside Room 2 is refused with checkDoorTool's reason.
+await tapWorld(12.5, 17.05);
+if (!(await page.isVisible('aside.panel >> text=That is inside a room'))) problems.push('inside-room edge was not refused');
+
+// Stairs: add (down) on a floor square, then turn them up.
+await useTool('Stairs');
+await tapWorld(12.5, 17.5);
+await expectUndo('Add stairs', 'adding stairs');
+await panelButton('Up');
+await expectUndo('Edit stairs', 'turning the stairs up');
+
+// Note: write one on a floor square.
+await useTool('Note');
+await tapWorld(12.5, 18.5);
+await page.fill('aside.panel textarea', 'Rats behind the crates');
+await panelButton('Add note');
+await expectUndo('Add note', 'adding a note');
+
+// Select: Room 2's details; nothing to move, resize or delete it.
+await useTool('Select');
+await tapWorld(12.5, 16.5);
+const inspector = (await page.innerText('aside.panel [data-editor="room"]')).replace(/\s+/g, ' ').trim();
+console.log(`Inspector: ${inspector}`);
+for (const want of ['Room 2', 'Size 6×5', 'Class normal', 'Exits 2']) {
+  if (!inspector.toLowerCase().includes(want.toLowerCase())) problems.push(`inspector is missing "${want}"`);
+}
+const typeValue = await page.inputValue('aside.panel [data-editor="room"] input[type="text"]');
+if (typeValue !== 'Guard Room') problems.push(`inspector room type is "${typeValue}"`);
+const roomButtons = await page.$$eval('aside.panel button', (els) => els.map((el) => el.textContent?.trim() ?? ''));
+const forbidden = roomButtons.filter((t) => /move|resize|delete|remove/i.test(t));
+if (forbidden.length) problems.push(`inspector has room-changing buttons: ${forbidden.join(', ')}`);
+await checkPanel('room inspector');
+await shot('12-inspector.png');
+await useTool('Play');
 
 // 6. Menu open.
 await page.click('header.toolbar button[aria-label="Menu"]');

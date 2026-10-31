@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { Command } from '../core/commands';
   import type { ExecResult } from '../core/history';
   import { openExits } from '../core/query';
   import type { DungeonMap } from '../core/types';
@@ -11,6 +12,11 @@
   import LabelStep from './steps/LabelStep.svelte';
   import PositionStep from './steps/PositionStep.svelte';
   import SizeStep from './steps/SizeStep.svelte';
+  import type { Selection } from './tapRouting';
+  import DoorEditor from './tools/DoorEditor.svelte';
+  import NoteEditor from './tools/NoteEditor.svelte';
+  import RoomInspector from './tools/RoomInspector.svelte';
+  import StairsEditor from './tools/StairsEditor.svelte';
 
   interface Props {
     tool: Tool;
@@ -23,11 +29,32 @@
     gapMode: boolean;
     ongapmode: (on: boolean) => void;
     oncommit: (run: () => ExecResult | null) => void;
+    /** What an editor tool (Door, Stairs, Note, Select) has selected, resolved against `map`. */
+    selection: Selection | null;
+    /** Runs an editor's command through History; false (reason in the notice) when rejected. */
+    onexec: (cmd: Command | null) => boolean;
+    onselect: (s: Selection | null) => void;
     collapsed: boolean;
     ontoggle: () => void;
   }
 
-  let { tool, map, flow, step, notice, gapMode, ongapmode, oncommit, collapsed, ontoggle }: Props = $props();
+  let { tool, map, flow, step, notice, gapMode, ongapmode, oncommit, selection, onexec, onselect, collapsed, ontoggle }: Props = $props();
+
+  /** Remounts an editor (fresh drafts) when a different thing is selected. */
+  function selectionKey(s: Selection): string {
+    switch (s.kind) {
+      case 'door':
+        return `door:${s.doorId}`;
+      case 'wall':
+        return `wall:${s.edge.x},${s.edge.y},${s.edge.side}`;
+      case 'feature':
+        return `feature:${s.featureId}`;
+      case 'newNote':
+        return `newNote:${s.cell.x},${s.cell.y}`;
+      case 'room':
+        return `room:${s.roomId}`;
+    }
+  }
 
   const titles: Record<Tool, string> = {
     play: 'Play',
@@ -92,6 +119,19 @@
         <h2>{titles[tool]}</h2>
         <p class="hint">{hint}</p>
         {#if message}<p class="notice" role="status">{message}</p>{/if}
+        {#if selection}
+          {#key selectionKey(selection)}
+            {#if tool === 'door' && (selection.kind === 'door' || selection.kind === 'wall')}
+              <DoorEditor {map} {selection} {onexec} {onselect} />
+            {:else if tool === 'stairs' && selection.kind === 'feature'}
+              <StairsEditor {map} featureId={selection.featureId} {onexec} {onselect} />
+            {:else if tool === 'note' && (selection.kind === 'feature' || selection.kind === 'newNote')}
+              <NoteEditor {map} {selection} {onexec} {onselect} />
+            {:else if tool === 'select' && selection.kind === 'room'}
+              <RoomInspector {map} roomId={selection.roomId} {onexec} />
+            {/if}
+          {/key}
+        {/if}
         {#if canGap}
           <div class="row">
             <button aria-pressed={gapMode} onclick={() => ongapmode(!gapMode)}>
@@ -111,7 +151,7 @@
     min-height: 0;
     background: var(--paper);
     border-left: 2px solid var(--ink);
-    overflow: auto;
+    overflow: hidden; /* the body scrolls, so the toggle strip stays full height */
   }
   .toggle {
     flex: none;
@@ -138,6 +178,8 @@
     display: flex;
     flex-direction: column;
     gap: 12px;
+    min-height: 0;
+    overflow: auto;
   }
   .body :global(h2) {
     margin: 0;

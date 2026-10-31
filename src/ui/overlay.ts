@@ -1,6 +1,7 @@
-// Map overlays for the play flow: what to highlight or ghost for the current step.
-// overlayFor is pure (step + map → shapes); drawOverlay paints them in world units.
+// Map overlays: what to highlight or ghost for the current play-flow step (overlayFor) or an
+// editor tool's selection (selectionOverlay). Both are pure; drawOverlay paints them in world units.
 
+import { checkDoorTool } from '../core/doortool';
 import { allowedExitEdges } from '../core/exits';
 import { edgeCells, rectContains } from '../core/geometry';
 import { entranceCells } from '../core/placement';
@@ -9,6 +10,7 @@ import type { Cell, DungeonMap, Edge, Rect, Room } from '../core/types';
 import type { Step } from '../interaction/playflow';
 import type { Theme } from '../render/theme';
 import { dungeonSystem } from '../systems/dungeon';
+import type { Selection } from './tapRouting';
 
 export type OverlayTone = 'highlight' | 'ok' | 'bad';
 
@@ -48,6 +50,27 @@ export function overlayFor(step: Step, map: DungeonMap): OverlayShape[] {
     case 'exitCount':
     case 'exitType':
       return [];
+  }
+}
+
+/** Shapes marking what an editor tool (Door, Stairs, Note, Select) has selected. */
+export function selectionOverlay(map: DungeonMap, sel: Selection | null): OverlayShape[] {
+  if (!sel) return [];
+  switch (sel.kind) {
+    case 'door':
+      return exitEdge(map, sel.doorId);
+    case 'wall':
+      return [{ kind: 'edge', at: plainEdge(sel.edge), tone: checkDoorTool(map, sel.edge).ok ? 'ok' : 'bad' }];
+    case 'feature': {
+      const f = map.features.find((x) => x.id === sel.featureId);
+      return f ? [{ kind: 'cell', at: { x: f.x, y: f.y }, tone: 'highlight' }] : [];
+    }
+    case 'newNote':
+      return [{ kind: 'cell', at: { x: sel.cell.x, y: sel.cell.y }, tone: 'highlight' }];
+    case 'room': {
+      const r = map.rooms.find((x) => x.id === sel.roomId);
+      return r ? [{ kind: 'rect', at: { x: r.x, y: r.y, w: r.w, h: r.h }, tone: 'highlight' }] : [];
+    }
   }
 }
 

@@ -1,8 +1,7 @@
 <script lang="ts">
   import type { PlayFlow, Step } from '../../interaction/playflow';
-  import type { Theme } from '../../render/theme';
   import { dungeonSystem } from '../../systems/dungeon';
-  import { classicTheme } from '../../systems/dungeon/classic';
+  import { doorSymbol, SYMBOL_SIZE } from '../doorSymbol';
 
   interface Props {
     flow: PlayFlow;
@@ -10,31 +9,6 @@
   }
 
   let { flow, step }: Props = $props();
-
-  const SIZE = 44;
-
-  /** Draws a door symbol (as the map does) in a short stretch of wall. */
-  function symbol(canvas: HTMLCanvasElement, type: string) {
-    const theme: Theme = classicTheme;
-    const dpr = window.devicePixelRatio || 1;
-    canvas.width = SIZE * dpr;
-    canvas.height = SIZE * dpr;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    const unit = SIZE * 0.6 * dpr;
-    ctx.setTransform(unit, 0, 0, unit, (SIZE * dpr) / 2, (SIZE * dpr) / 2);
-    ctx.strokeStyle = theme.ink;
-    ctx.lineWidth = theme.wallWidth;
-    ctx.beginPath();
-    ctx.moveTo(-0.85, 0);
-    ctx.lineTo(-0.5, 0);
-    ctx.moveTo(0.5, 0);
-    ctx.lineTo(0.85, 0);
-    ctx.stroke();
-    ctx.save();
-    (theme.doorSymbols[type] ?? theme.doorSymbols.archway)?.(ctx, theme);
-    ctx.restore();
-  }
 </script>
 
 <h2>Exit type</h2>
@@ -42,7 +16,7 @@
 <div class="types">
   {#each dungeonSystem.doorTypes as t (t.id)}
     <button class="type" onclick={() => flow.chooseExitType(t.id)}>
-      <canvas use:symbol={t.id} style="width: {SIZE}px; height: {SIZE}px" aria-hidden="true"></canvas>
+      <canvas use:doorSymbol={t.id} style="width: {SYMBOL_SIZE}px; height: {SYMBOL_SIZE}px" aria-hidden="true"></canvas>
       <span>{t.name}</span>
     </button>
   {/each}
