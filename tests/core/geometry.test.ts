@@ -2,10 +2,14 @@ import {
   cellEdge,
   clipRect,
   edgeCells,
+  edgeKey,
+  inBounds,
   isBoundaryEdge,
   perimeterEdges,
   rectContains,
   rectsOverlap,
+  sameEdge,
+  step,
 } from '../../src/core/geometry';
 
 describe('rectsOverlap', () => {
@@ -66,5 +70,54 @@ describe('edges', () => {
   });
   it('perimeterEdges lists 2w+2h edges', () => {
     expect(perimeterEdges({ x: 0, y: 0, w: 3, h: 2 })).toHaveLength(10);
+  });
+});
+
+describe('perimeterEdges content', () => {
+  const edges = perimeterEdges({ x: 1, y: 1, w: 2, h: 1 });
+  it('gives each edge its inside square and outward direction', () => {
+    expect(edges).toContainEqual({ edge: { x: 1, y: 1, side: 'N' }, inside: { x: 1, y: 1 }, dir: 'N' });
+    expect(edges).toContainEqual({ edge: { x: 1, y: 2, side: 'N' }, inside: { x: 1, y: 1 }, dir: 'S' });
+    expect(edges).toContainEqual({ edge: { x: 1, y: 1, side: 'W' }, inside: { x: 1, y: 1 }, dir: 'W' });
+    expect(edges).toContainEqual({ edge: { x: 3, y: 1, side: 'W' }, inside: { x: 2, y: 1 }, dir: 'E' });
+  });
+  it('has no duplicate edges', () => {
+    expect(new Set(edges.map((e) => edgeKey(e.edge))).size).toBe(edges.length);
+  });
+});
+
+describe('small helpers', () => {
+  it('step moves one square in each direction', () => {
+    const c = { x: 5, y: 5 };
+    expect([step(c, 'N'), step(c, 'S'), step(c, 'E'), step(c, 'W')]).toEqual([
+      { x: 5, y: 4 },
+      { x: 5, y: 6 },
+      { x: 6, y: 5 },
+      { x: 4, y: 5 },
+    ]);
+  });
+  it('cellEdge on one side equals the opposite side of the neighbour', () => {
+    const c = { x: 2, y: 2 };
+    expect(cellEdge(c, 'S')).toEqual(cellEdge(step(c, 'S'), 'N'));
+    expect(cellEdge(c, 'E')).toEqual(cellEdge(step(c, 'E'), 'W'));
+  });
+  it('inBounds checks both ends', () => {
+    expect(inBounds({ x: 0, y: 0 }, 4, 3)).toBe(true);
+    expect(inBounds({ x: 3, y: 2 }, 4, 3)).toBe(true);
+    expect(inBounds({ x: 4, y: 2 }, 4, 3)).toBe(false);
+    expect(inBounds({ x: -1, y: 0 }, 4, 3)).toBe(false);
+  });
+  it('sameEdge compares side too', () => {
+    expect(sameEdge({ x: 1, y: 1, side: 'N' }, { x: 1, y: 1, side: 'N' })).toBe(true);
+    expect(sameEdge({ x: 1, y: 1, side: 'N' }, { x: 1, y: 1, side: 'W' })).toBe(false);
+  });
+  it('clipRect returns null for a rect beyond the far side', () => {
+    expect(clipRect({ x: 10, y: 0, w: 2, h: 2 }, 10, 10)).toBeNull();
+  });
+  it('isBoundaryEdge rejects edges past the ends of the boundary', () => {
+    expect(isBoundaryEdge({ x: 10, y: 0, side: 'N' }, 10, 8)).toBe(false);
+    expect(isBoundaryEdge({ x: -1, y: 0, side: 'N' }, 10, 8)).toBe(false);
+    expect(isBoundaryEdge({ x: 0, y: 8, side: 'W' }, 10, 8)).toBe(false);
+    expect(isBoundaryEdge({ x: 5, y: 3, side: 'W' }, 10, 8)).toBe(false);
   });
 });
