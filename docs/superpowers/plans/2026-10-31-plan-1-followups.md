@@ -4,18 +4,15 @@ Items raised in the Plan 1 reviews that were deliberately not fixed in the core.
 is assigned to the plan that should deal with it. Where an item says "decide", the
 decision is needed before that plan's tasks get written.
 
-## Decide before writing Plan 2 (schema-affecting)
+## Decided with the user (2026-10-31): do in Plan 2
 
-- **Room entry door.** Spec §9 anchors each room's label near "the room's entry door",
-  but rooms don't record which door they were entered from, and the order of the doors
-  array is not a reliable source. Recommendation: add `entryDoorId: string | null` to
-  `Room` (set by `createRoomFromExit`, which knows the exit used), bump the schema while
-  no v1 files exist yet, and add a migration test.
-- **Room numbering.** `nextRoomNumber` returns max + 1, so deleting the highest-numbered
-  room and adding a new one reuses its number. The spec says numbers are "assigned in
-  creation order". Either store a `nextRoomNumber` counter on `DungeonMap`, which is a
-  schema change and pairs naturally with the item above, or accept reuse and update the
-  spec.
+- **Room entry door: yes.** Add `entryDoorId: string | null` to `Room`, set by
+  `createRoomFromExit` from the exit used. No v1 files exist yet, so stay on schema
+  version 1 and don't write a migration. Labels prefer a spot next to the entry door, but
+  **relocate to wherever the whole text box fits** when it's too long for that spot.
+- **Room numbering: lowest free number.** Deleting a room deletes its number and
+  narrative, and that number becomes free. `nextRoomNumber` returns the lowest unused
+  number (rooms 1, 3 → 2), not max + 1.
 
 ## Plan 2: Renderer
 

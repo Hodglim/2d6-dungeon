@@ -119,6 +119,7 @@ interface Room {
   kind: 'room' | 'passage' | 'entrance';
   x: number; y: number; w: number; h: number;     // rectangles only
   label: { type: string; unique: boolean; narrative: string };
+  entryDoorId: string | null;     // door the room was entered through (labels anchor here)
 }
 
 interface Door {                   // lives on an edge; stored canonically
@@ -138,7 +139,7 @@ interface Token { x: number; y: number; trail: { x: number; y: number }[] }  // 
 ### Derived (never stored)
 - **Walls:** an edge is a wall if it separates floor from rock, or two different rooms, and has no door on it.
 - **Open exit:** a door with a room on exactly one side.
-- **Room numbers:** assigned in creation order. Deleting a room does not renumber the others.
+- **Room numbers:** a new room takes the **lowest free number**. Deleting a room deletes its number and its narrative, freeing that number for re-use; other rooms are never renumbered.
 
 ### Entrance
 The entrance is a 1×1 room of kind `entrance` placed **one square outside** the Outer Boundary on `system.entranceEdge`. For Dungeon that is y = height, at any x from 0 to width−1. Its inward-facing edge carries an open exit. This is the only sanctioned crossing of the boundary.
@@ -209,7 +210,7 @@ v1 implements **Classic** only (`wallStyle: 'line'`, `rockStyle: 'hatch'`). The 
 3. Floors and decals *(offscreen cache)*
 4. Walls and inner shadow
 5. Doors, features, open-exit stubs
-6. Room labels (boxed "N - Type", near the room's entry door)
+6. Room labels (boxed "N - Type"). Preferred position is just inside the room next to its entry door; if the text doesn't fit there, the label moves to the nearest position where the whole box fits without crossing walls, doors or other labels.
 7. Overlay: highlights, ghost room, selection handles
 8. Token and footprints *(animated each frame)*
 
