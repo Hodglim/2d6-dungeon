@@ -262,11 +262,36 @@ describe('PlayFlow tight spaces (Review Focus 3)', () => {
   const roomA: Room = { ...room('A', 2, 2, 3, 3, 'room', 1), entryDoorId: null };
   const exitA = door('dA', 3, 5, 'N');
 
-  it('an exit whose front square is 1 deep says there is no space and stays idle', () => {
+  it('a door that is not an open exit gives an error and stays idle', () => {
+    const map = withContent(emptyMap(10, 10), [roomA, room('B', 2, 5, 3, 3, 'room', 2)], [exitA]);
+    const { flow } = setup(map);
+    flow.startFromExit('dA');
+    expect(expectKind(flow, 'idle').error).toBe('That is not an open exit');
+    flow.startFromExit('nope');
+    expect(expectKind(flow, 'idle').error).toBe('That is not an open exit');
+  });
+
+  it('an exit whose front square is on the boundary row can still start a room', () => {
+    const roomLow = room('L', 2, 6, 3, 3, 'room', 1);
+    const map = withContent(emptyMap(10, 10), [roomLow], [door('dL', 3, 9, 'N')]);
+    const { flow } = setup(map);
+    flow.startFromExit('dL');
+    expect(expectKind(flow, 'size').error).toBeNull();
+    flow.enterSize('1', '3');
+    expect(expectKind(flow, 'position').placement).toMatchObject({ ok: true, rect: { x: 3, y: 9, w: 1, h: 1 } });
+    flow.place();
+    expect(expectKind(flow, 'exitCount').draft.kindOf).toBe('corridor');
+  });
+
+  it('an exit whose front square is 1 deep against floor can start a room (shrunk)', () => {
     const map = withContent(emptyMap(10, 10), [roomA, room('B', 0, 6, 10, 2, 'room', 2)], [exitA]);
     const { flow } = setup(map);
     flow.startFromExit('dA');
-    expect(expectKind(flow, 'idle').error).toBe('No space beyond this exit');
+    expect(expectKind(flow, 'size').error).toBeNull();
+    flow.enterSize('4', '5');
+    expect(expectKind(flow, 'position').canShrink).toBe(true);
+    flow.shrink();
+    expect(expectKind(flow, 'position')).toMatchObject({ h: 1, placement: { ok: true } });
   });
 
   it('a blocked rolled size offers shrink-to-fit, which yields an ok placement', () => {
@@ -327,5 +352,69 @@ describe('PlayFlow dice rolls', () => {
     expect(flow.step.kind).toBe('exitCount');
     flow.rollExitCount();
     expect(['exitType', 'exits', 'label']).toContain(flow.step.kind);
+  });
+});
+
+describe('PlayFlow exit count is enforced', () => {
+  it('refuses with 1 of 2 chosen while another exit is allowed', () => {
+    const { history, flow } = withEntrance();
+    flow.startFromExit(northExit(history.map).id);
+    flow.enterSize('3', '4');
+    flow.place();
+    flow.enterExitCount('4'); // 2 exits
+    flow.chooseExitType('wooden');
+    const r = expectKind(flow, 'exits').draft.room;
+    flow.toggleExit({ x: r.x + 1, y: r.y, side: 'N' });
+    expect(flow.allowedExits.length).toBeGreaterThan(0);
+    const before = history.map;
+    expect(flow.doneExits()).toMatchObject({ ok: false });
+    expect(expectKind(flow, 'exits').error).toBe('Place 1 more exit');
+    expect(flow.finish(null)).toMatchObject({ ok: false });
+    expect(expectKind(flow, 'exits').error).toBe('Place 1 more exit');
+    expect(history.map).toBe(before);
+    flow.toggleExit({ x: r.x, y: r.y + 1, side: 'W' });
+    expect(expectKind(flow, 'exits').error).toBeNull();
+    expect(flow.doneExits()).toBeNull();
+    expect(expectKind(flow, 'label').dropped).toBe(0);
+  });
+
+  it('proceeds with 1 of 2 chosen when no other exit is allowed, recording 1 dropped', () => {
+    // Room 1 across the top; the new room (x2..4, y2..5) is boxed in west and east.
+    const top = room('T', 0, 0, 10, 2, 'room', 1);
+    const west = room('W', 0, 2, 2, 8, 'room', 2);
+    const east = room('E', 5, 2, 5, 8, 'room', 3);
+    const map = withContent(emptyMap(10, 10), [top, west, east], [door('dT', 3, 2, 'N')]);
+    const { history, flow } = setup(map);
+    flow.startFromExit('dT');
+    flow.enterSize('3', '4');
+    expect(expectKind(flow, 'position').placement).toMatchObject({ ok: true, rect: { x: 2, y: 2, w: 3, h: 4 } });
+    flow.place();
+    flow.enterExitCount('4'); // 2 exits
+    flow.chooseExitType('wooden');
+    const allowed = flow.allowedExits;
+    expect(allowed.every((e) => e.side === 'N' && e.y === 6)).toBe(true);
+    flow.toggleExit(allowed[0]!);
+    expect(flow.allowedExits).toEqual([]);
+    expect(flow.doneExits()).toBeNull();
+    expect(expectKind(flow, 'label')).toMatchObject({ dropped: 1 });
+    expect(flow.finish(null)).toEqual({ ok: true });
+    expect(history.undoLabel).toBe('Add Room 4');
+  });
+
+  it('the entrance cannot be finished with fewer than 3 exits while walls remain', () => {
+    const { history, flow } = setup();
+    flow.startEntrance({ x: 4, y: 10 });
+    flow.enterSize('3', '2');
+    flow.place();
+    const ex = expectKind(flow, 'exits');
+    flow.toggleExit(ex.chosen[0]!);
+    expect(flow.finish(null)).toMatchObject({ ok: false });
+    expect(expectKind(flow, 'exits').error).toBe('Place 1 more exit');
+    flow.toggleExit(ex.chosen[1]!);
+    expect(flow.finish(null)).toMatchObject({ ok: false });
+    expect(expectKind(flow, 'exits').error).toBe('Place 2 more exits');
+    expect(history.map.rooms).toEqual([]);
+    flow.placeExitsForMe(1);
+    expect(flow.finish(null)).toEqual({ ok: true });
   });
 });

@@ -3,7 +3,7 @@
 
 import { addDoor, addRoom, type Command } from '../core/commands';
 import { allowedExitEdges, placeExitsClockwise } from '../core/exits';
-import { inBounds, sameEdge, step as stepCell } from '../core/geometry';
+import { sameEdge } from '../core/geometry';
 import type { ExecResult, History } from '../core/history';
 import type { IdFn } from '../core/ids';
 import { entranceCells, evaluatePlacement, shrinkToFit, slideRange, type PlacementResult } from '../core/placement';
@@ -16,7 +16,7 @@ import {
   newRoom,
   placeEntrance,
 } from '../core/playflow';
-import { exitDirection, exitTarget, isOpenExit, roomAt } from '../core/query';
+import { isOpenExit } from '../core/query';
 import type { Cell, Door, DungeonMap, Edge, Rect, Room, RoomLabel } from '../core/types';
 import { dungeonSystem } from '../systems/dungeon';
 import {
@@ -58,8 +58,17 @@ export type Step =
     }
   | { kind: 'exitCount'; draft: Draft; error: string | null }
   | { kind: 'exitType'; draft: Draft; count: number }
-  | { kind: 'exits'; draft: Draft; count: number; exitType: string; chosen: Edge[]; dropped: number }
-  | { kind: 'label'; draft: Draft; chosen: Edge[]; exitType: string }
+  | {
+      kind: 'exits';
+      draft: Draft;
+      count: number;
+      exitType: string;
+      chosen: Edge[];
+      dropped: number;
+      /** Set when the user tries to finish while placeable exits remain. */
+      error: string | null;
+    }
+  | { kind: 'label'; draft: Draft; chosen: Edge[]; exitType: string; dropped: number }
   | { kind: 'gap'; door: Door; length: number; rect: Rect | null };
 
 const BAD_DIE = 'Enter a whole number from 1 to 6';
@@ -130,13 +139,13 @@ export class PlayFlow {
     this.set({ kind: 'size', source: { kind: 'entrance', cell }, first: null, needsSecond: false, error: null });
   }
 
-  /** Valid only for an open exit with space beyond it (more than 1 square deep). */
+  /** Valid only for an open exit with room for at least a 1×1 space in front of it. */
   startFromExit(doorId: string): void {
     if (this.current.kind !== 'idle') return;
     const map = this.history.map;
     const door = this.openExit(doorId);
     if (!door) return;
-    if (!shrinkToFit(map, door, 1, 1, 0) || isOneDeep(map, door)) return this.idleError('No space beyond this exit');
+    if (!shrinkToFit(map, door, 1, 1, 0)) return this.idleError('No space beyond this exit');
     this.base = map;
     this.door = door;
     this.withRoom = null;
@@ -219,7 +228,7 @@ export class PlayFlow {
     const draft: Draft = { source: s.source, room, kindOf, sizeClass };
     if (entrance) {
       const { exits, dropped } = placeExitsClockwise(this.withRoom, room.id, 3, 0);
-      this.set({ kind: 'exits', draft, count: 3, exitType: 'archway', chosen: exits, dropped });
+      this.set({ kind: 'exits', draft, count: 3, exitType: 'archway', chosen: exits, dropped, error: null });
     } else {
       this.set({ kind: 'exitCount', draft, error: null });
     }
@@ -248,10 +257,10 @@ export class PlayFlow {
     const count = exitCountFor(d6);
     const archwayOnly = draft.kindOf === 'corridor' || draft.sizeClass === 'small';
     if (count === 0 && draft.kindOf === 'room') {
-      this.set({ kind: 'label', draft, chosen: [], exitType: 'archway' });
+      this.set({ kind: 'label', draft, chosen: [], exitType: 'archway', dropped: 0 });
     } else if (count === 0 || archwayOnly) {
       // A corridor with no exits still gets the exits step as its confirmation screen.
-      this.set({ kind: 'exits', draft, count, exitType: 'archway', chosen: [], dropped: 0 });
+      this.set({ kind: 'exits', draft, count, exitType: 'archway', chosen: [], dropped: 0, error: null });
     } else {
       this.set({ kind: 'exitType', draft, count });
     }
@@ -262,7 +271,7 @@ export class PlayFlow {
   chooseExitType(type: string): void {
     const s = this.current;
     if (s.kind !== 'exitType' || !dungeonSystem.doorTypes.some((t) => t.id === type)) return;
-    this.set({ kind: 'exits', draft: s.draft, count: s.count, exitType: type, chosen: [], dropped: 0 });
+    this.set({ kind: 'exits', draft: s.draft, count: s.count, exitType: type, chosen: [], dropped: 0, error: null });
   }
 
   // ---- step 5: exits ----
@@ -278,11 +287,11 @@ export class PlayFlow {
     const s = this.current;
     if (s.kind !== 'exits') return;
     if (s.chosen.some((c) => sameEdge(c, edge))) {
-      this.set({ ...s, chosen: s.chosen.filter((c) => !sameEdge(c, edge)), dropped: 0 });
+      this.set({ ...s, chosen: s.chosen.filter((c) => !sameEdge(c, edge)), dropped: 0, error: null });
       return;
     }
     if (!this.allowedExits.some((e) => sameEdge(e, edge))) return;
-    this.set({ ...s, chosen: [...s.chosen, { x: edge.x, y: edge.y, side: edge.side }], dropped: 0 });
+    this.set({ ...s, chosen: [...s.chosen, { x: edge.x, y: edge.y, side: edge.side }], dropped: 0, error: null });
   }
 
   /** Fills the remaining exits clockwise, starting at the wall chosen by the D6. */
@@ -299,15 +308,18 @@ export class PlayFlow {
       this.withRoom,
     );
     const { exits, dropped } = placeExitsClockwise(withChosen, s.draft.room.id, remaining, firstWallIndex(d6));
-    this.set({ ...s, chosen: [...s.chosen, ...exits], dropped });
+    this.set({ ...s, chosen: [...s.chosen, ...exits], dropped, error: null });
   }
 
   /** Done placing exits: rooms go to the label step; corridors (never labelled) commit now. */
   doneExits(): ExecResult | null {
     const s = this.current;
     if (s.kind !== 'exits') return null;
+    const short = this.refuseShortfall();
+    if (short) return short;
     if (s.draft.kindOf === 'corridor') return this.finish(null);
-    this.set({ kind: 'label', draft: s.draft, chosen: s.chosen, exitType: s.exitType });
+    const dropped = s.count - s.chosen.length;
+    this.set({ kind: 'label', draft: s.draft, chosen: s.chosen, exitType: s.exitType, dropped });
     return null;
   }
 
@@ -317,6 +329,8 @@ export class PlayFlow {
   finish(label: RoomLabel | null): ExecResult {
     const s = this.current;
     if (s.kind !== 'exits' && s.kind !== 'label') return { ok: false, reason: 'There is no room to finish' };
+    const short = this.refuseShortfall();
+    if (short) return short;
     const { draft, chosen, exitType } = s;
     const map = this.history.map;
     let result: { command: Command; path: Cell[] | null };
@@ -379,6 +393,20 @@ export class PlayFlow {
     return res;
   }
 
+  /**
+   * At the exits step, exits may be left out only when no valid wall remains (they are
+   * dropped). Otherwise sets "Place N more exit(s)" on the step and returns the refusal.
+   */
+  private refuseShortfall(): ExecResult | null {
+    const s = this.current;
+    if (s.kind !== 'exits') return null;
+    const missing = s.count - s.chosen.length;
+    if (missing <= 0 || this.allowedExits.length === 0) return null;
+    const reason = `Place ${missing} more exit${missing === 1 ? '' : 's'}`;
+    this.set({ ...s, error: reason });
+    return { ok: false, reason };
+  }
+
   private openExit(doorId: string): Door | null {
     const map = this.history.map;
     const door = map.doors.find((d) => d.id === doorId);
@@ -429,13 +457,4 @@ export class PlayFlow {
 
 function rectOf(r: Rect): Rect {
   return { x: r.x, y: r.y, w: r.w, h: r.h };
-}
-
-/** True when the square beyond the exit's front square is outside the map or already floor. */
-function isOneDeep(map: DungeonMap, door: Door): boolean {
-  const dir = exitDirection(map, door);
-  const t = exitTarget(map, door);
-  if (!dir || !t) return true;
-  const beyond = stepCell(t, dir);
-  return !inBounds(beyond, map.width, map.height) || roomAt(map, beyond) !== undefined;
 }
