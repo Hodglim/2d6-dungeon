@@ -1,0 +1,6 @@
+.superpowers/
+reference/
+local-data/
+node_modules/
+dist/
+pdf/
