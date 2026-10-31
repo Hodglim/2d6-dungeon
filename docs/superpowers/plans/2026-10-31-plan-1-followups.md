@@ -114,6 +114,16 @@ Plan 3 (interaction) needs these from `MapRenderer`:
 - **Shadow gradients** are created per wall edge. That's fine now; group edges by side if
   profiling shows a cost.
 
+- **MapRenderer behaviour tests.** Invalidation and idle-skip, `cancelWalk`, and a walk
+  replacing another walk aren't unit-tested yet (only `cacheScaleFor` is). Add tests with a
+  fake canvas and rAF when Plan 3 extends the renderer.
+- **Label search cost.** The whole-world fallback builds ~166k candidates on a 100×100 map,
+  twice when it fails, and labels re-run on every zoom-bucket rebuild. Cache labels per map,
+  and reuse the candidate list, if profiling shows a cost. The last-resort fallbacks
+  (rock-only, clamped to anchor) have no test yet.
+- **Fit limit.** At `MIN_SCALE` 3, maps wider than ~130 squares can't fit a phone view. That's
+  fine while `MAX_MAP_SIZE` is 100.
+
 Plan 4 (export):
 - PNG export must apply the same canvas size limits (iOS). Tile or downscale very large
   exports, and re-run label placement for each export with the export context.
