@@ -20,11 +20,13 @@ const isStr = (v: unknown): v is string => typeof v === 'string';
 const isInt = (v: unknown): v is number => Number.isInteger(v);
 const isBool = (v: unknown): v is boolean => typeof v === 'boolean';
 const isCell = (v: unknown): boolean => isObj(v) && isInt(v.x) && isInt(v.y);
-const ROOM_KINDS = ['room', 'passage', 'entrance'];
+const ROOM_KINDS = ['room', 'corridor', 'passage', 'entrance'];
+const SIZE_CLASSES = ['normal', 'small', 'large'];
 
 function roomOk(r: unknown): boolean {
   if (!isObj(r) || !isStr(r.id) || !ROOM_KINDS.includes(r.kind as string)) return false;
   if (!isObj(r.label) || !isStr(r.label.type) || !isBool(r.label.unique) || !isStr(r.label.narrative)) return false;
+  if (r.sizeClass !== null && !SIZE_CLASSES.includes(r.sizeClass as string)) return false;
   if (r.entryDoorId !== null && !isStr(r.entryDoorId)) return false;
   return ['x', 'y', 'w', 'h', 'number'].every((k) => isInt(r[k]));
 }
@@ -32,7 +34,7 @@ function roomOk(r: unknown): boolean {
 function doorOk(d: unknown): boolean {
   if (!isObj(d) || !isStr(d.id) || !isStr(d.type) || !isCell(d) || !isBool(d.secret)) return false;
   if (d.side !== 'N' && d.side !== 'W') return false;
-  return d.lock === null || (isObj(d.lock) && isBool(d.lock.locked) && isStr(d.lock.note));
+  return d.lock === null || (isObj(d.lock) && isBool(d.lock.locked) && isStr(d.lock.note) && (d.lock.quality === null || isInt(d.lock.quality)));
 }
 
 function featureOk(f: unknown): boolean {

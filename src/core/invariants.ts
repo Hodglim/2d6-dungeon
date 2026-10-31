@@ -4,6 +4,7 @@ import type { DungeonMap, Room } from './types';
 
 export function describeRoom(r: Room): string {
   if (r.kind === 'room') return `Room ${r.number}`;
+  if (r.kind === 'corridor') return 'a corridor';
   return r.kind === 'passage' ? 'a passage' : 'the entrance';
 }
 
@@ -16,6 +17,7 @@ export function checkInvariants(map: DungeonMap): string | null {
   }
   for (const r of map.rooms) {
     if (r.w < 1 || r.h < 1) return `${describeRoom(r)} has no area`;
+    if ((r.kind === 'room') !== (r.sizeClass !== null)) return `${describeRoom(r)} has a wrong size class`;
     if (r.kind === 'entrance') {
       const xIn = r.x >= 0 && r.x < map.width;
       const yIn = r.y >= 0 && r.y < map.height;

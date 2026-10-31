@@ -2,7 +2,7 @@ import { createCampaign } from '../../src/core/campaign';
 import { sequentialIds } from '../../src/core/ids';
 import { parseCampaign, serializeCampaign } from '../../src/core/serialize';
 import { dungeonSystem } from '../../src/systems/dungeon';
-import { room } from './fixtures';
+import { door, room } from './fixtures';
 
 function sample() {
   const c = createCampaign(dungeonSystem, 'Test run', { seed: 7, newId: sequentialIds('c') });
@@ -15,6 +15,14 @@ describe('serialize / parse', () => {
     const c = sample();
     const result = parseCampaign(serializeCampaign(c));
     expect(result).toEqual({ ok: true, campaign: c });
+  });
+
+  it('round-trips a corridor and a lock with quality', () => {
+    const c = sample();
+    const m = c.maps[0]!;
+    m.rooms.push(room('c1', 6, 2, 1, 4, 'corridor'));
+    m.doors.push({ ...door('d1', 2, 2, 'W'), lock: { locked: true, note: 'rusty', quality: 7 } });
+    expect(parseCampaign(serializeCampaign(c))).toEqual({ ok: true, campaign: c });
   });
 
   it('rejects text that is not JSON', () => {
@@ -81,6 +89,8 @@ describe('serialize / parse', () => {
     ['width 2.5', (c) => { c.maps[0].width = 2.5; }, 'a map has an invalid size'],
     ['room x 1.5', (c) => { c.maps[0].rooms[0].x = 1.5; }, 'a room is malformed'],
     ['room kind banana', (c) => { c.maps[0].rooms[0].kind = 'banana'; }, 'a room is malformed'],
+    ['room sizeClass huge', (c) => { c.maps[0].rooms[0].sizeClass = 'huge'; }, 'a room is malformed'],
+    ['door lock quality x', (c) => { c.maps[0].doors.push({ ...okDoor, lock: { locked: true, note: '', quality: 'x' } }); }, 'a door is malformed'],
     ['room label {}', (c) => { c.maps[0].rooms[0].label = {}; }, 'a room is malformed'],
     ['room entryDoorId 5', (c) => { c.maps[0].rooms[0].entryDoorId = 5; }, 'a room is malformed'],
     ['door secret yes', (c) => { c.maps[0].doors.push({ ...okDoor, secret: 'yes' }); }, 'a door is malformed'],

@@ -17,7 +17,7 @@ describe('door glyphs', () => {
     expect(doorGlyphs(right)[0]!.rotation).toBeCloseTo(Math.PI / 2);
   });
   it('reports secret, lock and open state', () => {
-    const d = { ...door('d', 4, 2, 'W'), secret: true, lock: { locked: true, note: '' } };
+    const d = { ...door('d', 4, 2, 'W'), secret: true, lock: { locked: true, note: '', quality: null } };
     const m = withContent(emptyMap(), [room('a', 2, 2, 2, 2), room('b', 4, 2, 2, 2)], [d]);
     expect(doorGlyphs(m)[0]).toMatchObject({ secret: true, locked: true, open: false });
   });

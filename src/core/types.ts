@@ -20,7 +20,8 @@ export interface Edge {
   side: Side;
 }
 
-export type RoomKind = 'room' | 'passage' | 'entrance';
+export type RoomKind = 'room' | 'corridor' | 'passage' | 'entrance';
+export type SizeClass = 'normal' | 'small' | 'large';
 
 export interface RoomLabel {
   type: string;
@@ -30,9 +31,11 @@ export interface RoomLabel {
 
 export interface Room extends Rect {
   id: string;
-  /** Display number for kind 'room'; 0 for passages and the entrance. */
+  /** Display number for kind 'room'; 0 for corridors, passages and the entrance. */
   number: number;
   kind: RoomKind;
+  /** Set for kind 'room'; null for every other kind. */
+  sizeClass: SizeClass | null;
   label: RoomLabel;
   /** The door this room was entered through (its label anchors there); null for the entrance. */
   entryDoorId: string | null;
@@ -41,6 +44,7 @@ export interface Room extends Rect {
 export interface DoorLock {
   locked: boolean;
   note: string;
+  quality: number | null;
 }
 
 export interface Door extends Edge {

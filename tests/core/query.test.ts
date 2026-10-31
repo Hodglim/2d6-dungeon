@@ -52,6 +52,14 @@ describe('nextRoomNumber', () => {
     ]);
     expect(nextRoomNumber(m)).toBe(3);
   });
+  it('ignores corridors', () => {
+    const m = withContent(emptyMap(), [
+      room('a', 2, 2, 2, 2, 'room', 1),
+      room('c', 4, 4, 1, 4, 'corridor'),
+      room('b', 6, 2, 2, 2, 'room', 2),
+    ]);
+    expect(nextRoomNumber(m)).toBe(3);
+  });
   it('is 1 on an empty map', () => {
     expect(nextRoomNumber(emptyMap())).toBe(1);
   });

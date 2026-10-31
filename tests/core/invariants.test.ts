@@ -10,6 +10,18 @@ describe('checkInvariants', () => {
   it('accepts a valid map', () => {
     expect(checkInvariants(mapWithTopExit())).toBeNull();
   });
+  it('rejects a room with no size class', () => {
+    const m = withContent(emptyMap(), [room('a', 1, 1, 2, 2, 'room', 1, null)]);
+    expect(checkInvariants(m)).toMatch(/size class/);
+  });
+  it('rejects a corridor with a size class', () => {
+    const m = withContent(emptyMap(), [room('a', 1, 1, 1, 4, 'corridor', 0, 'normal')]);
+    expect(checkInvariants(m)).toMatch(/size class/);
+  });
+  it('accepts a corridor', () => {
+    const m = withContent(emptyMap(), [room('a', 1, 1, 1, 4, 'corridor', 0, null)]);
+    expect(checkInvariants(m)).toBeNull();
+  });
   it('rejects overlapping rooms', () => {
     const m = withContent(emptyMap(), [room('a', 1, 1, 3, 3), room('b', 2, 2, 3, 3)]);
     expect(checkInvariants(m)).toMatch(/overlaps/);

@@ -1,12 +1,14 @@
 // Dice and room-size rules for the 2D6 dungeon system (pure, no UI imports).
 // Primary (red) die = width, secondary (blue) die = height.
 
+import type { SizeClass } from '../../core/types';
+export type { SizeClass } from '../../core/types';
+
 export type Rng = () => number; // [0,1)
 export interface D66 {
   primary: number;
   secondary: number;
 }
-export type SizeClass = 'normal' | 'small' | 'large';
 export interface RoomSize {
   w: number;
   h: number;

@@ -1,7 +1,7 @@
 import { createMap } from '../../src/core/campaign';
 import { sequentialIds } from '../../src/core/ids';
 import { dungeonSystem } from '../../src/systems/dungeon';
-import type { Door, DungeonMap, Room, RoomKind, Side } from '../../src/core/types';
+import type { Door, DungeonMap, Room, RoomKind, Side, SizeClass } from '../../src/core/types';
 
 export function emptyMap(width = 10, height = 10): DungeonMap {
   return createMap(dungeonSystem, { width, height, seed: 1, newId: sequentialIds('map') });
@@ -15,8 +15,9 @@ export function room(
   h: number,
   kind: RoomKind = 'room',
   number = 0,
+  sizeClass: SizeClass | null = kind === 'room' ? 'normal' : null,
 ): Room {
-  return { id, number, kind, x, y, w, h, label: { type: '', unique: false, narrative: '' }, entryDoorId: null };
+  return { id, number, kind, sizeClass, x, y, w, h, label: { type: '', unique: false, narrative: '' }, entryDoorId: null };
 }
 
 export function door(id: string, x: number, y: number, side: Side, type = 'archway'): Door {
