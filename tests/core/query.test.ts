@@ -1,4 +1,5 @@
 import { deriveWalls, isOpenExit, nextRoomNumber, openExits, roomAt } from '../../src/core/query';
+import { sameEdge } from '../../src/core/geometry';
 import { door, emptyMap, room, withContent } from './fixtures';
 
 describe('roomAt', () => {
@@ -53,5 +54,26 @@ describe('nextRoomNumber', () => {
   });
   it('is 1 on an empty map', () => {
     expect(nextRoomNumber(emptyMap())).toBe(1);
+  });
+});
+
+describe('deriveWalls detail', () => {
+  it('removes exactly the door edge', () => {
+    const m = withContent(emptyMap(), [room('a', 1, 1, 2, 1)], [door('d', 1, 1, 'N')]);
+    expect(deriveWalls(m).some((e) => sameEdge(e, m.doors[0]!))).toBe(false);
+  });
+  it('lists a shared wall once, and not at all when a door is on it', () => {
+    const rooms = [room('a', 1, 1, 1, 1), room('b', 2, 1, 1, 1)];
+    const shared = { x: 2, y: 1, side: 'W' as const };
+    expect(deriveWalls(withContent(emptyMap(), rooms)).filter((e) => sameEdge(e, shared))).toHaveLength(1);
+    const withDoor = withContent(emptyMap(), rooms, [door('d', 2, 1, 'W')]);
+    expect(deriveWalls(withDoor).some((e) => sameEdge(e, shared))).toBe(false);
+  });
+});
+
+describe('nextRoomNumber after a deletion', () => {
+  it('does not refill gaps', () => {
+    const m = withContent(emptyMap(), [room('a', 1, 1, 1, 1, 'room', 1), room('c', 3, 3, 1, 1, 'room', 3)]);
+    expect(nextRoomNumber(m)).toBe(4);
   });
 });
