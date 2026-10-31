@@ -13,7 +13,7 @@ export interface Point {
   y: number;
 }
 
-export const MIN_SCALE = 6;
+export const MIN_SCALE = 3;
 export const MAX_SCALE = 160;
 
 export function worldToScreen(c: Camera, p: Point): Point {

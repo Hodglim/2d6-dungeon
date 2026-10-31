@@ -15,6 +15,16 @@ describe('pathPosition', () => {
   it('finishes at the last square', () => {
     expect(pathPosition(path, 5)).toEqual({ x: 2.5, y: 2.5, done: true });
   });
+  it('handles a single-point path', () => {
+    expect(pathPosition([{ x: 3, y: 4 }], 0)).toEqual({ x: 3.5, y: 4.5, done: true });
+  });
+  it('clamps negative distance to the start', () => {
+    expect(pathPosition(path, -2)).toEqual({ x: 1.5, y: 1.5, done: false });
+  });
+  it('treats NaN as the start and Infinity as the end', () => {
+    expect(pathPosition(path, NaN)).toEqual({ x: 1.5, y: 1.5, done: false });
+    expect(pathPosition(path, Infinity)).toEqual({ x: 2.5, y: 2.5, done: true });
+  });
 });
 
 describe('footprints', () => {

@@ -19,8 +19,8 @@ export function pathPosition(path: Cell[], distance: number): { x: number; y: nu
   const last = path[path.length - 1];
   if (!last) return { x: 0, y: 0, done: true };
   const max = path.length - 1;
-  if (distance >= max) return { x: last.x + 0.5, y: last.y + 0.5, done: true };
-  const d = Math.max(0, distance);
+  if (!Number.isNaN(distance) && distance >= max) return { x: last.x + 0.5, y: last.y + 0.5, done: true };
+  const d = Number.isNaN(distance) ? 0 : Math.max(0, distance);
   const i = Math.floor(d);
   const t = d - i;
   const a = path[i]!;

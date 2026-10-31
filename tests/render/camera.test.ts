@@ -15,6 +15,18 @@ describe('camera', () => {
     expect(c.scale).toBe(20);
     expect(worldToScreen(c, { x: 5, y: 2.5 })).toEqual({ x: 110, y: 110 });
   });
+  it('fits a 100x100 map into a 400px view with everything visible', () => {
+    const b = worldBounds(emptyMap(100, 100));
+    const c = fitCamera(b, 400, 400, 0);
+    expect(c.scale).toBeGreaterThanOrEqual(MIN_SCALE);
+    for (const p of [{ x: b.x, y: b.y }, { x: b.x + b.w, y: b.y + b.h }]) {
+      const s = worldToScreen(c, p);
+      expect(s.x).toBeGreaterThanOrEqual(-1e-6);
+      expect(s.y).toBeGreaterThanOrEqual(-1e-6);
+      expect(s.x).toBeLessThanOrEqual(400 + 1e-6);
+      expect(s.y).toBeLessThanOrEqual(400 + 1e-6);
+    }
+  });
   it('zooms around the pointer', () => {
     const z = zoomAt(cam, 2, { x: 50, y: 40 });
     expect(z.scale).toBe(20);

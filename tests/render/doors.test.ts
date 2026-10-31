@@ -32,4 +32,11 @@ describe('exit stubs', () => {
     );
     expect(exitStubs(m)).toEqual([{ doorId: 'open', cx: 2.5, cy: 2, dx: 0, dy: -1 }]);
   });
+  it('point outward from open exits on S, E and W walls', () => {
+    const room1 = room('a', 2, 2, 2, 2);
+    const stub = (d: ReturnType<typeof door>) => exitStubs(withContent(emptyMap(), [room1], [d]))[0];
+    expect(stub(door('s', 2, 4, 'N'))).toEqual({ doorId: 's', cx: 2.5, cy: 4, dx: 0, dy: 1 });
+    expect(stub(door('e', 4, 2, 'W'))).toEqual({ doorId: 'e', cx: 4, cy: 2.5, dx: 1, dy: 0 });
+    expect(stub(door('w', 2, 2, 'W'))).toEqual({ doorId: 'w', cx: 2, cy: 2.5, dx: -1, dy: 0 });
+  });
 });
