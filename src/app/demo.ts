@@ -77,7 +77,7 @@ export function demoMap(): DungeonMap {
   retype(h, { x: 8, y: 13, side: 'N' }, { type: 'wooden' });
   retype(h, { x: 8, y: 12, side: 'N' }, { type: 'metal' });
   retype(h, { x: 7, y: 14, side: 'W' }, { type: 'curtain' });
-  retype(h, { x: 6, y: 14, side: 'W' }, { type: 'reinforced', lock: { locked: true, note: 'Rusted shut', quality: null } });
+  retype(h, { x: 6, y: 14, side: 'W' }, { type: 'reinforced', lock: { locked: true, note: 'Rusted shut', quality: 4 } });
   retype(h, { x: 7, y: 9, side: 'W' }, { type: 'stoneSlab' });
   retype(h, { x: 9, y: 8, side: 'N' }, { secret: true });
   retype(h, { x: 14, y: 15, side: 'W' }, { type: 'wooden', lock: { locked: false, note: '', quality: null } });

@@ -56,3 +56,32 @@ export function panBy(c: Camera, dx: number, dy: number): Camera {
 export function clampScale(s: number): number {
   return Math.min(MAX_SCALE, Math.max(MIN_SCALE, s));
 }
+
+/**
+ * Keep at least `margin` screen pixels of `bounds` visible on every axis, so the map can
+ * never be panned out of reach. Safe to re-run after the viewport changes size.
+ */
+export function clampCamera(c: Camera, bounds: Rect, viewW: number, viewH: number, margin = 64): Camera {
+  const mx = Math.min(margin, viewW / 2);
+  const my = Math.min(margin, viewH / 2);
+  const x = Math.min(bounds.x + bounds.w - mx / c.scale, Math.max(bounds.x - (viewW - mx) / c.scale, c.x));
+  const y = Math.min(bounds.y + bounds.h - my / c.scale, Math.max(bounds.y - (viewH - my) / c.scale, c.y));
+  return { ...c, x, y };
+}
+
+/** Two-finger gesture: scale by the change in finger distance, pan by the midpoint's travel. */
+export function pinchCamera(c: Camera, before: [Point, Point], after: [Point, Point]): Camera {
+  const dist = (p: [Point, Point]) => Math.hypot(p[1].x - p[0].x, p[1].y - p[0].y);
+  const mid = (p: [Point, Point]): Point => ({ x: (p[0].x + p[1].x) / 2, y: (p[0].y + p[1].y) / 2 });
+  const d0 = dist(before);
+  const scale = d0 < 1e-6 ? c.scale : clampScale(c.scale * (dist(after) / d0));
+  const anchor = screenToWorld(c, mid(before));
+  const m = mid(after);
+  return { scale, x: anchor.x - m.x / scale, y: anchor.y - m.y / scale };
+}
+
+/** Zoom factor for a wheel event; deltaMode 0=px, 1=line, 2=page. */
+export function wheelFactor(deltaY: number, deltaMode: number): number {
+  const px = deltaY * (deltaMode === 1 ? 16 : deltaMode === 2 ? 400 : 1);
+  return Math.exp(-px * 0.0015);
+}

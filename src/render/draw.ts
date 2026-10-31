@@ -199,12 +199,29 @@ function drawLock(ctx: CanvasRenderingContext2D, g: DoorGlyph, theme: Theme): vo
   ctx.rotate(-g.rotation);
   ctx.strokeStyle = theme.ink;
   ctx.lineWidth = 0.03;
+  ctx.lineCap = 'round';
   ctx.beginPath();
-  ctx.arc(0, -0.04, 0.05, Math.PI, 0);
+  if (g.locked) {
+    // Closed shackle: both legs seated in the body.
+    ctx.moveTo(-0.05, -0.04);
+    ctx.arc(0, -0.04, 0.05, Math.PI, 0);
+  } else {
+    // Open shackle: swung up and clear of the left side.
+    ctx.moveTo(0.05, -0.04);
+    ctx.lineTo(0.05, -0.1);
+    ctx.arc(0, -0.1, 0.05, 0, Math.PI);
+    ctx.lineTo(-0.05, -0.075);
+  }
   ctx.stroke();
   ctx.fillStyle = g.locked ? theme.ink : theme.paper;
   ctx.fillRect(-0.075, -0.04, 0.15, 0.11);
   ctx.strokeRect(-0.075, -0.04, 0.15, 0.11);
+  if (g.quality !== null) {
+    ctx.fillStyle = theme.ink;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    fillText(ctx, String(g.quality), 0.12, 0.02, 0.2, theme.labelFont, 'bold');
+  }
   ctx.restore();
 }
 

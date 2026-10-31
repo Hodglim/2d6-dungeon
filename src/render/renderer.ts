@@ -1,7 +1,7 @@
 import { perimeterEdges, sameEdge } from '../core/geometry';
 import { roomAt } from '../core/query';
 import type { Cell, DungeonMap } from '../core/types';
-import { type Camera, fitCamera, worldBounds } from './camera';
+import { type Camera, fitCamera, type Point, screenToWorld, worldBounds } from './camera';
 import { doorGlyphs, exitStubs } from './doors';
 import {
   drawDecals,
@@ -77,7 +77,13 @@ export function canvasMeasure(ctx: CanvasRenderingContext2D, theme: Theme): Meas
  * Draw everything that doesn't animate (paper → labels) in world units. Used for the
  * on-screen cache and, later, PNG export. The context must already map 1 unit = 1 square.
  */
-export function renderStatic(ctx: CanvasRenderingContext2D, map: DungeonMap, theme: Theme, toggles: DisplayToggles): void {
+export function renderStatic(
+  ctx: CanvasRenderingContext2D,
+  map: DungeonMap,
+  theme: Theme,
+  toggles: DisplayToggles,
+  options: { exitStubs?: boolean } = {},
+): void {
   const layers: (() => void)[] = [
     () => { drawPaper(ctx, map, theme, toggles.grid); },
     () => { if (toggles.hatching && theme.rockStyle === 'hatch') drawHatching(ctx, hatchStrokes(map, theme.hatchReach), theme); },
@@ -86,7 +92,7 @@ export function renderStatic(ctx: CanvasRenderingContext2D, map: DungeonMap, the
     () => { if (toggles.shadows) drawShadows(ctx, wallShadows(map), theme); },
     () => { drawWalls(ctx, wallSegments(map), theme); },
     () => { drawDoors(ctx, doorGlyphs(map), theme); },
-    () => { drawExitStubs(ctx, exitStubs(map), theme, fadedExits(map)); },
+    () => { if (options.exitStubs ?? true) drawExitStubs(ctx, exitStubs(map), theme, fadedExits(map)); },
     () => { drawFeatures(ctx, map.features, theme); },
     () => { drawLabels(ctx, placeLabels(map, canvasMeasure(ctx, theme)), theme); },
   ];
@@ -128,6 +134,7 @@ export class MapRenderer {
   private frame = 0;
   private needsDraw = true;
   private lastDraw = -Infinity;
+  private overlay: ((ctx: CanvasRenderingContext2D, time: number) => void) | null = null;
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
@@ -148,6 +155,18 @@ export class MapRenderer {
     this.map = map;
     this.cacheDirty = true;
     this.invalidate();
+  }
+
+  /** Draw extra content in world units every frame, after the token layer. */
+  setOverlay(fn: ((ctx: CanvasRenderingContext2D, time: number) => void) | null): void {
+    this.overlay = fn;
+    this.invalidate();
+  }
+
+  /** Convert page client coordinates to world units, accounting for the canvas position. */
+  screenToWorldPoint(clientX: number, clientY: number): Point {
+    const r = this.canvas.getBoundingClientRect();
+    return screenToWorld(this.cam, { x: clientX - r.left, y: clientY - r.top });
   }
 
   /** Request a redraw on the next animation frame. */
@@ -241,6 +260,21 @@ export class MapRenderer {
   }
 
   private drawDynamic(map: DungeonMap, time: number): void {
+    const { ctx } = this;
+    ctx.save();
+    drawExitStubs(ctx, exitStubs(map), this.theme, fadedExits(map));
+    ctx.restore();
+    ctx.save();
+    this.drawToken(map, time);
+    ctx.restore();
+    if (this.overlay) {
+      ctx.save();
+      this.overlay(ctx, time);
+      ctx.restore();
+    }
+  }
+
+  private drawToken(map: DungeonMap, time: number): void {
     const token = map.token;
     if (!token) return;
     let pos = { x: token.x + 0.5, y: token.y + 0.5 };
@@ -284,7 +318,7 @@ export class MapRenderer {
     const cctx = cache.getContext('2d');
     if (!cctx) return;
     cctx.setTransform(scale, 0, 0, scale, -(b.x - 1) * scale, -(b.y - 1) * scale);
-    renderStatic(cctx, map, this.theme, this.toggles);
+    renderStatic(cctx, map, this.theme, this.toggles, { exitStubs: false });
     this.cache = cache;
     this.cacheScale = scale;
     this.cacheDirty = false;

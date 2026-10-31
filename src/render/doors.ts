@@ -13,6 +13,8 @@ export interface DoorGlyph {
   secret: boolean;
   /** null = no lock; otherwise whether it is currently locked. */
   locked: boolean | null;
+  /** Lock quality number to draw beside the padlock, when set. */
+  quality: number | null;
   /** An unexplored exit (room on one side only). */
   open: boolean;
 }
@@ -32,6 +34,7 @@ export function doorGlyphs(map: DungeonMap): DoorGlyph[] {
       rotation,
       secret: d.secret,
       locked: d.lock ? d.lock.locked : null,
+      quality: d.lock?.quality ?? null,
       open: (a === undefined) !== (b === undefined),
     };
   });

@@ -29,6 +29,12 @@ export interface Theme {
   token: string;
   tokenText: string;
   footprint: string;
+  /** Selection / hover emphasis. */
+  highlight: string;
+  /** Placement ghost: valid. */
+  ghostOk: string;
+  /** Placement ghost: invalid. */
+  ghostBad: string;
   /** Wall stroke width in grid units. */
   wallWidth: number;
   /** How far hatching reaches from the floor, in squares. */
