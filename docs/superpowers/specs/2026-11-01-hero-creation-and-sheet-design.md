@@ -1,4 +1,4 @@
-# 2D6 Map Maker: Hero Creation Wizard, Character Sheet and Player-Supplied Tables (Design)
+# 2D6 Map Maker: Hero Creation Wizard, Character Sheet, Creature Cards and Player-Supplied Tables (Design)
 
 **Date:** 2026-11-01
 **Status:** Agreed in conversation. Builder check done (§12). Pending user review.
@@ -246,3 +246,52 @@ These are my calls, flagged for the user:
   - The sheet opens in place of the right-hand step panel, made wider while it's open, and the map stays visible and usable beside it.
   - The quick strip sits at the top of that panel.
   - Closing the panel brings the step panel back.
+
+## 13. Creature cards (added 2026-11-01, user request)
+
+The user wants the **whole creature card image** from the Codex (pp. 102–127, four cards per page, Levels 1–10) to show in the sidebar during an encounter. They pick or search for the enemy they're facing.
+
+### Making a card pack (agreed)
+
+- **A script in the repo** (for example `scripts/make-creature-pack.mjs`), containing no rulebook content, takes the path to a player's own Tables Codex PDF.
+- **It renders and crops:**
+  - It renders the creature pages and crops each card out as its own image.
+  - Use the local `pdftoppm` (poppler) and ImageMagick. These are CLI tools, not new npm dependencies.
+  - The README says they're needed.
+- **It names the cards:** names and levels come from the Codex's creature index, which is a text page. They're matched to card positions in reading order: top-left, top-right, bottom-left, bottom-right.
+  - Pages with fewer than four cards must be handled.
+  - The script prints a contact sheet or a list, so the result can be checked by eye.
+- **The output is a card pack file:** `local-data/creature-cards.json`, holding `{ format, systemId, name, cards: [{ id, name, level, image }] }`.
+  - Images are embedded as JPEG or WebP data, at a resolution readable on an iPad sidebar.
+  - The script reports the pack's total size.
+  - The file is git-ignored and never committed or published.
+
+### Loading (agreed)
+
+- Load the card pack from the menu, next to the table file. It's a separate file.
+- It's stored on the device in IndexedDB, separately from the game save and the table file.
+- It's never included in exports.
+- Validate it with plain error messages.
+- The size limit for this import is larger than for game files (builder's call, for example 60 MB).
+
+### Encounter UI (agreed)
+
+- An **Encounter** button opens a search: type part of a name, or filter by dungeon level, then pick a creature.
+- The creature's card image replaces the right-hand step panel, sized to fit, while the map stays usable.
+- Tap the card to view it larger.
+- **End encounter** closes it and brings the step panel back.
+- The open encounter isn't part of the undo timeline. My call is that it's remembered across a reload only if that's simple, for example a small field in the save record.
+- No enemy HP tracking or combat rules yet; those are a later step.
+- Without a card pack loaded, the Encounter button explains how to load one.
+
+### Other players
+
+The format doc (`docs/table-file-format.md`) explains how to run the script on your own PDF, and the script prints its own usage.
+
+### My calls (flagged)
+
+- The JSON-with-embedded-images format, so no zip dependency is needed.
+- How the Hero sheet and an open encounter share the sidebar: switch between them with two tabs at the top of the panel, with the encounter shown first while it's open.
+- Matching names to card positions using the index's page numbers.
+- The `check-dist` guard also fails if `dist/` contains any embedded image data or creature names from `local-data/creature-cards.json`, when that file exists.
+- Making the user's own card pack is a late plan task, run on the user's PDF and checked by eye against the book.
