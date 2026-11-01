@@ -88,12 +88,19 @@ export class IdbSaveStore implements SaveStore {
       }
     };
     return new Promise<T>((resolve, reject) => {
+      // A transaction that never fires any event must not stall the autosaver silently.
+      const timer = setTimeout(() => fail(new Error('Storage did not respond')), this.openTimeoutMs);
+      const done = (v: T) => {
+        clearTimeout(timer);
+        resolve(v);
+      };
       const fail = (e: unknown) => {
+        clearTimeout(timer);
         drop();
         reject(e);
       };
       try {
-        op(db, resolve, fail);
+        op(db, done, fail);
       } catch (e) {
         fail(e);
       }

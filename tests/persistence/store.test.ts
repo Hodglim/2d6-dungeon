@@ -182,4 +182,16 @@ describe('IdbSaveStore with a dead connection', () => {
     await s.save(rec(3));
     expect(await internal(s).db!).not.toBe(first);
   });
+
+  it('rejects a transaction that never fires any event, and the next save reopens', async () => {
+    const s = new IdbSaveStore('t-silent', 50);
+    await s.save(rec(1));
+    const first = await internal(s).db!;
+    const silentTx = { objectStore: () => ({ put: () => ({}) }) } as unknown as IDBTransaction;
+    vi.spyOn(first, 'transaction').mockImplementationOnce(() => silentTx);
+    await expect(s.save(rec(2))).rejects.toThrow('Storage did not respond');
+    expect(internal(s).db).toBeNull();
+    await s.save(rec(3));
+    expect(await internal(s).db!).not.toBe(first);
+  });
 });
