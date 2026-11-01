@@ -27,21 +27,23 @@ export function buildId(): string {
 
 /** Tells the waiting worker to take over; the page reloads on controllerchange (see reloadOnControllerChange). */
 export function applyUpdate(): void {
+  reloadRequested = true;
   waiting?.postMessage({ type: 'SKIP_WAITING' });
 }
 
+let reloadRequested = false;
 let beforeReload: () => Promise<void> = async () => {};
 /** The app registers its autosave flush here; it runs before the update reload (bounded to 2s). */
 export function setBeforeReload(fn: () => Promise<void>): void {
   beforeReload = fn;
 }
 
-/** Reloads exactly once when a new worker takes control. A first install claiming the page is not an update. */
+/** Reloads exactly once when a new worker takes control, but only after the user asked (the prompt click).
+ *  A first-install claim, or another tab's update, never reloads this page by itself. */
 function reloadOnControllerChange(): void {
-  if (!navigator.serviceWorker.controller) return;
   let reloading = false;
   navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (reloading) return;
+    if (!reloadRequested || reloading) return;
     reloading = true;
     void Promise.race([beforeReload().catch(() => {}), new Promise((r) => setTimeout(r, 2000))]).then(() =>
       location.reload(),

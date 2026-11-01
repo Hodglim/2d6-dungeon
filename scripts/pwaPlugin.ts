@@ -10,7 +10,19 @@ function walk(dir: string): string[] {
   });
 }
 
-/** After the bundle is written, emit dist/sw.js listing every output file; the cache name hashes their contents. */
+/** Writes outDir/sw.js listing every other output file; the cache name hashes their names and contents. */
+export function emitServiceWorker(outDir: string): void {
+  const files = walk(outDir)
+    .map((f) => relative(outDir, f).split(sep).join('/'))
+    .filter((f) => f !== 'sw.js' && f !== '_headers')
+    .sort();
+  const hash = createHash('sha256');
+  for (const f of files) hash.update(f).update(readFileSync(join(outDir, f)));
+  const cache = `2d6-${hash.digest('hex').slice(0, 16)}`;
+  const tpl = readFileSync(new URL('./sw-template.js', import.meta.url), 'utf8');
+  writeFileSync(join(outDir, 'sw.js'), tpl.replace('__CACHE__', cache).replace('__PRECACHE__', JSON.stringify(files)));
+}
+
 export function pwaPlugin(): Plugin {
   let outDir = 'dist';
   return {
@@ -20,18 +32,7 @@ export function pwaPlugin(): Plugin {
       outDir = c.build.outDir;
     },
     writeBundle() {
-      const files = walk(outDir)
-        .map((f) => relative(outDir, f).split(sep).join('/'))
-        .filter((f) => f !== 'sw.js' && f !== '_headers')
-        .sort();
-      const hash = createHash('sha256');
-      for (const f of files) hash.update(f).update(readFileSync(join(outDir, f)));
-      const cache = `2d6-${hash.digest('hex').slice(0, 16)}`;
-      const tpl = readFileSync(new URL('./sw-template.js', import.meta.url), 'utf8');
-      writeFileSync(
-        join(outDir, 'sw.js'),
-        tpl.replace('__CACHE__', cache).replace('__PRECACHE__', JSON.stringify(files)),
-      );
+      emitServiceWorker(outDir);
     },
   };
 }

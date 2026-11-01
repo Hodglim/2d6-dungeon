@@ -5,6 +5,10 @@ const CACHE = '__CACHE__';
 const PRECACHE = __PRECACHE__; // paths relative to this file, e.g. "index.html", "assets/app-abc.js"
 
 const scopeUrl = (p) => new URL(p, self.registration.scope).href;
+// The app shell is cached under the scope root, not index.html: Cloudflare Pages 308-redirects /index.html to /,
+// and a redirected response can't be served to a navigation.
+const SHELL = scopeUrl('./');
+const keyFor = (p) => (p === 'index.html' ? SHELL : scopeUrl(p));
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -13,9 +17,12 @@ self.addEventListener('install', (event) => {
       // cache: 'reload' bypasses the HTTP cache so a new build never precaches stale files.
       await Promise.all(
         PRECACHE.map(async (p) => {
-          const res = await fetch(new Request(scopeUrl(p), { cache: 'reload' }));
+          const key = keyFor(p);
+          let res = await fetch(new Request(key, { cache: 'reload' }));
           if (!res.ok) throw new Error(`precache ${p}: ${res.status}`);
-          await cache.put(scopeUrl(p), res);
+          // Drop the `redirected` flag: rebuild the response from its body.
+          if (res.redirected) res = new Response(res.body, { status: res.status, statusText: res.statusText, headers: res.headers });
+          await cache.put(key, res);
         }),
       );
     })(),
@@ -43,7 +50,11 @@ self.addEventListener('fetch', (event) => {
   if (url.origin !== self.location.origin) return;
   if (req.mode === 'navigate') {
     event.respondWith(
-      caches.open(CACHE).then((c) => c.match(scopeUrl('index.html'))).then((hit) => hit || fetch(req)),
+      caches
+        .open(CACHE)
+        .then((c) => c.match(SHELL))
+        .then((hit) => hit || fetch(req))
+        .catch(async () => (await (await caches.open(CACHE)).match(SHELL)) || Response.error()),
     );
     return;
   }
