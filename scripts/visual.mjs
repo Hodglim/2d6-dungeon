@@ -477,7 +477,14 @@ if (!(await page.isVisible('text=This replaces your current game.'))) problems.p
     await p.keyboard.press('Escape');
     return t;
   };
-  const fixture = readFileSync('tests/fixtures/dungeon-tables.fixture.json');
+  const fixtureRaw = readFileSync('tests/fixtures/dungeon-tables.fixture.json');
+  // In-test copy only: a single-die armour with a long modifier, wider than any manoeuvre damage.
+  const fixtureObj = JSON.parse(fixtureRaw.toString());
+  JSON.stringify(fixtureObj, (k, v) => {
+    if (v && v.name === 'Padded Tablecloth') Object.assign(v, { dice: [2], modifier: '-1 Damage' });
+    return v;
+  });
+  const fixture = Buffer.from(JSON.stringify(fixtureObj));
   const fixtureName = JSON.parse(fixture.toString()).name;
   const pick = async (which, name, buffer) => {
     await p.setInputFiles(`input[data-extra="${which}"]`, { name, mimeType: 'application/json', buffer });
@@ -537,6 +544,22 @@ if (!(await page.isVisible('text=This replaces your current game.'))) problems.p
     if (r.xs.some((x) => x.join() !== r.xs[0].join())) problems.push(`wizard ${where}: columns misaligned ${JSON.stringify(r.xs)}`);
     if (r.over || r.hs) problems.push(`wizard ${where}: overflow (${r.over} elements, hscroll ${r.hs})`);
   };
+  // Review card: dice and last-column x match across manoeuvre + armour rows; nothing overflows or scrolls.
+  const wizReview = async (where) => {
+    const r = await p.evaluate(() => {
+      const d = document.querySelector('[aria-labelledby=wizard-title]');
+      const body = d.querySelector('.body');
+      const xs = [...d.querySelectorAll('.sheet .mtable .row')].map((row) => [...row.querySelectorAll('.dcell, .dmg')].map((c) => Math.round(c.getBoundingClientRect().left)));
+      const dr = d.getBoundingClientRect();
+      const over = [...d.querySelectorAll('.sheet *')].filter((e) => e.getBoundingClientRect().right > dr.right + 1).length;
+      return { xs, tables: d.querySelectorAll('.sheet .mtable').length, over, vs: body.scrollHeight > body.clientHeight + 1, hs: body.scrollWidth > body.clientWidth + 1, tiles: d.querySelectorAll('.tile').length };
+    });
+    if (r.tables !== 1 || r.tiles !== 4) problems.push(`wizard ${where}: expected 1 shared grid and 4 tiles, got ${r.tables}/${r.tiles}`);
+    if (r.xs.length < 3) problems.push(`wizard ${where}: expected manoeuvre and armour rows in one grid`);
+    if (r.xs.length < 2 || r.xs.some((x) => x.join() !== r.xs[0].join())) problems.push(`wizard ${where}: columns misaligned ${JSON.stringify(r.xs)}`);
+    if (r.over || r.hs) problems.push(`wizard ${where}: overflow (${r.over} elements, hscroll ${r.hs})`);
+    if (where.includes('1180') && r.vs) problems.push(`wizard ${where}: body scrolls vertically`);
+  };
   const runWizard = async (name, shots) => {
     await openMenu();
     await p.click('[role=menuitem]:text-is("New game…")');
@@ -565,6 +588,7 @@ if (!(await page.isVisible('text=This replaces your current game.'))) problems.p
     await wiz('Next');
     await p.click('.option:has-text("Scroll of Mild Glow")');
     await wiz('Next');
+    await wizReview('review 1180x820');
     if (shots) await wshot('32-wizard-review.png');
     await wiz('Begin');
     await p.waitForTimeout(300);
@@ -611,6 +635,16 @@ if (!(await page.isVisible('text=This replaces your current game.'))) problems.p
   await p.click('.weapon:has-text("Training Club")');
   await p.click('.mtable .row:has-text("Soft Bonk")');
   await wizAlign('weapon+manoeuvres (820x1180)');
+  await wizSmall();
+  await p.click('.weapon:has-text("Practice Sword")');
+  await p.click('.mtable .row:has-text("Wobbly Poke")');
+  await p.click('.mtable .row:has-text("Gentle Swipe")');
+  await wiz('Next');
+  await p.click('.option:has-text("Padded Tablecloth")');
+  await wiz('Next');
+  await p.click('.option:has-text("Scroll of Mild Glow")');
+  await wiz('Next');
+  await wizReview('review 820x1180');
   await wizSmall();
   await wiz('Cancel');
   await p.setViewportSize({ width: 1180, height: 820 });

@@ -150,17 +150,41 @@
           {/each}
         </div>
       {:else if step === 'review' && review}
+        {@const sc = review.scrolls[0]}
+        {@const kit = [...review.smallItems, ...review.largeItems]}
         <div class="sheet">
-          <h3>{review.name} <small>Level {review.level}, {review.title}</small></h3>
-          <p>{review.hp} HP · Shift {review.shift} · Discipline {review.discipline} · Precision {review.precision} · Rations {review.rations}</p>
-          <p><strong>Weapon:</strong> {review.weapon}</p>
-          <ul>
-            {#each review.manoeuvres as m (m.name)}<li>{m.name} <DicePair dice={m.dice} /> {m.modifier}</li>{/each}
-          </ul>
-          <p><strong>Armour:</strong> {review.armour[0]!.name} <DicePair dice={review.armour[0]!.dice} /> {review.armour[0]!.modifier}</p>
-          <p><strong>Scroll:</strong> {review.scrolls[0]!.name}</p>
-          <p><strong>Potions:</strong> {review.potions.map((p) => p.name).join(', ') || 'none'}</p>
-          <p><strong>Kit:</strong> {[...review.smallItems, ...review.largeItems].join(', ') || 'none'}</p>
+          <header class="card-head">
+            <h3>{review.name}</h3>
+            <p class="sub">Level {review.level} · {review.title}</p>
+          </header>
+          <div class="tiles">
+            {#each [['HP', review.hp], ['Shift', review.shift], ['Discipline', review.discipline], ['Precision', review.precision]] as [label, n] (label)}
+              <div class="tile"><span class="num">{n}</span><span class="lab">{label}</span></div>
+            {/each}
+          </div>
+          <div class="cols">
+            <section class="left">
+              <h4>Weapon — {review.weapon}</h4>
+              <ManoeuvreTable
+                label="Manoeuvres and armour"
+                rows={review.manoeuvres.map((m) => ({ name: m.name, dice: m.dice, damage: m.modifier }))}
+                extra={{ title: 'Armour', lastLabel: 'Modifier', rows: review.armour.map((a) => ({ name: a.name, dice: a.dice, damage: a.modifier })) }}
+              />
+            </section>
+            <section class="right">
+              <h4>Scroll</h4>
+              {#if sc}
+                <p class="item">{sc.name}</p>
+                <p class="muted">{[sc.effectModifier, sc.orbit && `Orbit ${sc.orbit}`, sc.dispelDoubles && `Dispel doubles ${sc.dispelDoubles}`].filter(Boolean).join(' · ')}</p>
+              {:else}<p class="muted">None</p>{/if}
+              <h4>Potions</h4>
+              {#if review.potions.length}<ul class="chips">{#each review.potions as p, i (i)}<li>{p.name}</li>{/each}</ul>{:else}<p class="muted">None</p>{/if}
+              <h4>Kit</h4>
+              {#if kit.length}<ul class="chips">{#each kit as k, i (i)}<li>{k}</li>{/each}</ul>{:else}<p class="muted">None</p>{/if}
+              <h4>Rations</h4>
+              <p class="item">{review.rations}</p>
+            </section>
+          </div>
         </div>
       {/if}
     </div>
@@ -299,36 +323,95 @@
     font-weight: 600;
     color: var(--danger);
   }
-  .sheet ul {
-    margin: 0;
-    padding: 0;
-    list-style: none;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
-  .sheet li,
-  .line {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    flex-wrap: wrap;
-  }
   .dmg {
     font-weight: 400;
     font-size: 16px;
   }
-  .sheet h3 {
-    margin: 0 0 4px;
-    font-size: 22px;
+  .sheet {
+    container-type: inline-size;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
   }
-  .sheet h3 small {
-    font-size: 16px;
-    font-weight: 400;
+  .card-head h3 {
+    margin: 0;
+    font-size: 32px;
+    line-height: 1.1;
   }
-  .sheet p {
-    margin: 4px 0;
+  .sub {
+    margin: 2px 0 0;
     font-size: 17px;
+    color: var(--muted);
+  }
+  .tiles {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .tile {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 6px 4px;
+    border: 2px solid var(--ink);
+    border-radius: 6px;
+  }
+  .tile .num {
+    font-size: 30px;
+    font-weight: 700;
+    line-height: 1.1;
+  }
+  .tile .lab,
+  .sheet h4 {
+    font-size: 14px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+  }
+  .sheet h4 {
+    margin: 0 0 6px;
+  }
+  .cols {
+    display: grid;
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+    gap: 14px 24px;
+  }
+  .left h4:not(:first-child) {
+    margin-top: 12px;
+  }
+  .right h4:not(:first-child) {
+    margin-top: 12px;
+  }
+  .right p {
+    margin: 0;
+  }
+  .item {
+    font-size: 18px;
+    font-weight: 600;
+  }
+  .muted {
+    font-size: 15px;
+    color: var(--muted);
+  }
+  .chips {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .chips li {
+    padding: 4px 10px;
+    border: 1px solid var(--muted);
+    border-radius: 14px;
+    font-size: 16px;
+  }
+  @container (max-width: 640px) {
+    .cols {
+      grid-template-columns: minmax(0, 1fr);
+    }
   }
   button {
     min-width: 96px;

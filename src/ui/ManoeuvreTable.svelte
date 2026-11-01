@@ -16,15 +16,19 @@
     label?: string;
     /** Preview only: tick boxes shown but not usable. */
     disabled?: boolean;
+    /** Header for the last column (Damage for manoeuvres, Modifier for armour). */
+    lastLabel?: string;
+    /** A second section in the same grid (e.g. armour) so its columns line up with the rows above. */
+    extra?: { title: string; lastLabel: string; rows: Row[] };
   }
-  let { rows, selected, full = false, ontoggle, label = 'Manoeuvres', disabled = false }: Props = $props();
+  let { rows, selected, full = false, ontoggle, label = 'Manoeuvres', disabled = false, lastLabel = 'Damage', extra }: Props = $props();
   const selectable = $derived(selected !== undefined);
 </script>
 
 <div class="mtable" class:selectable role="group" aria-label={label}>
   <div class="head" aria-hidden="true">
     {#if selectable}<span class="pick"></span>{/if}
-    <span class="name">Name</span><span class="dcell">Red</span><span class="dcell">Blue</span><span class="dmg">Damage</span>
+    <span class="name">Name</span><span class="dcell">Red</span><span class="dcell">Blue</span><span class="dmg">{lastLabel}</span>
   </div>
   {#each rows as m (m.name)}
     {#snippet cells()}
@@ -43,6 +47,20 @@
       <div class="row">{@render cells()}</div>
     {/if}
   {/each}
+  {#if extra}
+    <h4 class="section">{extra.title}</h4>
+    <div class="head" aria-hidden="true">
+      <span class="name">Name</span><span class="dcell">Red</span><span class="dcell">Blue</span><span class="dmg">{extra.lastLabel}</span>
+    </div>
+    {#each extra.rows as m (m.name)}
+      <div class="row">
+        <span class="name">{m.name}</span>
+        <span class="dcell">{#if m.dice[0]}<DieFace value={m.dice[0]} colour="red" size={36} />{/if}</span>
+        <span class="dcell">{#if m.dice[1]}<DieFace value={m.dice[1]} colour="blue" size={36} />{/if}</span>
+        <span class="dmg">{m.damage}</span>
+      </div>
+    {/each}
+  {/if}
 </div>
 
 <style>
@@ -53,6 +71,15 @@
   }
   .mtable.selectable {
     grid-template-columns: 32px minmax(0, 1fr) 40px 40px max-content;
+  }
+  .section {
+    grid-column: 1 / -1;
+    margin: 12px 0 6px;
+    font-size: 14px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
   }
   .head,
   .row {
