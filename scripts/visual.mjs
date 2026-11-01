@@ -107,7 +107,17 @@ await checkPanel('entrance label');
 await shot('05-label.png');
 await panelButton('Done');
 await stepIs('idle', 'labelling the entrance room');
-await page.waitForTimeout(1500); // token walks in
+await page.waitForTimeout(1500); // token walks in (also longer than the autosave debounce)
+
+// 2b. Reload: the autosave brings the entrance back, with its undo step.
+await page.reload({ waitUntil: 'load' });
+await page.waitForTimeout(1000);
+const undoAfterReload = (await page.textContent('header.toolbar button.history'))?.replace(/\s+/g, ' ').trim();
+console.log(`Undo after reload: ${undoAfterReload}`);
+if (!undoAfterReload?.endsWith('Undo Add entrance')) problems.push(`after reload the undo button reads "${undoAfterReload}", expected "Undo Add entrance"`);
+if ((await page.textContent('header.toolbar .coverage'))?.trim() === '0%') problems.push('after reload the map is empty');
+await stepIs('idle', 'reloading');
+await shot('20-after-reload.png');
 
 // 3. Room 2 from the entrance room's north exit (12,20): doubles 4-4, then 2-1 → 6×5.
 await tapWorld(12.5, 20);
@@ -311,7 +321,7 @@ await shot('08-menu.png');
 
 // 7. Load the demo map (the map has content now, so confirm), then wheel-zoom on the map.
 await page.click('text=Load demo map');
-await page.click('button:has-text("Replace map")');
+await page.click('[role=alertdialog] button:text-is("Replace")');
 await page.waitForTimeout(500);
 const canvas = await page.$('canvas');
 const box = await canvas.boundingBox();
@@ -323,10 +333,10 @@ await shot('09-demo.png');
 // 8. New map dialog shows the discard confirmation over a map with content.
 await page.click('header.toolbar button[aria-label="Menu"]');
 await page.click('text=New map…');
-await page.click('button:has-text("Create")');
+await page.click('button:text-is("Create")');
 await page.waitForTimeout(200);
 await shot('10-new-map-confirm.png');
-if (!(await page.isVisible("text=This replaces the current map — there's no saving yet"))) problems.push('new map confirmation not shown');
+if (!(await page.isVisible('text=This replaces your current game.'))) problems.push('new game confirmation not shown');
 
 await browser.close();
 if (errors.length) problems.push('page errors:\n' + errors.join('\n'));

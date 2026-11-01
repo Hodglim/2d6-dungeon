@@ -7,9 +7,11 @@
     onnewmap: () => void;
     ondemo: () => void;
     onfit: () => void;
+    onexport: () => void;
+    onimport: () => void;
   }
 
-  let { toggles = $bindable(), onclose, onnewmap, ondemo, onfit }: Props = $props();
+  let { toggles = $bindable(), onclose, onnewmap, ondemo, onfit, onexport, onimport }: Props = $props();
 
   const toggleLabels: Record<keyof DisplayToggles, string> = {
     grid: 'Grid',
@@ -36,6 +38,8 @@
   <button role="menuitem" onclick={act(onnewmap)}>New map…</button>
   <button role="menuitem" onclick={act(ondemo)}>Load demo map</button>
   <button role="menuitem" onclick={act(onfit)}>Fit map to screen</button>
+  <button role="menuitem" onclick={act(onexport)}>Export game</button>
+  <button role="menuitem" onclick={act(onimport)}>Import game…</button>
   <h3>Display</h3>
   {#each toggleNames as name (name)}
     <label><input type="checkbox" bind:checked={toggles[name]} /> {toggleLabels[name]}</label>
