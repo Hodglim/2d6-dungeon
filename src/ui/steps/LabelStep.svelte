@@ -26,7 +26,7 @@
   <p class="warn">{step.dropped} {step.dropped === 1 ? "exit couldn't" : "exits couldn't"} be placed</p>
 {/if}
 <form class="label" onsubmit={(e) => { e.preventDefault(); oncommit(() => flow.finish({ type: type.trim(), unique, narrative: narrative.trim() })); }}>
-  <label class="field">Room type <input type="text" bind:value={type} placeholder="e.g. Guard Room" /></label>
+  <label class="field">Room type <input type="text" bind:value={type} placeholder="e.g. Lamp Room" /></label>
   <label class="check"><input type="checkbox" bind:checked={unique} /> Unique</label>
   <label class="field">Narrative <textarea rows="3" bind:value={narrative}></textarea></label>
   <div class="row">

@@ -3,9 +3,8 @@ import { checkInvariants } from './invariants';
 import { HISTORY_CAP, type HistoryState } from './history';
 import type { Campaign } from './types';
 
-/** migrations[n] upgrades a raw campaign object from schema version n to n + 1. */
-export type Migration = (raw: Record<string, unknown>) => Record<string, unknown>;
-export const migrations: Record<number, Migration> = {};
+/** Null means the hero is valid. The game system supplies it; core never looks inside a hero. */
+export type HeroProblem = (hero: unknown) => string | null;
 
 export type ParseResult = { ok: true; campaign: Campaign } | { ok: false; error: string };
 
@@ -68,7 +67,7 @@ export function mapProblem(m: unknown): string | null {
   return null;
 }
 
-function shapeProblem(raw: Record<string, unknown>): string | null {
+function shapeProblem(raw: Record<string, unknown>, heroProblem?: HeroProblem): string | null {
   for (const k of ['id', 'name', 'systemId', 'activeMapId']) if (!isStr(raw[k])) return `missing ${k}`;
   if (!Array.isArray(raw.maps) || raw.maps.length === 0) return 'no maps';
   const seenIds = new Set<string>();
@@ -83,11 +82,16 @@ function shapeProblem(raw: Record<string, unknown>): string | null {
   return null;
 }
 
-export function parseCampaign(
-  text: string,
-  migs: Record<number, Migration> = migrations,
-  current: number = CURRENT_SCHEMA_VERSION,
-): ParseResult {
+/** Hero must be present (null is fine); a non-null hero must pass the system's check. */
+function heroFault(hero: unknown, heroProblem?: HeroProblem): string | null {
+  if (hero === undefined) return 'the hero is missing';
+  if (hero === null || !heroProblem) return null;
+  return heroProblem(hero);
+}
+
+const HERO_DAMAGED = 'The saved hero is damaged:';
+
+export function parseCampaign(text: string, heroProblem?: HeroProblem): ParseResult {
   let raw: unknown;
   try {
     raw = JSON.parse(text);
@@ -95,25 +99,17 @@ export function parseCampaign(
     return { ok: false, error: `${NOT_A_MAP} (It is not valid JSON.)` };
   }
   if (!isObj(raw) || !isNum(raw.schemaVersion)) return { ok: false, error: NOT_A_MAP };
-  if (raw.schemaVersion > current) {
+  if (raw.schemaVersion > CURRENT_SCHEMA_VERSION) {
     return { ok: false, error: 'This file was made by a newer version of the app. Please update and try again.' };
   }
-  let obj: Record<string, unknown> = raw;
-  for (let v = raw.schemaVersion; v < current; v++) {
-    const cannotUpgrade = { ok: false, error: `Cannot upgrade this file from version ${v}.` } as const;
-    const migrate = migs[v];
-    if (!migrate) return cannotUpgrade;
-    try {
-      const next: unknown = migrate(obj);
-      if (!isObj(next)) return cannotUpgrade;
-      obj = { ...next, schemaVersion: v + 1 };
-    } catch {
-      return cannotUpgrade;
-    }
+  if (raw.schemaVersion < CURRENT_SCHEMA_VERSION) {
+    return { ok: false, error: "This file is from an older test version of the app and can't be imported." };
   }
-  const problem = shapeProblem(obj);
+  const problem = shapeProblem(raw);
   if (problem) return { ok: false, error: `The map file is damaged: ${problem}.` };
-  const campaign = obj as unknown as Campaign;
+  const bad = heroFault(raw.hero, heroProblem);
+  if (bad) return { ok: false, error: `${HERO_DAMAGED} ${bad}.` };
+  const campaign = raw as unknown as Campaign;
   for (const map of campaign.maps) {
     const broken = checkInvariants(map);
     if (broken) return { ok: false, error: `The map file is damaged: ${broken}.` };
@@ -127,12 +123,14 @@ function snapshotProblem(map: unknown): string | null {
   return mapProblem(map) ?? checkInvariants(map as Campaign['maps'][number]);
 }
 
-/** Validates a loaded History snapshot: shape and invariants of every map, string labels, lengths within the cap. */
-export function parseHistoryState(raw: unknown): HistoryParse {
+/** Validates a loaded History snapshot: heroes (required, null allowed), shape and invariants of every map, string labels, lengths within the cap. */
+export function parseHistoryState(raw: unknown, heroProblem?: HeroProblem): HistoryParse {
   const fail = (why: string): HistoryParse => ({ ok: false, error: `The saved history is damaged: ${why}.` });
   if (!isObj(raw)) return fail('it is not an object');
   const bad = snapshotProblem(raw.current);
   if (bad) return fail(`current map: ${bad}`);
+  const heroBad = heroFault(raw.hero, heroProblem);
+  if (heroBad) return { ok: false, error: `${HERO_DAMAGED} ${heroBad}.` };
   for (const key of ['past', 'future'] as const) {
     const list = raw[key];
     if (!Array.isArray(list)) return fail(`${key} is missing`);
@@ -142,6 +140,8 @@ export function parseHistoryState(raw: unknown): HistoryParse {
       if (!isObj(e) || !isStr(e.label)) return fail(`${key}[${i}] has no label`);
       const problem = snapshotProblem(e.map);
       if (problem) return fail(`${key}[${i}]: ${problem}`);
+      const eHero = heroFault(e.hero, heroProblem);
+      if (eHero) return { ok: false, error: `${HERO_DAMAGED} ${key}[${i}]: ${eHero}.` };
     }
   }
   return { ok: true, state: raw as unknown as HistoryState };

@@ -55,7 +55,7 @@
         <dd>{roomExitCount(map, room)}</dd>
       </dl>
       <form class="label" onsubmit={(e) => { e.preventDefault(); save(room); }}>
-        <label class="field"><span class="name">Room type</span> <input type="text" bind:value={type} placeholder="e.g. Guard Room" /></label>
+        <label class="field"><span class="name">Room type</span> <input type="text" bind:value={type} placeholder="e.g. Lamp Room" /></label>
         <label class="check"><input type="checkbox" bind:checked={unique} /> Unique</label>
         <label class="field"><span class="name">Narrative</span> <textarea rows="3" bind:value={narrative}></textarea></label>
         <div class="row">

@@ -1,9 +1,10 @@
-import { createCampaign } from '../../src/core/campaign';
+import { createCampaign, CURRENT_SCHEMA_VERSION } from '../../src/core/campaign';
 import { sequentialIds } from '../../src/core/ids';
 import { History } from '../../src/core/history';
 import { addRoom } from '../../src/core/commands';
 import { mapProblem, parseCampaign, parseHistoryState, serializeCampaign } from '../../src/core/serialize';
 import { dungeonSystem } from '../../src/systems/dungeon';
+import { SAVE_FORMAT } from '../../src/persistence/record';
 import { door, room } from './fixtures';
 
 function sample() {
@@ -45,6 +46,32 @@ describe('serialize / parse', () => {
     if (!r.ok) expect(r.error).toMatch(/newer version/);
   });
 
+  it('refuses a schema 1 file with a plain message', () => {
+    const r = parseCampaign(JSON.stringify({ ...sample(), schemaVersion: 1 }));
+    expect(r).toEqual({ ok: false, error: "This file is from an older test version of the app and can't be imported." });
+  });
+
+  it('version coupling: bump the save format and the schema version together', () => {
+    expect(CURRENT_SCHEMA_VERSION).toBe(2);
+    expect(SAVE_FORMAT).toBe(2);
+  });
+
+  it('validates a non-null hero with heroProblem, and requires the hero key', () => {
+    const c = { ...sample(), hero: { name: 'Tess' } };
+    const seen: unknown[] = [];
+    const ok = parseCampaign(JSON.stringify(c), (h) => (seen.push(h), null));
+    expect(ok.ok).toBe(true);
+    expect(seen).toEqual([{ name: 'Tess' }]);
+    const bad = parseCampaign(JSON.stringify(c), () => 'no name');
+    expect(bad).toEqual({ ok: false, error: 'The saved hero is damaged: no name.' });
+    const none = parseCampaign(JSON.stringify(sample()), () => {
+      throw new Error('not called for null');
+    });
+    expect(none.ok).toBe(true);
+    const { hero: _h, ...noHero } = sample();
+    expect(parseCampaign(JSON.stringify(noHero)).ok).toBe(false);
+  });
+
   it('reports damaged structure', () => {
     const c = sample() as unknown as Record<string, unknown>;
     delete c.maps;
@@ -59,29 +86,6 @@ describe('serialize / parse', () => {
     const r = parseCampaign(serializeCampaign(c));
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error).toMatch(/overlaps/);
-  });
-
-  it('runs migrations in order up to the current version', () => {
-    const c = sample();
-    const v0 = { ...c, schemaVersion: 0, name: undefined, title: 'Old name' };
-    const migs = {
-      0: (raw: Record<string, unknown>) => {
-        const { title, ...rest } = raw;
-        return { ...rest, name: title };
-      },
-    };
-    const r = parseCampaign(JSON.stringify(v0), migs, 1);
-    expect(r.ok).toBe(true);
-    if (r.ok) {
-      expect(r.campaign.name).toBe('Old name');
-      expect(r.campaign.schemaVersion).toBe(1);
-    }
-  });
-
-  it('fails clearly when a migration is missing', () => {
-    const c = { ...sample(), schemaVersion: 0 };
-    const r = parseCampaign(JSON.stringify(c), {}, 1);
-    expect(r).toEqual({ ok: false, error: 'Cannot upgrade this file from version 0.' });
   });
 
   const okDoor = { id: 'd1', x: 2, y: 2, side: 'N', type: 'archway', secret: false, lock: null };
@@ -111,17 +115,6 @@ describe('serialize / parse', () => {
     expect(r).toEqual({ ok: false, error: `The map file is damaged: ${problem}.` });
   });
 
-  it('fails clearly when a migration throws', () => {
-    const c = { ...sample(), schemaVersion: 0 };
-    const migs = { 0: () => { throw new Error('boom'); } };
-    expect(parseCampaign(JSON.stringify(c), migs, 1)).toEqual({ ok: false, error: 'Cannot upgrade this file from version 0.' });
-  });
-
-  it('fails clearly when a migration returns null', () => {
-    const c = { ...sample(), schemaVersion: 0 };
-    const migs = { 0: () => null as unknown as Record<string, unknown> };
-    expect(parseCampaign(JSON.stringify(c), migs, 1)).toEqual({ ok: false, error: 'Cannot upgrade this file from version 0.' });
-  });
 });
 
 describe('mapProblem', () => {

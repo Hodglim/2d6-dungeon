@@ -26,6 +26,18 @@ describe('exportCampaignFile', () => {
   });
 });
 
+describe('hero export/import round trip', () => {
+  it('keeps a fixture hero object, and applies heroProblem on import', () => {
+    const hero = { name: 'Tess Example', hp: 7, inventory: ['rope'] };
+    const c = { ...createCampaign(dungeonSystem, 'Camp'), hero };
+    const f = exportCampaignFile(c);
+    const res = readImportText(f.text, f.text.length, () => null);
+    expect(res.ok && res.campaign.hero).toEqual(hero);
+    const bad = readImportText(f.text, f.text.length, () => 'broken');
+    expect(bad).toEqual({ ok: false, error: 'The saved hero is damaged: broken.' });
+  });
+});
+
 describe('readImportText', () => {
   const c = createCampaign(dungeonSystem, 'Camp');
   const valid = serializeCampaign(c);

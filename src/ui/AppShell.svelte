@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { demoMap } from '../app/demo';
   import { createCampaign } from '../core/campaign';
-  import { addFeature, type Command } from '../core/commands';
+  import { addFeature, setHero, type Command } from '../core/commands';
   import { rectContains } from '../core/geometry';
   import { type ExecResult, History } from '../core/history';
   import { randomId } from '../core/ids';
@@ -13,6 +13,7 @@
   import { PlayFlow, type Step } from '../interaction/playflow';
   import { setBeforeReload } from '../pwa/register';
   import { Autosaver } from '../persistence/autosave';
+  import { cardsKind, chooseFile, loadStored, readStored, removeFile, tablesKind } from '../persistence/extras';
   import { exportCampaignFile, readImportText } from '../persistence/files';
   import { campaignFrom, metaFrom, type CampaignMeta } from '../persistence/record';
   import { shareOrDownload } from '../persistence/share';
@@ -23,6 +24,9 @@
   import type { Pick } from '../render/hit';
   import { DEFAULT_TOGGLES, type DisplayToggles } from '../render/renderer';
   import { dungeonSystem } from '../systems/dungeon';
+  import type { CardPack, CreatureCard } from '../systems/dungeon/cards';
+  import type { Hero } from '../systems/dungeon/hero';
+  import type { DungeonTables } from '../systems/dungeon/tables';
   import { classicTheme } from '../systems/dungeon/classic';
   import { drawOverlay, overlayFor, selectionOverlay } from './overlay';
   import { historyStore, type Tool } from './historyStore';
@@ -31,9 +35,12 @@
   import InstallHint from './InstallHint.svelte';
   import LoadErrorDialog from './LoadErrorDialog.svelte';
   import Menu from './Menu.svelte';
-  import NewMapDialog, { type NewMapValues } from './NewMapDialog.svelte';
+  import HeroWizard from './wizard/HeroWizard.svelte';
   import ReplaceGameDialog from './ReplaceGameDialog.svelte';
   import SaveBanner from './SaveBanner.svelte';
+  import HeroPanel from './hero/HeroPanel.svelte';
+  import EncounterCard from './encounter/EncounterCard.svelte';
+  import EncounterPicker from './encounter/EncounterPicker.svelte';
   import StepPanel from './StepPanel.svelte';
   import { resolveSelection, routeEditorTap, routePlayTap, type Selection } from './tapRouting';
   import Toolbar from './Toolbar.svelte';
@@ -52,12 +59,14 @@
   const saver = new Autosaver(history, store, () => meta);
   const view = historyStore(history);
   // Real dice and ids for the app. Its History listener cancels a draft on any Undo/Redo.
+  type SideTab = 'room' | 'encounter' | 'hero';
   const flow = new PlayFlow(history, Math.random, randomId);
 
   let tool = $state<Tool>('play');
   let toggles = $state<DisplayToggles>({ ...DEFAULT_TOGGLES });
   let menuOpen = $state(false);
   let newMapOpen = $state(false);
+  let wizardMode = $state<'new-game' | 'add-hero'>('new-game');
   /** A "this replaces your game" confirmation waiting for an answer. */
   let pendingReplace = $state<{ title: string; message?: string; onexport?: () => void; run: () => void } | null>(null);
   let saveFailing = $state(false);
@@ -88,9 +97,55 @@
   let loadError = $state<{ kind: 'damaged'; error: string; raw: unknown } | { kind: 'unreadable'; error: string } | null>(null);
   let importError = $state<string | null>(null);
   let fileInput: HTMLInputElement | undefined;
+  let tablesInput: HTMLInputElement | undefined;
+  let cardsInput: HTMLInputElement | undefined;
+  /** The player's table file and creature card pack: stored apart from the game, never exported. */
+  let tables = $state.raw<DungeonTables | null>(null);
+  let cards = $state.raw<CardPack | null>(null);
   let panelCollapsed = $state(false);
-  let mapView = $state<ReturnType<typeof MapView>>();
   let step = $state.raw<Step>(flow.step);
+  /** The sidebar shows the step panel, or the Encounter and Hero panels (tabs when both are open). */
+  let sidebar = $state<'steps' | 'side'>('steps');
+  /** The side panels were showing when a play-flow step took the sidebar: restore them when the flow ends. */
+  let sideBeforeFlow = false;
+  let heroOn = $state(false);
+  let encOn = $state(false);
+  /** Which tab is selected while both are open. */
+  let sideTab = $state<SideTab>('encounter');
+  /** The creature being faced. Not saved and not in History. */
+  let encCard = $state.raw<CreatureCard | null>(null);
+  const heroShown = $derived(sidebar === 'side' && heroOn && $view.hero !== null);
+  const encShown = $derived(sidebar === 'side' && encOn && cards !== null);
+  const sideShown = $derived(heroShown || encShown);
+  /** While a play-flow step is open, the step panel is a tab too, so Place and Cancel stay one tap away. */
+  const roomTab = $derived(sideShown && step.kind !== 'idle');
+  const tabs = $derived<SideTab[]>([...(roomTab ? ['room' as const] : []), ...(encShown ? ['encounter' as const] : []), ...(heroShown ? ['hero' as const] : [])]);
+  const activeTab = $derived<SideTab>(tabs.includes(sideTab) ? sideTab : (tabs[0] ?? 'encounter'));
+  /** A short self-clearing message beside the toolbar (no card pack loaded). */
+  let toast = $state<string | null>(null);
+  let toastTimer: ReturnType<typeof setTimeout> | undefined;
+  const NO_TABLES_TOAST = 'Load your table file first — open the menu and choose Load table file…';
+  function showToast(text: string) {
+    toast = text;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => (toast = null), 5000);
+  }
+
+  // A removed pack takes its encounter with it; a replaced one is looked up again by id.
+  $effect(() => {
+    if (encCard) {
+      const id = encCard.id;
+      const found = cards?.cards.find((c) => c.id === id) ?? null;
+      if (found !== encCard) encCard = found;
+    }
+    if (!cards) encOn = false;
+  });
+  // No hero, no hero panel.
+  $effect(() => {
+    if ($view.hero === null) heroOn = false;
+  });
+  let mapView = $state<ReturnType<typeof MapView>>();
+  let wasIdle = true;
   /** One-line panel message: a tap hint, or what happened on the last commit. */
   let notice = $state<string | null>(null);
   /** The next exit tap starts a gap corridor instead of a room. */
@@ -103,9 +158,20 @@
   flow.subscribe((s) => {
     step = s;
     notice = null;
+    const starting = wasIdle && s.kind !== 'idle';
+    wasIdle = s.kind === 'idle';
     if (s.kind !== 'idle') {
       gapMode = false;
       panelCollapsed = false; // the steps live in the panel
+      if (starting) {
+        // The flow takes the sidebar; the side panels come back (or stay as tabs) afterwards.
+        if (sidebar === 'side') sideBeforeFlow = true;
+        sidebar = 'steps';
+      }
+    } else if (sideBeforeFlow) {
+      // The flow is over: bring the hero sheet and encounter back if they were open when the flow began.
+      sideBeforeFlow = false;
+      sidebar = 'side';
     }
   });
 
@@ -143,7 +209,7 @@
 
   const cover = $derived(coverage($view.map));
   /** Replacing the map would lose something: content on it, or undo history. */
-  const hasWork = $derived(hasContent($view.map) || $view.canUndo);
+  const hasWork = $derived(hasContent($view.map) || $view.canUndo || $view.hero !== null);
 
   function hasContent(m: DungeonMap): boolean {
     return m.rooms.length > 0 || m.doors.length > 0 || m.features.length > 0 || m.token !== null;
@@ -152,10 +218,18 @@
   onMount(() => {
     let alive = true;
     const unsubscribe = saver.subscribe((s) => (saveFailing = s.failing));
+    // A typed field only commits on blur, so blur it first or the text is lost when the app is closed.
+    const blurActive = () => (document.activeElement as HTMLElement | null)?.blur?.();
     const onHide = () => {
-      if (document.visibilityState === 'hidden') void saver.flush();
+      if (document.visibilityState === 'hidden') {
+        blurActive();
+        void saver.flush();
+      }
     };
-    const onPageHide = () => void saver.flush();
+    const onPageHide = () => {
+      blurActive();
+      void saver.flush();
+    };
     document.addEventListener('visibilitychange', onHide);
     window.addEventListener('pagehide', onPageHide);
 
@@ -187,7 +261,7 @@
     }
     let decision: ReturnType<typeof decideStartup>;
     try {
-      decision = decideStartup(out.raw);
+      decision = decideStartup(out.raw, dungeonSystem.heroProblem);
       if (decision.kind === 'restore') history.restore(decision.history);
     } catch (err) {
       decision = { kind: 'error', error: `The saved game is damaged: ${err instanceof Error ? err.message : String(err)}` };
@@ -195,12 +269,72 @@
     if (decision.kind === 'error') {
       loadError = { kind: 'damaged', error: decision.error, raw: out.raw };
       started = true;
+      void loadExtras(isAlive);
       return; // the autosaver stays paused and never started: the record is not touched
     }
     if (decision.kind === 'restore') meta = decision.meta;
     saver.start();
     saver.resume();
     started = true;
+    void loadExtras(isAlive);
+  }
+
+  /** Set once the user has chosen or removed a file, so a slower start-up load can't overwrite it. */
+  let tablesTouched = false;
+  let cardsTouched = false;
+  /** A stored card pack exists but could not be read at start-up (Encounter says so instead of "none loaded"). */
+  let cardsUnreadable = false;
+
+  /** Loads the stored table file and card pack. Any failure means carrying on without them. */
+  async function loadExtras(isAlive: () => boolean) {
+    const t = await loadStored(store, tablesKind);
+    if (isAlive() && !tablesTouched && t) tables = t;
+    const c = await readStored(store, cardsKind);
+    if (isAlive() && !cardsTouched) {
+      if (c.value) cards = c.value;
+      cardsUnreadable = c.unreadable;
+    }
+  }
+
+  function pickExtra(input: HTMLInputElement | undefined) {
+    importError = null;
+    input?.click();
+  }
+
+  async function onTablesChosen() {
+    const file = tablesInput?.files?.[0];
+    if (tablesInput) tablesInput.value = '';
+    if (!file) return;
+    tablesTouched = true;
+    const r = await chooseFile(store, tablesKind, file, tables);
+    tables = r.value;
+    if (!r.ok) importError = r.error;
+  }
+
+  async function onCardsChosen() {
+    const file = cardsInput?.files?.[0];
+    if (cardsInput) cardsInput.value = '';
+    if (!file) return;
+    cardsTouched = true;
+    cardsUnreadable = false;
+    const r = await chooseFile(store, cardsKind, file, cards);
+    cards = r.value;
+    if (!r.ok) importError = r.error;
+  }
+
+  async function removeTables() {
+    tablesTouched = true;
+    const r = await removeFile(store, tablesKind, tables);
+    tables = r.value;
+    if (!r.ok) importError = r.error;
+  }
+
+  async function removeCards() {
+    cardsTouched = true;
+    cardsUnreadable = false;
+    const r = await removeFile(store, cardsKind, cards);
+    cards = r.value;
+    if (!r.ok) importError = r.error;
   }
 
   /** From the load-error dialog: replacing the game overwrites the stored record, so confirm first. */
@@ -210,8 +344,14 @@
   }
 
   /** Swap in a whole new game (fresh history) and write it now, replacing whatever was saved. */
-  function replaceGame(next: CampaignMeta, map: DungeonMap) {
+  function replaceGame(next: CampaignMeta, map: DungeonMap, hero: unknown | null = null) {
+    (document.activeElement as HTMLElement | null)?.blur?.(); // commit a half-typed field into the old game first
     meta = next;
+    heroOn = false;
+    encOn = false;
+    encCard = null;
+    sidebar = 'steps';
+    sideBeforeFlow = false;
     selection = null;
     gapMode = false;
     notice = null;
@@ -219,7 +359,7 @@
     importError = null;
     saver.start();
     saver.resume();
-    history.reset(map);
+    history.reset(map, hero);
     void saver.flush();
   }
 
@@ -229,12 +369,70 @@
     else run();
   }
 
-  function createNewMap(v: NewMapValues) {
-    newMapOpen = false;
+  /** The wizard finished: confirm the replacement first, as New game always has. */
+  function beginNewGame(v: { width: number; height: number; title: string; hero: Hero | null }) {
+    // The wizard stays open until the replacement is accepted, so cancelling keeps the draft.
     askReplace('New game', () => {
-      const c = createCampaign(dungeonSystem, v.title || 'My dungeon', { width: v.width, height: v.height, level: v.level, title: v.title });
-      replaceGame(metaFrom(c), activeMap(c));
+      newMapOpen = false;
+      const c = createCampaign(dungeonSystem, v.title || 'My dungeon', { width: v.width, height: v.height, title: v.title });
+      replaceGame(metaFrom(c), activeMap(c), v.hero);
     });
+  }
+
+  /** Add a hero to the current game (opened from the Hero button when there is none). */
+  function beginAddHero(v: { hero: Hero | null }) {
+    newMapOpen = false;
+    if (v.hero) {
+      history.execute(setHero(v.hero, 'Create hero'));
+      heroOn = true;
+      sideTab = 'hero';
+      sidebar = 'side';
+    }
+  }
+
+  /** The toolbar's Hero button: create one, or show or hide the sheet. */
+  function onHeroButton() {
+    if (!started || loadError) return;
+    if ($view.hero === null && !tables) {
+      showToast(NO_TABLES_TOAST);
+      return;
+    }
+    sideBeforeFlow = false;
+    if ($view.hero === null) {
+      wizardMode = 'add-hero';
+      newMapOpen = true;
+    } else if (heroShown) {
+      heroOn = false;
+      if (!encShown) sidebar = 'steps';
+    } else {
+      heroOn = true;
+      sideTab = 'hero';
+      sidebar = 'side';
+    }
+  }
+
+  /** The toolbar's Encounter button: explain how to get a card pack, or show or hide the encounter. */
+  function onEncounterButton() {
+    if (!started || loadError) return;
+    if (!cards) {
+      showToast(cardsUnreadable ? "Couldn't read your stored creature cards — try loading them again" : 'No creature cards loaded. Open the menu and choose Load creature cards…');
+      return;
+    }
+    sideBeforeFlow = false;
+    if (encShown) {
+      encOn = false;
+      if (!heroShown) sidebar = 'steps';
+    } else {
+      encOn = true;
+      sideTab = 'encounter';
+      sidebar = 'side';
+    }
+  }
+
+  function endEncounter() {
+    encCard = null;
+    encOn = false;
+    if (!heroShown) sidebar = 'steps';
   }
 
   function loadDemo() {
@@ -244,7 +442,7 @@
 
   function exportGame() {
     // Build the File synchronously so shareOrDownload runs inside the click's user gesture.
-    const { name, text } = exportCampaignFile(campaignFrom(meta, history.map));
+    const { name, text } = exportCampaignFile(campaignFrom(meta, history.map, history.hero));
     shareOrDownload(new File([text], name, { type: 'application/json' }));
   }
 
@@ -276,14 +474,14 @@
       importError = "That file couldn't be read.";
       return;
     }
-    const res = readImportText(text, file.size);
+    const res = readImportText(text, file.size, dungeonSystem.heroProblem);
     if (!res.ok) {
       importError = res.error;
       return;
     }
     const campaign = res.campaign;
     const map = activeMap(campaign);
-    const run = () => replaceGame(metaFrom(campaign), map);
+    const run = () => replaceGame(metaFrom(campaign), map, campaign.hero);
     // From the load-error dialog there's no current game to lose, but the stored record is overwritten.
     if (loadError) askOverwriteSaved(run);
     else askReplace('Import game', run);
@@ -323,6 +521,7 @@
         return flow.toggleExit(action.edge);
       case 'hint':
         notice = action.text;
+        sidebar = 'steps';
         return;
       case 'ignore':
         return; // taps that don't belong to the step are ignored
@@ -334,15 +533,18 @@
     switch (action.kind) {
       case 'select':
         selection = action.selection;
+        if (selection) sidebar = 'steps';
         return;
       case 'addStairs': {
         const f = { id: randomId(), kind: 'stairs' as const, x: action.cell.x, y: action.cell.y, dir: 'down' as const };
         selection = exec(addFeature(f)) ? { kind: 'feature', featureId: f.id } : null;
+        sidebar = 'steps';
         return;
       }
       case 'hint':
         selection = null;
         notice = action.text;
+        sidebar = 'steps';
         return;
     }
   }
@@ -421,33 +623,47 @@
 
 <svelte:window onkeydown={onKey} />
 
-<div class="shell" class:collapsed={panelCollapsed}>
+<div class="shell" class:collapsed={panelCollapsed && !sideShown} class:wide={sideShown}>
   <div class="top">
     <Toolbar
       view={$view}
       {tool}
       coverage={cover}
       {menuOpen}
+      heroOpen={heroShown}
+      encounterOpen={encShown}
       disabled={!started || !!loadError}
       ontool={selectTool}
       onundo={() => history.undo()}
       onredo={() => history.redo()}
       onmenu={() => started && !loadError && (menuOpen = !menuOpen)}
+      onhero={onHeroButton}
+      onencounter={onEncounterButton}
     />
+    {#if toast}<p class="toast" role="status">{toast}</p>{/if}
     <UpdatePrompt />
     {#if saveFailing}<SaveBanner onexport={exportGame} />{/if}
     {#if showHint && started && !loadError}
-      <InstallHint ios={iosTab} hasGame={hasContent($view.map)} onexport={exportGame} ondismiss={dismissHint} />
+      <InstallHint ios={iosTab} hasGame={hasContent($view.map) || $view.hero !== null} onexport={exportGame} ondismiss={dismissHint} />
     {/if}
     {#if menuOpen}
       <Menu
         bind:toggles
         onclose={() => (menuOpen = false)}
-        onnewmap={() => (newMapOpen = true)}
+        onnewmap={() => {
+          wizardMode = 'new-game';
+          newMapOpen = true;
+        }}
         ondemo={() => askReplace('Load demo map', loadDemo)}
         onfit={() => mapView?.fit()}
         onexport={exportGame}
         onimport={pickImport}
+        tablesName={tables?.name ?? null}
+        cardsName={cards ? `${cards.name} (${cards.cards.length} ${cards.cards.length === 1 ? "card" : "cards"})` : null}
+        onloadtables={() => pickExtra(tablesInput)}
+        onloadcards={() => pickExtra(cardsInput)}
+        onremovetables={() => void removeTables()}
+        onremovecards={() => void removeCards()}
       />
     {/if}
   </div>
@@ -456,30 +672,83 @@
     dragsGhost={step.kind === 'position'}
     ghost={step.kind === 'position' ? step.placement.rect : null}
   />
-  <StepPanel
-    {tool}
-    map={$view.map}
-    {flow}
-    {step}
-    {notice}
-    {gapMode}
-    ongapmode={(on) => {
-      gapMode = on;
-      notice = null;
-    }}
-    oncommit={commit}
-    selection={liveSelection}
-    onexec={exec}
-    onselect={(sel) => (selection = sel)}
-    collapsed={panelCollapsed}
-    ontoggle={() => (panelCollapsed = !panelCollapsed)}
-  />
+  {#snippet stepPanel(collapsed: boolean)}
+    <StepPanel
+      {tool}
+      map={$view.map}
+      {flow}
+      {step}
+      {notice}
+      {gapMode}
+      ongapmode={(on) => {
+        gapMode = on;
+        notice = null;
+      }}
+      oncommit={commit}
+      selection={liveSelection}
+      onexec={exec}
+      onselect={(sel) => (selection = sel)}
+      {collapsed}
+      ontoggle={() => (panelCollapsed = !panelCollapsed)}
+    />
+  {/snippet}
+  {#if sideShown}
+    <div class="side">
+      {#if tabs.length > 1}
+        <div class="tabs" role="tablist" aria-label="Sidebar">
+          {#if roomTab}
+            <button role="tab" id="side-tab-room" aria-selected={activeTab === 'room'} onclick={() => (sideTab = 'room')}>Room</button>
+          {/if}
+          {#if encShown}
+            <button role="tab" id="side-tab-encounter" aria-selected={activeTab === 'encounter'} onclick={() => (sideTab = 'encounter')}>Encounter</button>
+          {/if}
+          {#if heroShown}
+            <button role="tab" id="side-tab-hero" aria-selected={activeTab === 'hero'} onclick={() => (sideTab = 'hero')}>Hero</button>
+          {/if}
+        </div>
+      {/if}
+      {#if activeTab === 'room'}
+        {@render stepPanel(false)}
+      {:else if activeTab === 'hero'}
+        <HeroPanel
+          hero={$view.hero as Hero}
+          {history}
+          {tables}
+          onclose={() => {
+            heroOn = false;
+            if (!encShown) sidebar = 'steps';
+          }}
+        />
+      {:else if cards && encCard}
+        <EncounterCard card={encCard} onend={endEncounter} />
+      {:else if cards}
+        <EncounterPicker
+          pack={cards}
+          onpick={(c) => (encCard = c)}
+          onclose={() => {
+            encOn = false;
+            if (!heroShown) sidebar = 'steps';
+          }}
+        />
+      {/if}
+    </div>
+  {:else}
+    {@render stepPanel(panelCollapsed)}
+  {/if}
 </div>
 
 <input bind:this={fileInput} type="file" accept=".json,application/json" hidden onchange={onFileChosen} />
+<input bind:this={tablesInput} type="file" accept=".json,application/json" hidden data-extra="tables" onchange={onTablesChosen} />
+<input bind:this={cardsInput} type="file" accept=".json,application/json" hidden data-extra="cards" onchange={onCardsChosen} />
 
 {#if newMapOpen}
-  <NewMapDialog oncreate={createNewMap} oncancel={() => (newMapOpen = false)} />
+  <HeroWizard
+    {tables}
+    mode={wizardMode}
+    onbegin={wizardMode === 'new-game' ? beginNewGame : beginAddHero}
+    oncancel={() => !pendingReplace && (newMapOpen = false)}
+    onloadtables={() => pickExtra(tablesInput)}
+  />
 {/if}
 
 {#if loadError}
@@ -558,6 +827,9 @@
       'top top'
       'map panel';
   }
+  .shell.wide {
+    grid-template-columns: minmax(0, 1fr) clamp(420px, 48%, 640px);
+  }
   .shell.collapsed {
     grid-template-columns: minmax(0, 1fr) 48px;
   }
@@ -569,11 +841,57 @@
   .shell > :global(.map-view) {
     grid-area: map;
   }
-  .shell > :global(.panel) {
+  .shell > :global(.panel),
+  .shell > .side {
     grid-area: panel;
+  }
+  .side {
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--paper);
+  }
+  .side > :global(aside) {
+    flex: 1;
+  }
+  .toast {
+    position: absolute;
+    top: 100%;
+    right: 10px;
+    margin: 6px 0 0;
+    max-width: min(420px, 90vw);
+    padding: 10px 14px;
+    font-size: 16px;
+    background: var(--paper);
+    border: 2px solid var(--ink);
+    border-radius: 6px;
+  }
+  .tabs {
+    display: flex;
+    border-left: 2px solid var(--ink);
+    border-bottom: 2px solid var(--ink);
+  }
+  .tabs button {
+    flex: 1;
+    min-height: 48px;
+    font: inherit;
+    font-size: 17px;
+    color: var(--ink);
+    background: var(--paper-dim);
+    border: 0;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  .tabs button[aria-selected='true'] {
+    color: var(--paper);
+    background: var(--ink);
+    font-weight: 600;
   }
   @media (max-width: 699.98px) {
     .shell,
+    .shell.wide,
     .shell.collapsed {
       grid-template-columns: minmax(0, 1fr);
       grid-template-rows: auto minmax(0, 1fr) auto;
@@ -584,6 +902,9 @@
     }
     .shell > :global(.panel) {
       max-height: 40dvh;
+    }
+    .shell > .side {
+      max-height: 60dvh;
     }
   }
 

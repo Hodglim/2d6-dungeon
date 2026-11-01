@@ -6,15 +6,21 @@
     tool: Tool;
     coverage: number;
     menuOpen: boolean;
+    /** The Hero panel is showing in the sidebar. */
+    heroOpen?: boolean;
+    /** The Encounter panel is showing in the sidebar. */
+    encounterOpen?: boolean;
     /** Start-up hasn't finished: nothing on the toolbar may act yet. */
     disabled?: boolean;
     ontool: (tool: Tool) => void;
     onundo: () => void;
     onredo: () => void;
     onmenu: () => void;
+    onhero: () => void;
+    onencounter: () => void;
   }
 
-  let { view, tool, coverage, menuOpen, disabled = false, ontool, onundo, onredo, onmenu }: Props = $props();
+  let { view, tool, coverage, menuOpen, heroOpen = false, encounterOpen = false, disabled = false, ontool, onundo, onredo, onmenu, onhero, onencounter }: Props = $props();
 
   const tools: { id: Tool; label: string }[] = [
     { id: 'play', label: 'Play' },
@@ -40,6 +46,8 @@
       <button class="tool" aria-pressed={tool === t.id} {disabled} onclick={() => ontool(t.id)}>{t.label}</button>
     {/each}
   </div>
+  <button class="hero" aria-pressed={heroOpen} {disabled} onclick={onhero}>{view.hero === null ? 'Create hero' : 'Hero'}</button>
+  <button class="encounter" aria-pressed={encounterOpen} {disabled} onclick={onencounter}>Encounter</button>
   <div class="coverage" title="Map coverage" aria-label="Map coverage {Math.round(coverage * 100)}%">
     {Math.round(coverage * 100)}%
   </div>
@@ -97,7 +105,9 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .tool[aria-pressed='true'] {
+  .tool[aria-pressed='true'],
+  .encounter[aria-pressed='true'],
+  .hero[aria-pressed='true'] {
     color: var(--paper);
     background: var(--ink);
     font-weight: 600;

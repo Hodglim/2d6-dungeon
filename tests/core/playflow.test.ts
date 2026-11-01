@@ -66,7 +66,7 @@ describe('full play-flow round', () => {
 
     const cmd = createRoomFromExit(
       h.map,
-      { room: { ...room, label: { type: 'Guard Room', unique: false, narrative: '' } }, exits: [top], exitType: 'wooden' },
+      { room: { ...room, label: { type: 'Lamp Room', unique: false, narrative: '' } }, exits: [top], exitType: 'wooden' },
       ids,
     );
     expect(h.execute(cmd).ok).toBe(true);

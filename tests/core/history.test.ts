@@ -1,5 +1,5 @@
-import { addRoom } from '../../src/core/commands';
-import { HISTORY_CAP, History, type HistoryState } from '../../src/core/history';
+import { addRoom, setHero } from '../../src/core/commands';
+import { HISTORY_CAP, History, MERGE_WINDOW_MS, type HistoryState } from '../../src/core/history';
 import type { DungeonMap } from '../../src/core/types';
 import { emptyMap, room } from './fixtures';
 
@@ -84,6 +84,23 @@ describe('History', () => {
   });
 });
 
+describe('History.dropLast', () => {
+  it('undoes the newest step without leaving a redo, and emits', () => {
+    const h = new History(emptyMap());
+    h.execute(addRoom(room('a', 1, 1, 2, 2)));
+    h.execute(addRoom(room('b', 6, 6, 2, 2)));
+    const fn = vi.fn();
+    h.subscribe(fn);
+    expect(h.dropLast()).toBe(true);
+    expect(h.map.rooms).toHaveLength(1);
+    expect(h.canRedo).toBe(false);
+    expect(fn).toHaveBeenCalledTimes(1);
+    expect(h.canMerge('x')).toBe(false);
+    h.dropLast();
+    expect(h.dropLast()).toBe(false);
+  });
+});
+
 describe('History snapshots', () => {
   it('labels undo and redo with the action', () => {
     const h = new History(emptyMap());
@@ -162,8 +179,8 @@ describe('History snapshots', () => {
   it('exportState returns copies of the arrays', () => {
     const h = new History(emptyMap());
     const state = h.exportState();
-    state.past.push({ label: 'x', map: emptyMap() });
-    state.future.push({ label: 'y', map: emptyMap() });
+    state.past.push({ label: 'x', map: emptyMap(), hero: null });
+    state.future.push({ label: 'y', map: emptyMap(), hero: null });
     expect(h.canUndo).toBe(false);
     expect(h.canRedo).toBe(false);
     expect(h.exportState().past).toHaveLength(0);
@@ -197,12 +214,113 @@ describe('History snapshots', () => {
     it('keeps the newest 20 past entries; the cap is 20', () => {
       expect(HISTORY_CAP).toBe(20);
       const m = emptyMap();
-      const past = Array.from({ length: 30 }, (_, i) => ({ label: `L${i}`, map: m }));
+      const past = Array.from({ length: 30 }, (_, i) => ({ label: `L${i}`, map: m, hero: null }));
       const b = new History(emptyMap());
-      b.restore({ current: m, past, future: [] });
+      b.restore({ current: m, hero: null, past, future: [] });
       expect(b.exportState().past).toHaveLength(20);
       expect(b.undoLabel).toBe('L29');
       expect(b.exportState().past[0]!.label).toBe('L10');
     });
+  });
+});
+
+describe('History carries the hero', () => {
+  const h1 = { name: 'Tess', hp: 10 };
+
+  it('hero commands undo and redo with the map unchanged', () => {
+    const h = new History(emptyMap());
+    const map = h.map;
+    h.execute(setHero(h1, 'Create hero'));
+    expect(h.hero).toBe(h1);
+    expect(h.undoLabel).toBe('Create hero');
+    expect(h.map).toBe(map);
+    h.undo();
+    expect(h.hero).toBeNull();
+    expect(h.map).toBe(map);
+    h.redo();
+    expect(h.hero).toBe(h1);
+  });
+
+  it('map commands keep the hero, and undoing them keeps it too', () => {
+    const h = new History(emptyMap());
+    h.execute(setHero(h1, 'Create hero'));
+    h.execute(addRoom(room('a', 1, 1, 2, 2)));
+    expect(h.hero).toBe(h1);
+    h.undo();
+    expect(h.map.rooms).toHaveLength(0);
+    expect(h.hero).toBe(h1);
+  });
+
+  describe('merging', () => {
+    function timed() {
+      let t = 0;
+      const h = new History(emptyMap(), HISTORY_CAP, null, () => t);
+      const at = (ms: number) => {
+        t = ms;
+      };
+      return { h, at };
+    }
+    const hp = (h: History, n: number) => h.execute(setHero({ hp: n }, `HP ${n}`), { mergeKey: 'hp' });
+
+    it('merges quick repeats with the same key into one step', () => {
+      const { h, at } = timed();
+      h.execute(setHero({ hp: 10 }, 'Create hero'));
+      const base = h.exportState().past.length;
+      for (const [ms, n] of [[0, 9], [500, 8], [1000, 7]] as const) {
+        at(ms);
+        hp(h, n);
+      }
+      expect(h.exportState().past).toHaveLength(base + 1);
+      expect(h.undoLabel).toBe('HP 7');
+      expect(h.heroBeforeLast).toEqual({ hp: 10 });
+      at(3000);
+      hp(h, 6);
+      expect(h.exportState().past).toHaveLength(base + 2);
+      expect(MERGE_WINDOW_MS).toBe(1500);
+    });
+
+    it('does not merge across an undo or a different key', () => {
+      const { h, at } = timed();
+      hp(h, 9);
+      at(100);
+      hp(h, 8);
+      expect(h.exportState().past).toHaveLength(1);
+      h.undo();
+      h.redo();
+      at(200);
+      hp(h, 7);
+      expect(h.exportState().past).toHaveLength(2);
+      at(300);
+      h.execute(setHero({ hp: 1 }, 'Other'), { mergeKey: 'xp' });
+      expect(h.exportState().past).toHaveLength(3);
+      at(400);
+      h.execute(addRoom(room('a', 1, 1, 2, 2)));
+      at(500);
+      hp(h, 5);
+      expect(h.exportState().past).toHaveLength(5);
+    });
+  });
+
+  it('counts hero and map steps together against the cap', () => {
+    const h = new History(emptyMap());
+    for (let i = 0; i < 15; i++) h.execute(setHero({ i }, `H${i}`));
+    for (let i = 0; i < 10; i++) h.execute(addRoom(room(`r${i}`, 1 + (i % 5) * 3, 1 + Math.floor(i / 5) * 3, 2, 2)));
+    expect(h.exportState().past).toHaveLength(HISTORY_CAP);
+  });
+
+  it('exports and restores the hero in current and every entry', () => {
+    const h = new History(emptyMap());
+    h.execute(setHero(h1, 'Create hero'));
+    h.execute(addRoom(room('a', 1, 1, 2, 2)));
+    const state = JSON.parse(JSON.stringify(h.exportState())) as HistoryState;
+    expect(state.hero).toEqual(h1);
+    expect(state.past.map((e) => e.hero)).toEqual([null, h1]);
+    const b = new History(emptyMap());
+    b.restore(state);
+    expect(b.hero).toEqual(h1);
+    b.undo();
+    b.undo();
+    expect(b.hero).toBeNull();
+    expect(History.fromState(state).hero).toEqual(h1);
   });
 });

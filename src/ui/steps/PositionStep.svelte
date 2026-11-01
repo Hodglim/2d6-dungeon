@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { PlayFlow, Step } from '../../interaction/playflow';
+  import DieFace from '../DieFace.svelte';
   import { classify } from '../../systems/dungeon/rules';
 
   interface Props {
@@ -15,12 +16,37 @@
   const horizontal = $derived(
     step.source.kind === 'entrance' || flow.draftMap.doors.find((d) => step.source.kind === 'exit' && d.id === step.source.doorId)?.side === 'N',
   );
+  /** Dice to draw: the pairs actually rolled, else the totals when each is a single face. */
+  const pairs = $derived(
+    step.size.dice
+      ? step.size.dice.map((d) => [d.primary, d.secondary] as const)
+      : step.size.w <= 6 && step.size.h <= 6
+        ? [[step.size.w, step.size.h] as const]
+        : [],
+  );
   const resized = $derived(rect !== null && (rect.w !== step.size.w || rect.h !== step.size.h));
 </script>
 
 <h2>Position</h2>
 <p class="size">
-  Rolled <strong>{step.size.w} × {step.size.h}</strong>{#if step.size.doubled}&nbsp;(doubled){/if}
+  <span class="rolled" data-testid="rolled">
+    Rolled
+    {#if pairs.length > 0}
+      <span class="faces" data-testid="roll-faces">
+        {#each pairs as [r], i (i)}{#if i > 0}<span class="plus" aria-hidden="true">+</span>{/if}<DieFace value={r} colour="red" />{/each}
+        <span class="times" aria-hidden="true">×</span>
+        {#each pairs as [, b], i (i)}{#if i > 0}<span class="plus" aria-hidden="true">+</span>{/if}<DieFace value={b} colour="blue" />{/each}
+      </span>
+      {#if pairs.length > 1}
+        = <strong>{step.size.w} × {step.size.h}</strong>
+      {:else}
+        <span class="sr-only">{step.size.w} × {step.size.h}</span>
+      {/if}
+    {:else}
+      <strong>{step.size.w} × {step.size.h}</strong>
+    {/if}
+    {#if step.size.doubled}&nbsp;(doubled){/if}
+  </span>
   <span class="badge {cls}">{cls}</span>
 </p>
 {#if step.size.corridor && step.source.kind !== 'entrance'}
@@ -43,3 +69,29 @@
   {/if}
   <button class="primary" disabled={!step.placement.ok} onclick={() => flow.place()}>Place</button>
 </div>
+
+<style>
+  .faces {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    vertical-align: middle;
+    margin: 0 6px;
+  }
+  .times {
+    font-weight: 700;
+    margin: 0 6px;
+  }
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+  .plus {
+    font-weight: 700;
+    margin: 0 4px;
+  }
+</style>

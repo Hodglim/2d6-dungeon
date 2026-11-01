@@ -56,14 +56,14 @@ describe('needsSecondRoll', () => {
 
 describe('resolveRoomSize', () => {
   it('adds the second roll on doubles', () => {
-    expect(resolveRoomSize(d(4, 4), d(3, 2), false)).toEqual({ w: 7, h: 6, corridor: false, doubled: true, fromDouble: true });
-    expect(resolveRoomSize(d(1, 1), d(2, 5), false)).toEqual({ w: 3, h: 6, corridor: false, doubled: true, fromDouble: true });
+    expect(resolveRoomSize(d(4, 4), d(3, 2), false)).toMatchObject({ w: 7, h: 6, corridor: false, doubled: true, fromDouble: true });
+    expect(resolveRoomSize(d(1, 1), d(2, 5), false)).toMatchObject({ w: 3, h: 6, corridor: false, doubled: true, fromDouble: true });
   });
   it('flags corridors from the first roll', () => {
-    expect(resolveRoomSize(d(1, 4), null, false)).toEqual({ w: 1, h: 4, corridor: true, doubled: false, fromDouble: false });
+    expect(resolveRoomSize(d(1, 4), null, false)).toMatchObject({ w: 1, h: 4, corridor: true, doubled: false, fromDouble: false });
   });
   it('leaves 6-6 alone', () => {
-    expect(resolveRoomSize(d(6, 6), null, false)).toEqual({ w: 6, h: 6, corridor: false, doubled: false, fromDouble: true });
+    expect(resolveRoomSize(d(6, 6), null, false)).toMatchObject({ w: 6, h: 6, corridor: false, doubled: false, fromDouble: true });
   });
   it('clamps the entrance area to 6..12', () => {
     const a = resolveRoomSize(d(5, 3), null, true);
@@ -76,7 +76,7 @@ describe('resolveRoomSize', () => {
     expect(b.w * b.h).toBeGreaterThanOrEqual(6);
     const c = resolveRoomSize(d(6, 5), null, true);
     expect(c.w * c.h).toBeLessThanOrEqual(12);
-    expect(resolveRoomSize(d(4, 4), null, true)).toEqual({ w: 3, h: 4, corridor: false, doubled: false, fromDouble: false });
+    expect(resolveRoomSize(d(4, 4), null, true)).toMatchObject({ w: 3, h: 4, corridor: false, doubled: false, fromDouble: false });
   });
 });
 

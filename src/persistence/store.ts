@@ -4,7 +4,18 @@ export interface SaveStore {
   load(): Promise<unknown | null>;
   save(rec: SaveRecord): Promise<void>;
   requestPersist(): Promise<boolean>;
+  /** Player files (table file, card pack) live beside the game under their own keys and never touch `current`. */
+  loadExtra(key: string): Promise<unknown | null>;
+  saveExtra(key: string, value: unknown): Promise<void>;
+  removeExtra(key: string): Promise<void>;
 }
+
+/** Writing a large card pack can take far longer than a game save. */
+export const EXTRA_WRITE_TIMEOUT_MS = 60_000;
+const GAME_KEY_REFUSED = 'The saved game cannot be changed as an extra file';
+
+export const TABLES_KEY = 'tables:dungeon';
+export const CARDS_KEY = 'cards:dungeon';
 
 const STORE = 'saves';
 const KEY = 'current';
@@ -24,6 +35,7 @@ export class IdbSaveStore implements SaveStore {
   constructor(
     private readonly dbName = '2d6-map-maker',
     private readonly openTimeoutMs = 5000,
+    private readonly extraWriteTimeoutMs = EXTRA_WRITE_TIMEOUT_MS,
   ) {}
 
   private open(): Promise<IDBDatabase> {
@@ -76,7 +88,10 @@ export class IdbSaveStore implements SaveStore {
    * aborted transaction) the connection is dropped and closed so the next call opens a fresh one: WebKit
    * can leave a dead connection cached after the app is suspended, without ever firing `close`.
    */
-  private async run<T>(op: (db: IDBDatabase, resolve: (v: T) => void, reject: (e: unknown) => void) => void): Promise<T> {
+  private async run<T>(
+    op: (db: IDBDatabase, resolve: (v: T) => void, reject: (e: unknown) => void) => void,
+    timeoutMs: number = this.openTimeoutMs,
+  ): Promise<T> {
     const cached = this.open();
     const db = await cached;
     const drop = () => {
@@ -89,7 +104,7 @@ export class IdbSaveStore implements SaveStore {
     };
     return new Promise<T>((resolve, reject) => {
       // A transaction that never fires any event must not stall the autosaver silently.
-      const timer = setTimeout(() => fail(new Error('Storage did not respond')), this.openTimeoutMs);
+      const timer = setTimeout(() => fail(new Error('Storage did not respond')), timeoutMs);
       const done = (v: T) => {
         clearTimeout(timer);
         resolve(v);
@@ -133,12 +148,50 @@ export class IdbSaveStore implements SaveStore {
   requestPersist(): Promise<boolean> {
     return requestPersist();
   }
+
+  loadExtra(key: string): Promise<unknown | null> {
+    return this.run<unknown | null>((db, resolve, fail) => {
+      const tx = db.transaction(STORE, 'readonly');
+      const req = tx.objectStore(STORE).get(key);
+      req.onsuccess = () => resolve(req.result ?? null);
+      req.onerror = () => fail(req.error ?? new Error('Could not read the stored file'));
+      tx.onerror = () => fail(tx.error ?? new Error('Could not read the stored file'));
+      tx.onabort = () => fail(tx.error ?? new Error('The read was aborted'));
+    }, this.extraWriteTimeoutMs);
+  }
+
+  saveExtra(key: string, value: unknown): Promise<void> {
+    if (key === KEY) return Promise.reject(new Error(GAME_KEY_REFUSED));
+    return this.run<void>((db, resolve, fail) => {
+      const tx = db.transaction(STORE, 'readwrite');
+      const req = tx.objectStore(STORE).put(value, key);
+      req.onerror = () => fail(req.error ?? new Error('Could not store the file'));
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => fail(tx.error ?? new Error('Could not store the file'));
+      tx.onabort = () => fail(tx.error ?? new Error('Storing the file was aborted'));
+      (tx as IDBTransaction & { commit?: () => void }).commit?.();
+    }, this.extraWriteTimeoutMs);
+  }
+
+  removeExtra(key: string): Promise<void> {
+    if (key === KEY) return Promise.reject(new Error(GAME_KEY_REFUSED));
+    return this.run<void>((db, resolve, fail) => {
+      const tx = db.transaction(STORE, 'readwrite');
+      const req = tx.objectStore(STORE).delete(key);
+      req.onerror = () => fail(req.error ?? new Error('Could not remove the file'));
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => fail(tx.error ?? new Error('Could not remove the file'));
+      tx.onabort = () => fail(tx.error ?? new Error('Removing the file was aborted'));
+      (tx as IDBTransaction & { commit?: () => void }).commit?.();
+    });
+  }
 }
 
 /** In-memory store for tests and fallback. `failNext` makes the next save reject once. */
 export class MemorySaveStore implements SaveStore {
   failNext: Error | null = null;
   saved: SaveRecord | null = null;
+  extras = new Map<string, unknown>();
 
   async load(): Promise<unknown | null> {
     return this.saved;
@@ -155,5 +208,19 @@ export class MemorySaveStore implements SaveStore {
 
   requestPersist(): Promise<boolean> {
     return requestPersist();
+  }
+
+  async loadExtra(key: string): Promise<unknown | null> {
+    return this.extras.has(key) ? structuredClone(this.extras.get(key)) : null;
+  }
+
+  async saveExtra(key: string, value: unknown): Promise<void> {
+    if (key === 'current') throw new Error(GAME_KEY_REFUSED);
+    this.extras.set(key, structuredClone(value));
+  }
+
+  async removeExtra(key: string): Promise<void> {
+    if (key === 'current') throw new Error(GAME_KEY_REFUSED);
+    this.extras.delete(key);
   }
 }

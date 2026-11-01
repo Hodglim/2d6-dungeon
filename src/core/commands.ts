@@ -7,6 +7,14 @@ export interface Command {
   apply(map: DungeonMap): DungeonMap;
 }
 
+/** A change to the hero (an opaque value in core). Like a Command, but it leaves the map alone. */
+export interface HeroCommand {
+  label: string;
+  applyHero(hero: unknown | null): unknown | null;
+}
+
+export const setHero = (after: unknown | null, label: string): HeroCommand => ({ label, applyHero: () => after });
+
 type Collection = 'rooms' | 'doors' | 'features';
 type ItemOf<K extends Collection> = DungeonMap[K][number];
 

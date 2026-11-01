@@ -107,7 +107,10 @@ export class PlayFlow {
     private readonly newId: IdFn,
   ) {
     this.base = history.map;
-    this.unsubscribe = history.subscribe(() => {
+    let seen = history.map;
+    this.unsubscribe = history.subscribe((map) => {
+      if (map === seen) return; // a hero-only change leaves the draft alone
+      seen = map;
       if (this.committing) return;
       this.walk = null;
       this.reset(null);
@@ -187,6 +190,16 @@ export class PlayFlow {
   rollSize(): void {
     if (this.current.kind !== 'size') return;
     this.applySize(rollD66(this.rng));
+  }
+
+  /** Rolls the room dice with the injected rng but applies nothing; pass the result to applyRolledSize. */
+  rollSizeDice(): D66 | null {
+    return this.current.kind === 'size' ? rollD66(this.rng) : null;
+  }
+
+  /** Applies dice from rollSizeDice (after the UI has shown them rolling). */
+  applyRolledSize(dice: D66): void {
+    this.applySize(dice);
   }
 
   private applySize(dice: D66): void {
@@ -307,6 +320,16 @@ export class PlayFlow {
   rollExitCount(): void {
     if (this.current.kind !== 'exitCount') return;
     this.applyExitCount(rollD6(this.rng));
+  }
+
+  /** Rolls one D6 with the injected rng without applying it (exit count, first wall). */
+  rollDie(): number {
+    return rollD6(this.rng);
+  }
+
+  /** Applies a D6 from rollDie as the exit count. */
+  applyRolledExitCount(d6: number): void {
+    this.applyExitCount(d6);
   }
 
   private applyExitCount(d6: number): void {

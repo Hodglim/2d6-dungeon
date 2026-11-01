@@ -166,6 +166,30 @@ describe('Autosaver', () => {
     expect(calls.mock.calls.length).toBeLessThan(15);
   });
 
+  it('a DataCloneError rejection shows failing', async () => {
+    const { store, act, auto } = setup();
+    store.save = async () => {
+      throw new DOMException('Proxy object could not be cloned.', 'DataCloneError');
+    };
+    const seen: boolean[] = [];
+    auto.subscribe((s) => seen.push(s.failing));
+    act();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(seen.at(-1)).toBe(true);
+  });
+
+  it('a store that throws synchronously shows failing', async () => {
+    const { store, act, auto } = setup();
+    store.save = () => {
+      throw new DOMException('Proxy object could not be cloned.', 'DataCloneError');
+    };
+    const seen: boolean[] = [];
+    auto.subscribe((s) => seen.push(s.failing));
+    act();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(seen.at(-1)).toBe(true);
+  });
+
   it('pause cancels a pending retry', async () => {
     const { store, save, act, auto } = setup();
     store.failNext = new Error('boom');

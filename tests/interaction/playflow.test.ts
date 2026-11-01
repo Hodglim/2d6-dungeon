@@ -1,3 +1,4 @@
+import { addRoom, setHero } from '../../src/core/commands';
 import { History } from '../../src/core/history';
 import { sequentialIds } from '../../src/core/ids';
 import { openExits } from '../../src/core/query';
@@ -131,9 +132,9 @@ describe('PlayFlow room path', () => {
     flow.place();
     flow.enterExitCount('1');
     expect(expectKind(flow, 'label')).toMatchObject({ chosen: [] });
-    expect(flow.finish({ type: 'Guard Room', unique: false, narrative: '' }).ok).toBe(true);
+    expect(flow.finish({ type: 'Lamp Room', unique: false, narrative: '' }).ok).toBe(true);
     const r2 = history.map.rooms.find((r) => r.number === 2)!;
-    expect(r2.label.type).toBe('Guard Room');
+    expect(r2.label.type).toBe('Lamp Room');
     expect(history.undoLabel).toBe('Add Room 2');
   });
 
@@ -396,6 +397,56 @@ describe('PlayFlow dice rolls', () => {
   });
 });
 
+describe('PlayFlow split rolls (animation support)', () => {
+  it('rollSizeDice does not advance; applyRolledSize does, keeping the dice', () => {
+    const { history, flow } = withEntrance();
+    flow.startFromExit(northExit(history.map).id);
+    const d = flow.rollSizeDice()!;
+    expect(flow.step.kind).toBe('size');
+    flow.applyRolledSize(d);
+    if (d.primary === d.secondary && d.primary !== 6) {
+      expect(flow.step.kind).toBe('size');
+    } else {
+      expect(expectKind(flow, 'position').size.dice).toEqual([d]);
+    }
+  });
+
+  it('matches what rollSize would have rolled with the same seed', () => {
+    const a = withEntrance();
+    const b = withEntrance();
+    a.flow.startFromExit(northExit(a.history.map).id);
+    b.flow.startFromExit(northExit(b.history.map).id);
+    a.flow.applyRolledSize(a.flow.rollSizeDice()!);
+    b.flow.rollSize();
+    expect(a.flow.step).toEqual(b.flow.step);
+  });
+
+  it('keeps both pairs after a double', () => {
+    const { history, flow } = withEntrance();
+    flow.startFromExit(northExit(history.map).id);
+    flow.applyRolledSize({ primary: 3, secondary: 3 });
+    expect(expectKind(flow, 'size').needsSecond).toBe(true);
+    flow.applyRolledSize({ primary: 4, secondary: 5 });
+    const pos = expectKind(flow, 'position');
+    expect(pos.size).toMatchObject({ w: 7, h: 8, doubled: true });
+    expect(pos.size.dice).toEqual([{ primary: 3, secondary: 3 }, { primary: 4, secondary: 5 }]);
+  });
+
+  it('rollDie and applyRolledExitCount split the exit count roll', () => {
+    const { history, flow } = withEntrance();
+    flow.startFromExit(northExit(history.map).id);
+    flow.applyRolledSize({ primary: 3, secondary: 4 });
+    if (!expectKind(flow, 'position').placement.ok) flow.shrink();
+    flow.place();
+    const d = flow.rollDie();
+    expect(d).toBeGreaterThanOrEqual(1);
+    expect(d).toBeLessThanOrEqual(6);
+    expect(flow.step.kind).toBe('exitCount');
+    flow.applyRolledExitCount(d);
+    expect(flow.step.kind).not.toBe('exitCount');
+  });
+});
+
 describe('PlayFlow exit count is enforced', () => {
   it('refuses with 1 of 2 chosen while another exit is allowed', () => {
     const { history, flow } = withEntrance();
@@ -575,7 +626,7 @@ describe('PlayFlow follows whole-state replacement', () => {
       expect(flow.step.kind).toBe('exitCount');
       const next = emptyMap(12, 12);
       if (replace === 'reset') history.reset(next);
-      else history.restore({ current: next, past: [], future: [] });
+      else history.restore({ current: next, hero: null, past: [], future: [] });
       expect(flow.step.kind).toBe('idle');
       expect(flow.draftMap).toBe(next);
       expect(history.map).toBe(next);
@@ -583,5 +634,19 @@ describe('PlayFlow follows whole-state replacement', () => {
       flow.startEntrance({ x: 4, y: 12 });
       expect(flow.step.kind).toBe('size');
     }
+  });
+});
+
+describe('PlayFlow ignores hero-only changes (Review Focus 1)', () => {
+  it('a hero execute leaves the draft open; a map execute cancels it', () => {
+    const { history, flow } = withEntrance();
+    flow.startFromExit(northExit(history.map).id);
+    flow.enterSize('3', '4');
+    flow.place();
+    expect(flow.step.kind).toBe('exitCount');
+    history.execute(setHero({ hp: 5 }, 'Create hero'));
+    expect(flow.step.kind).toBe('exitCount');
+    history.execute(addRoom(room('zz', 0, 0, 1, 1)));
+    expect(flow.step.kind).toBe('idle');
   });
 });

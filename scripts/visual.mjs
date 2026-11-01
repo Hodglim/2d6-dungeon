@@ -5,7 +5,7 @@
 // then uses the Door, Stairs, Note and Select tools on it.
 // Exits non-zero on undersized buttons, a wrong play-flow step, the panel overlapping the
 // map, or any page error.
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { firefox } from 'playwright';
 
@@ -25,10 +25,10 @@ page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
 await page.goto(url, { waitUntil: 'load' });
 await page.waitForTimeout(1000);
 
-const shot = async (name) => {
-  await page.waitForTimeout(250); // let the canvas paint the latest overlay
+const shot = async (name, pg = page) => {
+  await pg.waitForTimeout(250); // let the canvas paint the latest overlay
   const path = join(outDir, name);
-  await page.screenshot({ path });
+  await pg.screenshot({ path });
   console.log(`Saved ${path}`);
 };
 
@@ -207,7 +207,7 @@ await typeDice('2');
 await panelButton('Place for me'); // the other one clockwise from the typed D6
 await panelButton('Done');
 await stepIs('label', 'placing room 2 exits');
-await page.fill('aside.panel input[type="text"]', 'Guard Room');
+await page.fill('aside.panel input[type="text"]', 'Lamp Room');
 await panelButton('Done');
 await stepIs('idle', 'labelling room 2');
 await page.waitForTimeout(2500); // token walks into room 2
@@ -309,7 +309,7 @@ for (const want of ['Room 2', 'Size 6×5', 'Class normal', 'Exits 2']) {
   if (!inspector.toLowerCase().includes(want.toLowerCase())) problems.push(`inspector is missing "${want}"`);
 }
 const typeValue = await page.inputValue('aside.panel [data-editor="room"] input[type="text"]');
-if (typeValue !== 'Guard Room') problems.push(`inspector room type is "${typeValue}"`);
+if (typeValue !== 'Lamp Room') problems.push(`inspector room type is "${typeValue}"`);
 const roomButtons = await page.$$eval('aside.panel button', (els) => els.map((el) => el.textContent?.trim() ?? ''));
 const forbidden = roomButtons.filter((t) => /move|resize|delete|remove/i.test(t));
 if (forbidden.length) problems.push(`inspector has room-changing buttons: ${forbidden.join(', ')}`);
@@ -335,8 +335,8 @@ await shot('09-demo.png');
 
 // 8. New map dialog shows the discard confirmation over a map with content.
 await page.click('header.toolbar button[aria-label="Menu"]');
-await page.click('text=New map…');
-await page.click('button:text-is("Create")');
+await page.click('text=New game…');
+await page.click('button:text-is("Start without a hero")');
 await page.waitForTimeout(200);
 await shot('10-new-map-confirm.png');
 if (!(await page.isVisible('text=This replaces your current game.'))) problems.push('new game confirmation not shown');
@@ -459,6 +459,558 @@ if (!(await page.isVisible('text=This replaces your current game.'))) problems.p
     window.matchMedia = (q) => (q.includes('display-mode: standalone') ? { ...orig(q), matches: true, media: q } : orig(q));
   }));
   if (await p.isVisible(hintSel)) problems.push('hint shown in standalone mode');
+  await ctx.close();
+}
+
+// 11. Table file and creature cards: load through the menu, survive a reload, a bad file keeps the loaded one.
+{
+  const ctx = await browser.newContext({ viewport: { width: 1180, height: 820 }, deviceScaleFactor: 2, hasTouch: true });
+  await ctx.addInitScript(() => localStorage.setItem('2d6.installHintDismissed', '1'));
+  const p = await ctx.newPage();
+  p.on('pageerror', (e) => errors.push(e.message));
+  await p.goto(url, { waitUntil: 'load' });
+  await p.waitForTimeout(800);
+  const openMenu = () => p.click('header.toolbar button[aria-label="Menu"]');
+  const statusOf = async (which) => {
+    await openMenu();
+    const t = (await p.textContent(`.menu [data-status="${which}"] span`))?.trim();
+    await p.keyboard.press('Escape');
+    return t;
+  };
+  const fixture = readFileSync('tests/fixtures/dungeon-tables.fixture.json');
+  const fixtureName = JSON.parse(fixture.toString()).name;
+  const pick = async (which, name, buffer) => {
+    await p.setInputFiles(`input[data-extra="${which}"]`, { name, mimeType: 'application/json', buffer });
+    await p.waitForTimeout(400);
+  };
+
+  await openMenu();
+  const noTable = (await p.textContent('.menu [data-status="tables"] span'))?.trim();
+  if (noTable !== 'No table file loaded') problems.push(`table status before load: "${noTable}"`);
+  await p.keyboard.press('Escape');
+
+  await pick('tables', 'tables.json', fixture);
+  const afterLoad = await statusOf('tables');
+  if (!afterLoad?.includes(fixtureName)) problems.push(`table status after load: "${afterLoad}"`);
+
+  const onePx = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+  const packText = JSON.stringify({ format: 1, systemId: 'dungeon', name: 'Made-up cards', cards: [{ id: 'a', name: 'Goblin Thing', level: 1, image: onePx }] });
+  await pick('cards', 'cards.json', Buffer.from(packText));
+  const cardsStatus = await statusOf('cards');
+  if (!cardsStatus?.includes('Made-up cards')) problems.push(`cards status after load: "${cardsStatus}"`);
+
+  // The creation wizard, with the fixture tables loaded.
+  const readSaved = () =>
+    p.evaluate(
+      () =>
+        new Promise((resolve, reject) => {
+          const r = indexedDB.open('2d6-map-maker', 1);
+          r.onsuccess = () => {
+            const g = r.result.transaction('saves').objectStore('saves').get('current');
+            g.onsuccess = () => resolve(JSON.stringify(g.result ?? null));
+            g.onerror = () => reject(g.error);
+          };
+          r.onerror = () => reject(r.error);
+        }),
+    );
+  const wshot = async (name) => {
+    await p.waitForTimeout(250);
+    await p.screenshot({ path: join(outDir, name) });
+    console.log(`Saved ${join(outDir, name)}`);
+  };
+  const wiz = (t) => p.click(`[role=dialog][aria-labelledby=wizard-title] button:text-is("${t}")`);
+  const wizSmall = async () => {
+    const n = await p.$$eval('[aria-labelledby=wizard-title] button, [aria-labelledby=wizard-title] input', (els) => els.map((e) => e.getBoundingClientRect()).filter((r) => r.width > 0 && (r.width < 44 || r.height < 44)).length);
+    if (n) problems.push(`wizard has ${n} controls under 44px`);
+  };
+  const runWizard = async (name, shots) => {
+    await openMenu();
+    await p.click('[role=menuitem]:text-is("New game…")');
+    await wiz('Next');
+    await p.fill('[aria-labelledby=wizard-title] input[type=text]', name);
+    await wiz('Next');
+    await p.click('.option:has-text("Practice Sword")');
+    if (shots) await wshot('30-wizard-weapon.png');
+    await wizSmall();
+    await wiz('Next');
+    if (await p.isEnabled('.next')) problems.push('wizard Next enabled with no manoeuvres chosen');
+    await p.click('.option:has-text("Wobbly Poke")');
+    await p.click('.option:has-text("Gentle Swipe")');
+    if (shots) await wshot('31-wizard-manoeuvres.png');
+    await wiz('Next');
+    await p.click('.option:has-text("Padded Tablecloth")');
+    await wiz('Next');
+    await p.click('.option:has-text("Scroll of Mild Glow")');
+    await wiz('Next');
+    if (shots) await wshot('32-wizard-review.png');
+    await wiz('Begin');
+    await p.waitForTimeout(300);
+  };
+  await runWizard('Pip Tester', true);
+  if (await p.isVisible('[role=alertdialog] button:text-is("Replace")')) await p.click('[role=alertdialog] button:text-is("Replace")');
+  await p.waitForTimeout(800);
+  if (!(await readSaved()).includes('Pip Tester')) problems.push('wizard hero not in the saved game');
+  if (!(await statusOf('tables'))?.includes(fixtureName)) problems.push('table status lost after New game');
+  if (!(await p.isDisabled('header.toolbar button.history'))) problems.push('Undo should be empty right after Begin');
+  await p.reload({ waitUntil: 'load' });
+  await p.waitForTimeout(1000);
+  if (!(await readSaved()).includes('Pip Tester')) problems.push('wizard hero lost after reload');
+
+  // A hero-only game still asks before New game replaces it.
+  await openMenu();
+  await p.click('[role=menuitem]:text-is("New game…")');
+  await wiz('Start without a hero');
+  await p.waitForTimeout(300);
+  if (!(await p.isVisible('text=This replaces your current game.'))) problems.push('hero-only game: replace confirmation not shown');
+  await p.click('[role=alertdialog] button:text-is("Cancel")');
+  if (!(await p.isVisible('[aria-labelledby=wizard-title]'))) problems.push('wizard closed after cancelling the replace confirmation');
+  await wiz('Cancel');
+  await p.waitForTimeout(300);
+
+  // Cancel mid-wizard leaves the game alone.
+  await openMenu();
+  await p.click('[role=menuitem]:text-is("New game…")');
+  await wiz('Next');
+  await p.fill('[aria-labelledby=wizard-title] input[type=text]', 'Nobody');
+  await wiz('Cancel');
+  await p.waitForTimeout(500);
+  const afterCancel = await readSaved();
+  if (!afterCancel.includes('Pip Tester') || afterCancel.includes('Nobody')) problems.push('Cancel changed the game');
+
+  // The Hero panel: quick strip, limits, level-up and the sheet tabs.
+  const panel = '.hero-panel';
+  const val = (label) => p.inputValue(`${panel} [aria-label="${label}"]`);
+  const undoText = async () => (await p.textContent('header.toolbar button.history')) ?? '';
+  const mapWidth = () => p.$eval('.map-view', (e) => Math.round(e.getBoundingClientRect().width));
+  const canvasWidth = () => p.$eval('.map-view canvas', (e) => e.width);
+  const widthBefore = await mapWidth();
+  const canvasBefore = await canvasWidth();
+  await p.click('header.toolbar button.hero');
+  await p.waitForSelector(panel);
+  await p.waitForTimeout(400);
+  if ((await mapWidth()) >= widthBefore) problems.push('map did not narrow beside the hero panel');
+  if ((await canvasWidth()) >= canvasBefore) problems.push('map canvas did not resize beside the hero panel');
+  if (await p.isVisible('.panel[aria-label="Step panel"]')) problems.push('step panel still showing beside the hero panel');
+  const hp0 = Number(await val('HP'));
+  for (let i = 0; i < 3; i++) await p.click(`${panel} [aria-label="HP down"]`);
+  if (Number(await val('HP')) !== hp0 - 3) problems.push('HP taps did not reduce HP by 3');
+  if (!(await undoText()).includes('HP −3')) problems.push(`merged HP label: ${await undoText()}`);
+  await p.click('header.toolbar button.history >> nth=0');
+  if (Number(await val('HP')) !== hp0) problems.push('one undo did not restore all three HP taps');
+  await p.click('header.toolbar button.history >> nth=1');
+  if (Number(await val('HP')) !== hp0 - 3) problems.push('redo did not reapply the HP taps');
+  await p.fill(`${panel} [aria-label="XP to add"]`, '50');
+  await p.click(`${panel} button:text-is("Add XP")`);
+  await p.click(`${panel} [aria-label="GC up"]`);
+  await p.fill(`${panel} [aria-label="Add item"]`, 'Rope');
+  await p.click(`${panel} button:text-is("Add")`);
+  if (!(await p.isVisible(`${panel} .offer:has-text("Level up to Explorer?")`))) problems.push('level-up offer missing at 50 XP');
+  await wshot('33-hero-strip.png');
+  const smallHero = async (where) => {
+    const n = await p.$$eval(`${panel} button, ${panel} input, ${panel} select`, (els) => els.map((e) => e.getBoundingClientRect()).filter((r) => r.width > 0 && (r.width < 44 || r.height < 44)).length);
+    if (n) problems.push(`hero ${where} has ${n} controls under 44px`);
+    const over = await p.$eval(`${panel} .body`, (e) => e.scrollWidth > e.clientWidth + 1);
+    if (over) problems.push(`hero ${where} scrolls sideways`);
+  };
+  await smallHero('strip');
+
+  // Reload: the values persist.
+  await p.waitForTimeout(800);
+  await p.reload({ waitUntil: 'load' });
+  await p.waitForTimeout(1000);
+  if (!(await p.isVisible('header.toolbar button.hero:text-is("Hero")'))) problems.push('Hero button missing after reload');
+  await p.click('header.toolbar button.hero');
+  await p.waitForSelector(panel);
+  if (Number(await val('HP')) !== hp0 - 3 || Number(await val('GC')) !== 1 || (await val('XP to add')) !== '' || !(await p.textContent(`${panel} .strip`))?.includes('50')) problems.push('quick-strip values lost after reload');
+
+  // Limits warn but never block.
+  const addLarge = async (t) => {
+    await p.fill(`${panel} [aria-label="Add item"]`, t);
+    await p.click(`${panel} .items button:text-is("Add")`);
+  };
+  await addLarge('Torch');
+  if (await p.isVisible(`${panel} [role=alert]`)) problems.push('warning shown below the limit');
+  await addLarge('Anvil');
+  if (!(await p.isVisible(`${panel} [role=alert]:has-text("Your backpack holds 2 large items")`))) problems.push('limit warning missing');
+  await wshot('37-hero-limit-warning.png');
+  await p.click(`${panel} [role=alert] button:text-is("Cancel")`);
+  await p.click(`${panel} #hero-tab-items`);
+  if ((await p.$$eval(`${panel} .slots li:not(.over) .grow:not(.empty)`, (e) => e.length)) !== 2) problems.push('Cancel did not leave the items alone');
+  await p.fill(`${panel} [aria-label="New large item"]`, 'Anvil');
+  await p.click(`${panel} .page form button:text-is("Add")`);
+  await p.click(`${panel} [role=alert] button:text-is("Add anyway")`);
+  if ((await p.$$eval(`${panel} .slots li`, (e) => e.length)) !== 3) problems.push('Add anyway did not add the item');
+  await wshot('36-hero-items.png');
+  await smallHero('items tab');
+
+  // Level up, twice.
+  if (!(await undoText()).includes('Add Anvil')) problems.push(`undo label after Add anyway: ${await undoText()}`);
+  await p.click(`${panel} .offer button:text-is("Level up")`);
+  if (!(await undoText()).includes('Level up to Explorer')) problems.push(`level-up label: ${await undoText()}`);
+  if (!(await p.isVisible(`${panel} .offer:has-text("Level up to Seasoned Snoozer?")`))) problems.push('second level-up offer missing');
+  await p.click(`${panel} .offer button:text-is("Level up")`);
+  if (await p.isVisible(`${panel} .offer`)) problems.push('level-up offer still showing at the top level');
+
+  // Stats page: manoeuvres offered from the loaded table file.
+  await p.click(`${panel} #hero-tab-stats`);
+  if (!(await p.isVisible(`${panel} button[aria-label="Add Grand Wave"]`))) problems.push('weapon manoeuvres not offered');
+  await p.click(`${panel} button[aria-label="Add Cheerful Flourish"]`);
+  if (await p.isVisible(`${panel} [role=alert]`)) problems.push('warning shown within the manoeuvre limit');
+  await wshot('34-hero-stats.png');
+  // Dice are pip faces labelled for assistive tech; the columns line up across rows.
+  {
+    const labels = await p.$$eval(`${panel} .drow [role=img]`, (els) => els.map((e) => e.getAttribute('aria-label')));
+    if (!labels.length || labels.some((l) => !/^(red|blue) [1-6]$/.test(l ?? ''))) problems.push(`die labels: ${JSON.stringify(labels)}`);
+    const pips = await p.$$eval(`${panel} .drow [role=img]`, (els) => els.every((e) => e.querySelectorAll('circle').length === Number(e.getAttribute('aria-label').split(' ')[1])));
+    if (!pips) problems.push('pip count does not match die label');
+    const xs = await p.$$eval(`${panel} ul .drow`, (rows) => rows.filter((r) => r.querySelector('.mod')).map((r) => Math.round(r.querySelector('.mod').getBoundingClientRect().x)));
+    if (new Set(xs).size > 2) problems.push(`damage column not aligned: ${xs}`);
+    await p.screenshot({ path: join(outDir, '41-dice-pips.png') });
+    // Buttons and modifiers never spill or wrap, at this width and at a 420px panel.
+    const fit = async (where) => {
+      const bad = await p.$$eval(`${panel} .drow`, (rows) =>
+        rows.flatMap((r) => [...r.querySelectorAll('button, .mod')].filter((e) => e.scrollWidth > e.clientWidth + 1 || e.getBoundingClientRect().right > r.getBoundingClientRect().right + 1 || e.getBoundingClientRect().height > 60).map((e) => e.textContent.trim())),
+      );
+      if (bad.length) problems.push(`sheet grid ${where}: ${bad.join(', ')} spill or wrap`);
+      const rights = await p.$$eval(`${panel} .dgrid`, (gs) => gs.map((g) => new Set([...g.querySelectorAll('.drow:not(.dhead) .mod')].map((e) => Math.round(e.getBoundingClientRect().x))).size));
+      if (rights.some((n) => n > 1)) problems.push(`sheet grid ${where}: modifier column misaligned ${JSON.stringify(await p.$$eval(`${panel} .dgrid .drow .mod`, (es) => es.map((e) => e.getBoundingClientRect().x)))}`);
+      if (await p.$eval(panel, (e) => e.scrollWidth > e.clientWidth + 1)) problems.push(`sheet grid ${where}: panel scrolls sideways`);
+    };
+    await fit('at 1180');
+    const origW = await p.$eval(panel, (e) => e.getBoundingClientRect().width);
+    await p.$eval(panel, (e) => { e.style.setProperty('width', '420px', 'important'); e.style.setProperty('flex', 'none', 'important'); });
+    await p.waitForTimeout(200);
+    await fit('at 420');
+    await p.$eval(`${panel} .dgrid`, (e) => e.scrollIntoView({ block: 'center' }));
+    await p.screenshot({ path: join(outDir, '41b-dice-pips-narrow.png') });
+    await p.$eval(panel, (e) => { e.style.removeProperty('width'); e.style.removeProperty('flex'); });
+    await p.waitForTimeout(200);
+    void origW;
+    // All six faces, red and blue, rendered in the app's own component styles.
+    await p.evaluate(() => {
+      const donor = document.querySelector('.hero-panel .drow [role=img]');
+      const box = document.createElement('div');
+      box.id = 'all-faces';
+      box.style.cssText = 'position:fixed;left:20px;top:20px;z-index:99999;background:#fff;padding:16px;display:grid;gap:10px';
+      for (const colour of ['red', 'blue']) {
+        const line = document.createElement('div');
+        line.style.cssText = 'display:flex;gap:14px';
+        box.append(line);
+        for (let n = 1; n <= 6; n++) {
+          const d = donor.cloneNode(true);
+          d.className = donor.className.replace(/\b(red|blue)\b/, colour);
+          d.setAttribute('aria-label', `${colour} ${n}`);
+          const pos = { 1: [[15, 15]], 2: [[22, 8], [8, 22]], 3: [[22, 8], [15, 15], [8, 22]], 4: [[8, 8], [22, 8], [8, 22], [22, 22]], 5: [[8, 8], [22, 8], [15, 15], [8, 22], [22, 22]], 6: [[8, 8], [22, 8], [8, 15], [22, 15], [8, 22], [22, 22]] }[n];
+          const svg = d.querySelector('svg');
+          const tmpl = svg.querySelector('circle');
+          svg.replaceChildren(...pos.map(([x, y]) => { const c = tmpl.cloneNode(); c.setAttribute('cx', x); c.setAttribute('cy', y); return c; }));
+          d.style.transform = 'scale(2)';
+          d.style.margin = '18px';
+          line.append(d);
+        }
+      }
+      document.body.append(box);
+    });
+    await p.screenshot({ path: join(outDir, '42-die-faces.png'), clip: { x: 0, y: 0, width: 640, height: 220 } });
+    await p.evaluate(() => document.getElementById('all-faces')?.remove());
+  }
+  await smallHero('stats tab');
+  // Identity fields are editable by hand: one commit each, no automatic stat changes.
+  {
+    const shiftSel = `${panel} label:has(.cap:text-is("shift")) input`;
+    const shiftBefore = await p.inputValue(shiftSel);
+    await p.fill(`${panel} [aria-label="Hero title"]`, 'Hand-typed Title');
+    await p.press(`${panel} [aria-label="Hero title"]`, 'Tab');
+    if (!(await undoText()).includes('Edit hero')) problems.push(`typed title label: ${await undoText()}`);
+    await p.fill(`${panel} [aria-label="HP baseline"]`, '21');
+    await p.press(`${panel} [aria-label="HP baseline"]`, 'Tab');
+    await p.fill(`${panel} [aria-label="Hero level"]`, '0');
+    await p.press(`${panel} [aria-label="Hero level"]`, 'Tab');
+    if ((await val('Hero level')) !== '3') problems.push('level 0 was accepted');
+    if (await p.isVisible(`${panel} .error`)) problems.push('level 0 showed an error');
+    if ((await val('HP baseline')) !== '21') problems.push('typed HP baseline lost');
+    if ((await p.inputValue(shiftSel)) !== shiftBefore) problems.push('editing the sheet changed a stat');
+    await p.fill(`${panel} [aria-label="Hero title"]`, 'Seasoned Snoozer');
+    await p.press(`${panel} [aria-label="Hero title"]`, 'Tab');
+    await p.fill(`${panel} [aria-label="HP baseline"]`, '17');
+    await p.press(`${panel} [aria-label="HP baseline"]`, 'Tab');
+  }
+
+  await p.click(`${panel} #hero-tab-potions`);
+  await p.click(`${panel} button[aria-label="Scraped Up box 2"]`);
+  await p.click(`${panel} button[aria-label="Old Mossbeard favour box 3"]`);
+  await wshot('35-hero-potions.png');
+  await smallHero('potions tab');
+  await p.click(`${panel} #hero-tab-story`);
+  await p.fill(`${panel} textarea`, 'Found a very small door.');
+  await p.click(`${panel} #hero-tab-items`);
+  await p.waitForTimeout(1500);
+  const savedHero = await readSaved();
+
+  for (const want of ['Found a very small door.', 'Seasoned Snoozer']) if (!savedHero.includes(want)) problems.push(`hero sheet edit not in the saved game: ${want}`);
+
+  // Close restores the step panel; without a table file the picker says so.
+  await p.click(`${panel} button[aria-label="Close hero panel"]`);
+  if (!(await p.isVisible('.panel[aria-label="Step panel"]'))) problems.push('closing the hero panel did not restore the step panel');
+
+  // Encounter: a made-up 3-card pack with canvas-drawn placeholder images.
+  {
+    const imgs = await p.evaluate(() =>
+      [['#c96', 'A'], ['#6a9', 'B'], ['#69c', 'C']].map(([bg, ch]) => {
+        const c = document.createElement('canvas');
+        c.width = 300;
+        c.height = 420;
+        const g = c.getContext('2d');
+        g.fillStyle = bg;
+        g.fillRect(0, 0, 300, 420);
+        g.strokeStyle = '#222';
+        g.lineWidth = 8;
+        g.strokeRect(8, 8, 284, 404);
+        g.fillStyle = '#222';
+        g.font = '160px sans-serif';
+        g.textAlign = 'center';
+        g.fillText(ch, 150, 260);
+        return c.toDataURL('image/png');
+      }),
+    );
+    const pack = { format: 1, systemId: 'dungeon', name: 'Made-up cards', cards: [
+      { id: 'g1', name: 'Mossy Gribbler', level: 1, image: imgs[0] },
+      { id: 'g2', name: 'Cellar Hum', level: 2, image: imgs[1] },
+      { id: 'g3', name: 'Tall Pennywort', level: 2, image: imgs[2] },
+    ] };
+    await pick('cards', 'cards3.json', Buffer.from(JSON.stringify(pack)));
+    await p.click('header.toolbar button.encounter');
+    await p.waitForSelector('.encounter-picker');
+    if ((await p.$$eval('.encounter-picker .pick', (e) => e.length)) !== 3) problems.push('picker did not list 3 cards');
+    const opts = await p.$$eval('.encounter-picker select option', (e) => e.map((o) => o.textContent.trim()));
+    if (opts.join('|') !== 'All|Level 1|Level 2') problems.push('level filter options: ' + opts.join('|'));
+    await p.selectOption('.encounter-picker select', '2');
+    if ((await p.$$eval('.encounter-picker .pick', (e) => e.length)) !== 2) problems.push('level filter did not narrow');
+    await p.fill('.encounter-picker input[type=search]', 'penny');
+    if ((await p.$$eval('.encounter-picker .pick', (e) => e.length)) !== 1) problems.push('name search did not narrow');
+    const histBefore = await undoText();
+    await p.click('.encounter-picker .pick');
+    await p.waitForSelector('.encounter-card img[alt="Tall Pennywort"]');
+    if (await p.isVisible('.panel[aria-label="Step panel"]')) problems.push('step panel showing beside the encounter card');
+    const fit = await p.$eval('.encounter-card img', (e) => e.getBoundingClientRect().width <= e.closest('.encounter-card').getBoundingClientRect().width);
+    if (!fit) problems.push('card image wider than the panel');
+    if ((await undoText()) !== histBefore) problems.push('picking a card changed History');
+    await wshot('38-encounter.png');
+    // Hero open too: tabs, Encounter first.
+    await p.click('header.toolbar button.hero');
+    await p.waitForSelector('.hero-panel');
+    if (!(await p.isVisible('#side-tab-encounter')) || !(await p.isVisible('#side-tab-hero'))) problems.push('tabs missing with both open');
+    await p.click('#side-tab-encounter');
+    if (!(await p.isVisible('.encounter-card'))) problems.push('Encounter tab did not show the card');
+    await p.click('#side-tab-hero');
+    if (!(await p.isVisible('.hero-panel')) || (await p.isVisible('.encounter-card'))) problems.push('Hero tab did not switch');
+    await wshot('39-encounter-hero-tabs.png');
+    await p.click('#side-tab-encounter');
+    // Full screen closes on tap and on Escape.
+    await p.click('.encounter-card .image');
+    if (!(await p.isVisible('.full img'))) problems.push('full-screen card missing');
+    await p.click('.full');
+    if (await p.isVisible('.full')) problems.push('full-screen card did not close on tap');
+    await p.click('.encounter-card .image');
+    await p.keyboard.press('Escape');
+    if (await p.isVisible('.full')) problems.push('full-screen card did not close on Escape');
+    await p.click('.encounter-card button:text-is("End encounter")');
+    if (await p.isVisible('.encounter-card') || !(await p.isVisible('.hero-panel'))) problems.push('End encounter did not leave the hero panel');
+    await p.click(`${panel} button[aria-label="Close hero panel"]`);
+    if (!(await p.isVisible('.panel[aria-label="Step panel"]'))) problems.push('step panel did not return');
+    // Mid-placement: opening Encounter keeps the step panel reachable as a Room tab.
+    {
+      const at = await p.$eval('canvas', (c) => {
+        const [cx, cy, sc] = (c.dataset.camera ?? '').split(',').map(Number);
+        const r = c.getBoundingClientRect();
+        return { cx, cy, sc, left: r.left, top: r.top, h: r.height };
+      });
+      // The row of entrance squares sits just above the bottom of the canvas.
+      await p.mouse.click(at.left + 120, at.top + at.h - 30);
+      await p.waitForTimeout(200);
+      if ((await p.getAttribute('aside.panel .body', 'data-step')) === 'idle') problems.push('entrance tap did not start a flow step');
+      await p.click('header.toolbar button.encounter');
+      await p.waitForSelector('#side-tab-room');
+      if (await p.isVisible('aside.panel .body')) problems.push('step panel visible while the Encounter tab is selected');
+      await p.click('#side-tab-room');
+      await p.waitForSelector('aside.panel .body[data-step]');
+      await wshot('40-encounter-room-tab.png');
+      await p.click('aside.panel button:text-is("Cancel")');
+      await p.waitForTimeout(300);
+      if (await p.isVisible('#side-tab-room')) problems.push('Room tab still showing after the flow ended');
+      if (!(await p.isVisible('.encounter-picker'))) problems.push('encounter panel not left open after the flow ended');
+      await p.click('.encounter-picker button[aria-label="Close encounter search"]');
+    }
+    // Not saved.
+    await p.waitForTimeout(1200);
+    if ((await readSaved()).includes('Tall Pennywort')) problems.push('encounter was saved');
+  }
+
+  await p.reload({ waitUntil: 'load' });
+  await p.waitForTimeout(1000);
+  const afterReload = await statusOf('tables');
+  if (!afterReload?.includes(fixtureName)) problems.push(`table status after reload: "${afterReload}"`);
+  if (!(await statusOf('cards'))?.includes('Made-up cards')) problems.push('cards status after reload lost the pack');
+  await openMenu();
+  await p.screenshot({ path: join(outDir, '25-menu-files.png') });
+  const small = await p.$$eval('.menu button', (els) => els.map((e) => e.getBoundingClientRect()).filter((r) => r.width > 0 && (r.width < 44 || r.height < 44)).length);
+  if (small) problems.push('menu buttons are under 44px');
+  await p.keyboard.press('Escape');
+
+  // A corrupt table file: message shown, status unchanged.
+  await pick('tables', 'bad.json', Buffer.from('{ not json'));
+  if (!(await p.isVisible("text=This isn't a 2D6 Dungeon table file"))) problems.push('corrupt table file: message not shown');
+  await p.screenshot({ path: join(outDir, '26-bad-table-file.png') });
+  await p.click('[role=alertdialog] button:text-is("OK")');
+  const afterBad = await statusOf('tables');
+  if (!afterBad?.includes(fixtureName)) problems.push(`table status changed after a bad file: "${afterBad}"`);
+
+  // Remove clears it, and stays cleared after a reload.
+  await openMenu();
+  await p.click('.menu [data-status="tables"] button:text-is("Remove")');
+  await p.keyboard.press('Escape');
+  await p.reload({ waitUntil: 'load' });
+  await p.waitForTimeout(1000);
+  if ((await statusOf('tables')) !== 'No table file loaded') problems.push('table file came back after Remove and reload');
+  await p.click('header.toolbar button.hero');
+  await p.waitForSelector('.hero-panel');
+  if (!(await p.isVisible('.hero-panel >> text=Load your table file to choose manoeuvres'))) problems.push('no-tables manoeuvre hint missing');
+
+  // Typed text, then the app is backgrounded without any blur: the text is kept.
+  await p.click('.hero-panel #hero-tab-story');
+  await p.fill('.hero-panel textarea', 'typed, then the app was backgrounded');
+  await p.evaluate(() => {
+    Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  await p.waitForTimeout(1200);
+  await p.reload({ waitUntil: 'load' });
+  await p.waitForTimeout(1000);
+  await p.click('header.toolbar button.hero');
+  await p.waitForSelector('.hero-panel');
+  await p.click('.hero-panel #hero-tab-story');
+  if ((await p.inputValue('.hero-panel textarea')) !== 'typed, then the app was backgrounded') problems.push('typed narrative lost when the app was backgrounded');
+
+  // Typed text with no blur, then another edit, then a tab switch: both survive.
+  await p.click('.hero-panel #hero-tab-story');
+  await p.fill('.hero-panel textarea', 'typed before an HP tap');
+  const hpNow = Number(await val('HP'));
+  await p.evaluate(() => document.querySelector('.hero-panel [aria-label="HP down"]').click());
+  await p.evaluate(() => document.querySelector('.hero-panel #hero-tab-items').click());
+  await p.waitForTimeout(1500);
+  const rebased = await readSaved();
+  if (!rebased.includes('typed before an HP tap')) problems.push('typed narrative lost after another edit');
+  if (Number(await val('HP')) !== hpNow - 1) problems.push('HP tap lost when rebasing typed text');
+
+  // Teardown with typed text: New game without a hero while the Story tab is open must not crash.
+  const errorsBefore = errors.length;
+  await p.click('.hero-panel #hero-tab-story');
+  await p.fill('.hero-panel textarea', 'typed, then the game goes away');
+  await openMenu();
+  await p.click('[role=menuitem]:text-is("New game…")');
+  await wiz('Start without a hero');
+  await p.waitForTimeout(300);
+  if (await p.isVisible('[role=alertdialog] button:text-is("Replace")')) await p.click('[role=alertdialog] button:text-is("Replace")');
+  await p.waitForTimeout(500);
+  if (!(await p.isVisible('.panel[aria-label="Step panel"]'))) problems.push('step panel missing after the hero went away on the Story tab');
+  if (await p.isVisible('.hero-panel')) problems.push('hero panel still showing with no hero');
+  if (errors.length !== errorsBefore) problems.push('page error when the hero went away: ' + errors.slice(errorsBefore).join(' | '));
+
+  // No hero and no table file: Hero explains what to do instead of opening a dead-end wizard.
+  await p.click('header.toolbar button.hero');
+  await p.waitForTimeout(300);
+  if (!(await p.isVisible('.toast:has-text("Load your table file first")'))) problems.push('Hero with no table file: toast missing');
+  if (await p.isVisible('[aria-labelledby=wizard-title]')) problems.push('Hero with no table file opened the wizard');
+  await ctx.close();
+}
+
+// 12. Animated dice rolls: faces cycle, then land; the result step shows pip faces; the sound toggle persists.
+for (const reduced of [false, true]) {
+  const tag = reduced ? 'roll (reduced motion)' : 'roll';
+  const ctx = await browser.newContext({ viewport: { width: 1180, height: 820 }, deviceScaleFactor: 2, hasTouch: true, reducedMotion: reduced ? 'reduce' : 'no-preference' });
+  await ctx.addInitScript(() => localStorage.setItem('2d6.installHintDismissed', '1'));
+  const p = await ctx.newPage();
+  p.on('pageerror', (e) => errors.push(e.message));
+  await p.goto(url, { waitUntil: 'load' });
+  await p.waitForTimeout(800);
+  const tap = async (x, y) => {
+    const at = await p.$eval('canvas', (c, [wx, wy]) => {
+      const [cx, cy, sc] = (c.dataset.camera ?? '').split(',').map(Number);
+      const r = c.getBoundingClientRect();
+      return { x: r.left + (wx - cx) * sc, y: r.top + (wy - cy) * sc };
+    }, [x, y]);
+    await p.mouse.click(at.x, at.y);
+    await p.waitForTimeout(150);
+  };
+  const btn = (name) => p.click(`aside.panel button:text-is("${name}")`);
+  const stepNow = () => p.getAttribute('aside.panel .body', 'data-step');
+  const waitStep = (want) => p.waitForFunction((w) => document.querySelector('aside.panel .body')?.getAttribute('data-step') === w, want, { timeout: 5000 }).then(() => true, () => false);
+  await tap(12.5, 25.5);
+  const ins = await p.$$('aside.panel form.dice input');
+  await ins[0].fill('3');
+  await ins[1].fill('4');
+  await btn('Use these');
+  await btn('Place');
+  await btn('Done');
+  await btn('Done');
+  await p.waitForTimeout(1500);
+  await tap(12.5, 20);
+  // Roll until the result is a position step (doubles ask for another roll first).
+  let guard = 0;
+  let sampled = new Set();
+  while ((await stepNow()) === 'size' && guard++ < 6) {
+    const label = 'aside.panel form.dice .face [role=img]';
+    await p.click('aside.panel button:text-is("🎲 Roll for me")');
+    if (await p.locator('aside.panel form.dice button:disabled').count() < 2) problems.push(`${tag}: buttons not disabled while rolling`);
+    if (!reduced && guard === 1) {
+      for (let i = 0; i < 8; i++) {
+        await p.waitForTimeout(70);
+        const l = await p.getAttribute(label, 'aria-label').catch(() => null);
+        if (l) sampled.add(l);
+        if (i === 3) await shot('44-rolling.png', p);
+      }
+      if (sampled.size < 2) problems.push(`${tag}: die face did not change during the first ~600 ms (${[...sampled].join(', ')})`);
+    }
+    await waitStep('position').then((ok) => ok || p.waitForTimeout(1800));
+  }
+  if (!(await waitStep('position'))) problems.push(`${tag}: never reached the position step`);
+  else {
+    const text = (await p.textContent('[data-testid=rolled]'))?.replace(/\s+/g, ' ').trim() ?? '';
+    const faces = await p.$$eval('[data-testid=roll-faces] [role=img]', (els) => els.map((e) => e.getAttribute('aria-label')));
+    console.log(`${tag}: "${text}" faces ${faces.join(', ')}`);
+    const m = text.match(/(\d+) × (\d+)/);
+    if (!m) problems.push(`${tag}: result text missing: "${text}"`);
+    if (faces.length < 2 || faces.length % 2 !== 0) problems.push(`${tag}: expected pairs of die faces, got ${faces.length}`);
+    else {
+      if (!faces.every((f, i) => f.startsWith(i % 2 === 0 ? 'red ' : 'blue '))) problems.push(`${tag}: face colours wrong: ${faces.join(', ')}`);
+      const sum = (c) => faces.filter((f) => f.startsWith(c)).reduce((a, f) => a + Number(f.split(' ')[1]), 0);
+      if (m && (sum('red') !== Number(m[1]) || sum('blue') !== Number(m[2]))) problems.push(`${tag}: faces ${faces.join(', ')} do not add up to ${m[1]} × ${m[2]}`);
+    }
+    if (!reduced) await shot('43-roll-result.png', p);
+  }
+  // Exit count roll: place, then roll the exit D6 and expect it to advance.
+  if ((await stepNow()) === 'position') {
+    if (await p.isDisabled('aside.panel button:text-is("Place")')) await btn('Shrink to fit').catch(() => {});
+    await btn('Place');
+    if (await waitStep('exitCount')) {
+      await p.click('aside.panel button:text-is("🎲 Roll for me")');
+      const left = await p.waitForFunction(() => document.querySelector('aside.panel .body')?.getAttribute('data-step') !== 'exitCount', null, { timeout: 5000 }).then(() => true, () => false);
+      if (!left) problems.push(`${tag}: exit count roll never advanced`);
+    } else problems.push(`${tag}: no exit count step after placing`);
+  }
+  // Sound toggle: present, on by default, remembers off across a reload.
+  if (!reduced) {
+    const menu = () => p.click('header.toolbar button[aria-label="Menu"]');
+    await menu();
+    const box = p.locator('.menu label:has-text("Sound effects") input');
+    if (!(await box.isChecked())) problems.push('sound effects not on by default');
+    await box.uncheck();
+    await p.keyboard.press('Escape');
+    await p.reload({ waitUntil: 'load' });
+    await p.waitForTimeout(800);
+    await menu();
+    if (await p.locator('.menu label:has-text("Sound effects") input').isChecked()) problems.push('sound toggle did not remember off after reload');
+  }
   await ctx.close();
 }
 

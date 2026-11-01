@@ -4,3 +4,4 @@ local-data/
 node_modules/
 dist/
 pdf/
+visual/

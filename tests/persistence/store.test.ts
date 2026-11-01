@@ -195,3 +195,90 @@ describe('IdbSaveStore with a dead connection', () => {
     expect(await internal(s).db!).not.toBe(first);
   });
 });
+
+describe('extras', async () => {
+  const { TABLES_KEY, CARDS_KEY } = await import('../../src/persistence/store');
+  const { parseTableFile } = await import('../../src/systems/dungeon/tables');
+  const { createHero, levelUpAvailable, listLimit } = await import('../../src/systems/dungeon/hero');
+  const fixture = (await import('../fixtures/dungeon-tables.fixture.json')).default;
+
+  for (const [label, make] of [
+    ['IdbSaveStore', () => new IdbSaveStore(`t-x-${Math.random()}`)],
+    ['MemorySaveStore', () => new MemorySaveStore()],
+  ] as const) {
+    it(`${label}: round-trips and removes an extra`, async () => {
+      const s = make();
+      expect(await s.loadExtra(TABLES_KEY)).toBeNull();
+      await s.saveExtra(TABLES_KEY, { a: [1, 2] });
+      expect(await s.loadExtra(TABLES_KEY)).toEqual({ a: [1, 2] });
+      expect(await s.loadExtra(CARDS_KEY)).toBeNull();
+      await s.removeExtra(TABLES_KEY);
+      expect(await s.loadExtra(TABLES_KEY)).toBeNull();
+    });
+
+    it(`${label}: extras never change the game record`, async () => {
+      const s = make();
+      expect(await s.load()).toBeNull();
+      const r = rec(2);
+      await s.save(r);
+      const before = JSON.stringify(await s.load());
+      await s.saveExtra(TABLES_KEY, { x: 1 });
+      await s.saveExtra(CARDS_KEY, { y: 2 });
+      expect(JSON.stringify(await s.load())).toBe(before);
+      await s.removeExtra(TABLES_KEY);
+      await s.removeExtra(CARDS_KEY);
+      expect(JSON.stringify(await s.load())).toBe(before);
+    });
+  }
+
+  it('a hero is unaffected by editing the parsed tables or storing/removing another table file', async () => {
+    const text = JSON.stringify(fixture);
+    const parsed = parseTableFile(text, text.length);
+    if (!parsed.ok) throw new Error(parsed.error);
+    const tables = parsed.tables;
+    const hero = createHero(tables, {
+      name: 'Tester', weapon: 'Practice Sword', manoeuvres: ['Wobbly Poke', 'Gentle Swipe'],
+      armour: 'Sackcloth Vest', scroll: 'Scroll of Mild Glow',
+    });
+    const snapshot = structuredClone(hero);
+    const answers = () => [levelUpAvailable(hero), listLimit(hero, 'potions'), listLimit(hero, 'scrolls'), listLimit(hero, 'largeItems'), listLimit(hero, 'armour')];
+    const before = answers();
+    tables.tables.levels[0]!.xpToLevelUp = 1;
+    tables.tables.limits.largeItems = 99;
+    tables.tables.gods.length = 0;
+    const s = new IdbSaveStore(`t-hero-extra-${Math.random()}`);
+    await s.saveExtra(TABLES_KEY, { ...fixture, name: 'A different made-up file' });
+    await s.removeExtra(TABLES_KEY);
+    expect(hero).toEqual(snapshot);
+    expect(answers()).toEqual(before);
+  });
+
+  it('refuses the game key', async () => {
+    for (const s of [new IdbSaveStore(`t-guard-${Math.random()}`), new MemorySaveStore()]) {
+      await expect(s.saveExtra('current', {})).rejects.toThrow();
+      await expect(s.removeExtra('current')).rejects.toThrow();
+    }
+  });
+
+  it('gives extra writes a longer timeout than the 5 s used for the game', async () => {
+    const s = new IdbSaveStore(`t-slow-${Math.random()}`);
+    await s.load(); // open the db before the clock is faked
+    // A transaction that never fires any event: a very slow write.
+    const put = vi.spyOn(IDBDatabase.prototype, 'transaction').mockImplementation(
+      () => ({ objectStore: () => ({ put: () => ({}) }) }) as unknown as IDBTransaction,
+    );
+    vi.useFakeTimers();
+    try {
+      let settled = false;
+      const p = s.saveExtra(TABLES_KEY, { a: 1 });
+      p.catch(() => {}).finally(() => (settled = true));
+      await vi.advanceTimersByTimeAsync(5_100);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(60_000);
+      await expect(p).rejects.toThrow('Storage did not respond');
+    } finally {
+      vi.useRealTimers();
+      put.mockRestore();
+    }
+  });
+});
