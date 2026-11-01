@@ -543,18 +543,23 @@ if (!(await page.isVisible('text=This replaces your current game.'))) problems.p
     await wiz('Next');
     await p.fill('[aria-labelledby=wizard-title] input[type=text]', name);
     await wiz('Next');
-    await p.click('.weapon:has-text("Training Club")');
-    await p.click('.weapon:has-text("Practice Sword")');
-    await wizAlign('weapon');
+    // No weapon chosen: preview with disabled ticks, Next disabled.
     if (shots) await wshot('30-wizard-weapon.png');
-    await wizSmall();
-    await wiz('Next');
+    if (await p.isEnabled('.next')) problems.push('wizard Next enabled with no weapon chosen');
+    if (!(await p.isDisabled('.mtable button.row'))) problems.push('wizard preview ticks not disabled');
+    await wizAlign('weapon preview');
+    await p.click('.weapon:has-text("Training Club")');
+    await p.click('.mtable .row:has-text("Soft Bonk")');
+    await p.click('.weapon:has-text("Practice Sword")');
+    if (!(await p.isVisible('text=Your picks were cleared'))) problems.push('wizard switch-weapon notice missing');
+    if (await p.locator('.mtable [aria-checked=true]').count()) problems.push('picks not cleared on weapon switch');
     if (await p.isEnabled('.next')) problems.push('wizard Next enabled with no manoeuvres chosen');
     await p.click('.mtable .row:has-text("Wobbly Poke")');
     await p.click('.mtable .row:has-text("Gentle Swipe")');
     if (!(await p.isVisible('text=Deselect one to choose another'))) problems.push('wizard limit hint missing');
-    await wizAlign('manoeuvres');
+    await wizAlign('weapon+manoeuvres');
     if (shots) await wshot('31-wizard-manoeuvres.png');
+    await wizSmall();
     await wiz('Next');
     await p.click('.option:has-text("Padded Tablecloth")');
     await wiz('Next');
@@ -602,11 +607,11 @@ if (!(await page.isVisible('text=This replaces your current game.'))) problems.p
   await wiz('Next');
   await p.fill('[aria-labelledby=wizard-title] input[type=text]', 'Narrow');
   await wiz('Next');
+  await wizAlign('weapon preview (820x1180)');
   await p.click('.weapon:has-text("Training Club")');
-  await wizAlign('weapon (820x1180)');
+  await p.click('.mtable .row:has-text("Soft Bonk")');
+  await wizAlign('weapon+manoeuvres (820x1180)');
   await wizSmall();
-  await wiz('Next');
-  await wizAlign('manoeuvres (820x1180)');
   await wiz('Cancel');
   await p.setViewportSize({ width: 1180, height: 820 });
   await p.waitForTimeout(300);
@@ -1014,9 +1019,9 @@ for (const reduced of [false, true]) {
     console.log(`${tag}: "${text}" faces ${faces.join(', ')}`);
     const m = text.match(/(\d+) × (\d+)/);
     if (!m) problems.push(`${tag}: result text missing: "${text}"`);
-    if (faces.length < 2 || faces.length % 2 !== 0) problems.push(`${tag}: expected pairs of die faces, got ${faces.length}`);
+    if (faces.length < 2 || faces.length % 2 !== 0) problems.push(`${tag}: expected equal red and blue face counts, got ${faces.length}`);
     else {
-      if (!faces.every((f, i) => f.startsWith(i % 2 === 0 ? 'red ' : 'blue '))) problems.push(`${tag}: face colours wrong: ${faces.join(', ')}`);
+      if (!faces.every((f, i) => f.startsWith(i < faces.length / 2 ? 'red ' : 'blue '))) problems.push(`${tag}: face colours wrong: ${faces.join(', ')}`);
       const sum = (c) => faces.filter((f) => f.startsWith(c)).reduce((a, f) => a + Number(f.split(' ')[1]), 0);
       if (m && (sum('red') !== Number(m[1]) || sum('blue') !== Number(m[2]))) problems.push(`${tag}: faces ${faces.join(', ')} do not add up to ${m[1]} × ${m[2]}`);
     }

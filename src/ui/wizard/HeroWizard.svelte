@@ -42,15 +42,18 @@
   const TITLES: Record<WizardStep, string> = {
     game: 'New game',
     name: 'Name your hero',
-    weapon: 'Choose a weapon',
-    manoeuvres: 'Choose manoeuvres',
+    weapon: 'Weapon & manoeuvres',
     armour: 'Choose armour',
     scroll: 'Choose a scroll',
     review: 'Review',
   };
 
+  let cleared = $state(false);
   function chooseWeapon(name: string) {
-    if (draft.weapon !== name) draft.manoeuvres = [];
+    if (draft.weapon !== name) {
+      cleared = draft.manoeuvres.length > 0;
+      draft.manoeuvres = [];
+    }
     draft.weapon = name;
   }
 
@@ -112,21 +115,22 @@
           {/each}
         </div>
         {#if shownWeapon}
-          <p class="note">{draft.weapon ? `${shownWeapon.name}: level ${level} manoeuvres` : `Tap a weapon to choose it. Previewing ${shownWeapon.name}.`}</p>
-          <ManoeuvreTable label="{shownWeapon.name} manoeuvres" rows={shownWeapon.manoeuvres.filter((m) => m.level === level)} />
+          <p class="note">
+            {#if !draft.weapon}Tap a weapon to choose it. Previewing {shownWeapon.name}.
+            {:else}Pick {count} ({draft.manoeuvres.length} chosen).
+              {#if draft.manoeuvres.length >= count}<span class="hint">Deselect one to choose another</span>{/if}
+            {/if}
+            {#if cleared}<span class="hint">Your picks were cleared</span>{/if}
+          </p>
+          <ManoeuvreTable
+            label="{shownWeapon.name} manoeuvres"
+            rows={draft.weapon ? pickable : shownWeapon.manoeuvres.filter((m) => m.level === level)}
+            selected={draft.manoeuvres}
+            disabled={!draft.weapon}
+            full={draft.manoeuvres.length >= count}
+            ontoggle={(name) => { cleared = false; draft.manoeuvres = toggleManoeuvre(draft.manoeuvres, name, count); }}
+          />
         {/if}
-      {:else if step === 'manoeuvres'}
-        <p class="note">
-          Pick {count} ({draft.manoeuvres.length} chosen).
-          {#if draft.manoeuvres.length >= count}<span class="hint">Deselect one to choose another</span>{/if}
-        </p>
-        <ManoeuvreTable
-          label="Choose manoeuvres"
-          rows={pickable}
-          selected={draft.manoeuvres}
-          full={draft.manoeuvres.length >= count}
-          ontoggle={(name) => (draft.manoeuvres = toggleManoeuvre(draft.manoeuvres, name, count))}
-        />
       {:else if step === 'armour' && tables}
         <div class="options">
           {#each tables.tables.startingArmour as a (a.name)}
@@ -273,6 +277,11 @@
     padding: 8px 12px;
   }
   .weapons {
+    position: sticky;
+    top: -2px;
+    z-index: 1;
+    background: var(--paper);
+    padding: 2px 0 6px;
     display: flex;
     flex-wrap: wrap;
     gap: 10px;

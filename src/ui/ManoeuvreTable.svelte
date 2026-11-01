@@ -14,8 +14,10 @@
     full?: boolean;
     ontoggle?: (name: string) => void;
     label?: string;
+    /** Preview only: tick boxes shown but not usable. */
+    disabled?: boolean;
   }
-  let { rows, selected, full = false, ontoggle, label = 'Manoeuvres' }: Props = $props();
+  let { rows, selected, full = false, ontoggle, label = 'Manoeuvres', disabled = false }: Props = $props();
   const selectable = $derived(selected !== undefined);
 </script>
 
@@ -34,7 +36,7 @@
     {/snippet}
     {#if selectable}
       {@const on = !!selected?.includes(m.name)}
-      <button type="button" class="row" role="checkbox" aria-checked={on} aria-disabled={full && !on} class:on class:dim={full && !on} onclick={() => ontoggle?.(m.name)}>
+      <button type="button" class="row" role="checkbox" aria-checked={on} aria-disabled={disabled || (full && !on)} {disabled} class:on class:dim={disabled || (full && !on)} onclick={() => ontoggle?.(m.name)}>
         {@render cells()}
       </button>
     {:else}
