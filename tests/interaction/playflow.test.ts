@@ -803,4 +803,109 @@ describe('PlayFlow Room step (table file loaded)', () => {
     flow.place();
     expect(flow.step.kind).not.toBe('label');
   });
+
+  it('accepts its own capped roll with a notice, and refuses the same dice when typed afterwards', () => {
+    const { history, flow } = withEntrance();
+    const all = structuredClone(tables);
+    const lv = all.tables.dungeonLevels![0]!;
+    for (const e of Object.values(lv.rooms)) Object.assign(e, { unique: true, type: 'Only One' });
+    const taken = {
+      ...room('T', 0, 0, 1, 1, 'room', 20),
+      contents: { table: 'rooms' as const, roll: '11', type: 'Only One', description: '', encounter: '', door: 'wooden', locked: false },
+    };
+    history.execute({ label: 'seed', apply: (m) => ({ ...m, rooms: [...m.rooms, taken] }) });
+    flow.setTables(all);
+    flow.startFromExit(northExit(history.map).id);
+    flow.enterSize('3', '4');
+    flow.place();
+    flow.enterExitCount('1');
+    console.log(history.map.rooms.filter((x) => x.contents).length, Object.values(lv.rooms).filter((e) => e.unique).length, JSON.stringify(flow.rollRoomTable()));
+    const r = flow.rollRoomTable()!;
+    expect(r.capped).toBe(true);
+    flow.applyRoomTableResult(r.dice);
+    expect(expectKind(flow, 'label').result).toMatchObject({ capped: true });
+    flow.discardRoomRoll();
+    flow.applyRoomTableResult(r.dice); // typed, not rolled: refused
+    expect(expectKind(flow, 'label').error).toBe('Already on this level — roll again');
+  });
+
+  it('a room with no exits records an archway whatever the entry says', () => {
+    const { flow } = toLabel(['3', '4'], 1, '1');
+    flow.applyRoomTableResult([1, 2]); // wooden
+    expect(expectKind(flow, 'label').result!.contents).toMatchObject({ door: 'archway', locked: false });
+  });
+
+  it('removing the tables on the Room step explains and falls back; reloading restores the roll', () => {
+    const { flow } = toLabel();
+    flow.applyRoomTableResult([1, 1]); // waiting on the exit roll
+    flow.setTables(null);
+    const s = expectKind(flow, 'label');
+    expect(s.error).toBe('Your table file is no longer loaded');
+    expect(s).toMatchObject({ result: null, roll: { available: false } });
+    flow.setTables(tables);
+    expect(expectKind(flow, 'label')).toMatchObject({ error: null, roll: { available: true } });
+  });
+
+  it('tables removed after the exit type step was skipped still allow choosing a door type', () => {
+    const { history, flow } = toLabel();
+    flow.setTables(null);
+    flow.skipRoomTable();
+    flow.chooseLabelExitType('metal');
+    expect(flow.finish({ type: 'X', unique: false, narrative: '' }).ok).toBe(true);
+    expect(history.map.doors.some((d) => d.type === 'metal')).toBe(true);
+  });
+
+  it('the entrance gets no roll even with tables loaded', () => {
+    const { flow } = setup();
+    flow.setTables(tables);
+    flow.startEntrance({ x: 4, y: 10 });
+    flow.enterSize('3', '2');
+    flow.place();
+    flow.doneExits();
+    expect(expectKind(flow, 'label').roll).toBeNull();
+    expect(flow.finish(null).ok).toBe(true);
+  });
+
+  it('a corridor goes through to commit with tables loaded', () => {
+    const { history, flow } = withEntrance();
+    flow.setTables(tables);
+    flow.startFromExit(northExit(history.map).id);
+    flow.enterSize('1', '3');
+    flow.place();
+    flow.enterExitCount('1');
+    expect(flow.step.kind).toBe('exits');
+    expect(flow.doneExits()).toEqual({ ok: true });
+    expect(history.undoLabel).toBe('Add corridor');
+  });
+
+  it('the Large table is used for large rooms', () => {
+    const { history, flow } = withEntrance();
+    // a large room needs a doubled roll: 4-4 then 4-4 gives 8x8 (clipped to fit)
+    flow.setTables(tables);
+    flow.startFromExit(northExit(history.map).id);
+    flow.enterSize('4', '4');
+    flow.enterSize('4', '4');
+    if (flow.step.kind === 'position' && !flow.step.placement.ok) flow.shrink();
+    flow.place();
+    flow.enterExitCount('4');
+    flow.placeExitsForMe(1);
+    flow.doneExits();
+    const s = expectKind(flow, 'label');
+    expect(s.draft.sizeClass).toBe('large');
+    expect(s.roll).toMatchObject({ kind: 'large' });
+    flow.applyRoomTableResult([1, 1]);
+    expect(expectKind(flow, 'label').result!.contents!.table).toBe('large');
+  });
+
+  it('every chosen exit door becomes wooden and locked', () => {
+    const { history, flow } = toLabel();
+    const chosen = expectKind(flow, 'label').chosen;
+    expect(chosen.length).toBeGreaterThan(1);
+    flow.applyRoomTableResult([3, 4]);
+    flow.finish(null);
+    for (const e of chosen) {
+      const d = history.map.doors.find((x) => x.x === e.x && x.y === e.y && x.side === e.side)!;
+      expect(d).toMatchObject({ type: 'wooden', lock: { locked: true } });
+    }
+  });
 });

@@ -53,6 +53,8 @@ export interface Draft {
   room: Room;
   kindOf: 'room' | 'corridor';
   sizeClass: SizeClass | null;
+  /** The exit type step was skipped because the room tables decide the door type. */
+  doorsFromTable?: boolean;
 }
 
 export type Step =
@@ -111,6 +113,8 @@ export interface RoomRollResult {
   dice: number[];
   entry: { type: string; description: string; encounter: string; unique: boolean };
   needsExit: boolean;
+  /** Accepted although a unique room was already taken: nothing unused was left on the table. */
+  capped: boolean;
   contents: RoomContents | null;
 }
 
@@ -130,6 +134,8 @@ export class PlayFlow {
   private recorded: string[] = [];
   private committing = false;
   private tables: DungeonTables | null = null;
+  /** Dice of a roll that gave up finding an unused unique room; accepted once, as spec'd. */
+  private cappedDice: number[] | null = null;
   private walk: Cell[] | null = null;
   private readonly unsubscribe: () => void;
 
@@ -152,6 +158,17 @@ export class PlayFlow {
   /** The player's table file (or null). Takes effect for rooms not yet at their exit type step. */
   setTables(t: DungeonTables | null): void {
     this.tables = t;
+    const s = this.current;
+    if (s.kind !== 'label' || !s.roll) return;
+    const available = this.levelFor() !== null;
+    if (available === s.roll.available) return;
+    const roll = { ...s.roll, available };
+    this.cappedDice = null;
+    this.set(
+      available
+        ? { ...s, roll, error: null }
+        : { ...s, roll, result: null, error: t === null ? 'Your table file is no longer loaded' : null },
+    );
   }
 
   /** Stops listening to History; later History changes no longer touch this flow. */
@@ -381,7 +398,7 @@ export class PlayFlow {
       this.set({ kind: 'exits', draft, count, exitType: 'archway', chosen: [], dropped: 0, error: null });
     } else if (this.rollable(draft)) {
       // The room tables decide the door type: place the exits with a temporary archway.
-      this.set({ kind: 'exits', draft, count, exitType: 'archway', chosen: [], dropped: 0, error: null });
+      this.set({ kind: 'exits', draft: { ...draft, doorsFromTable: true }, count, exitType: 'archway', chosen: [], dropped: 0, error: null });
     } else {
       this.set({ kind: 'exitType', draft, count });
     }
@@ -477,7 +494,9 @@ export class PlayFlow {
     const s = this.labelNow();
     const lv = this.levelFor();
     if (!s || !lv || !this.tables) return null;
-    return rollRoom(lv, this.tables, s.roll!.kind, this.history.map, this.rng);
+    const r = rollRoom(lv, this.tables, s.roll!.kind, this.history.map, this.rng);
+    this.cappedDice = r.capped ? r.dice : null;
+    return r;
   }
 
   /** Typed dice for the room table. */
@@ -495,7 +514,9 @@ export class PlayFlow {
     if (dice.length !== 2 || !dice.every((d) => Number.isInteger(d) && d >= 1 && d <= 6)) return this.labelError(BAD_DIE);
     const kind = s.roll!.kind;
     const entry = lookupRoom(lv, kind, dice);
-    if (entry.unique && uniqueTaken(this.history.map, entry.type)) {
+    const capped = this.cappedDice !== null && this.cappedDice.join() === dice.join();
+    this.cappedDice = null;
+    if (!capped && entry.unique && uniqueTaken(this.history.map, entry.type)) {
       return this.labelError('Already on this level — roll again');
     }
     const info = {
@@ -507,11 +528,11 @@ export class PlayFlow {
     const spec = 'exit' in entry ? entry.exit : { door: 'archway' as const };
     const noExits = kind === 'small' || s.chosen.length === 0;
     if (spec === 'random' && !noExits) {
-      this.set({ ...s, error: null, result: { dice, entry: info, needsExit: true, contents: null } });
+      this.set({ ...s, error: null, result: { dice, entry: info, needsExit: true, capped, contents: null } });
       return;
     }
-    const exit = spec === 'random' ? { door: 'archway', locked: false } : resolveExit(lv, this.tables, spec);
-    this.set({ ...s, error: null, result: { dice, entry: info, needsExit: false, contents: contentsFrom(kind, dice, entry, exit) } });
+    const exit = noExits ? { door: 'archway', locked: false } : resolveExit(lv, this.tables, spec);
+    this.set({ ...s, error: null, result: { dice, entry: info, needsExit: false, capped, contents: contentsFrom(kind, dice, entry, exit) } });
   }
 
   /** Rolls the Exit Type dice without applying them. */
@@ -538,6 +559,7 @@ export class PlayFlow {
   /** Throws the shown result away so the room can be rolled again. */
   discardRoomRoll(): void {
     const s = this.current;
+    this.cappedDice = null;
     if (s.kind === 'label' && s.result) this.set({ ...s, result: null, error: null });
   }
 
@@ -550,7 +572,7 @@ export class PlayFlow {
   /** The door type for a skipped room's exits. */
   chooseLabelExitType(type: string): void {
     const s = this.current;
-    if (s.kind !== 'label' || !s.skipped || !dungeonSystem.doorTypes.some((t) => t.id === type)) return;
+    if (s.kind !== 'label' || !(s.skipped || (s.roll === null && s.draft.doorsFromTable)) || !dungeonSystem.doorTypes.some((t) => t.id === type)) return;
     this.set({ ...s, exitType: type });
   }
 

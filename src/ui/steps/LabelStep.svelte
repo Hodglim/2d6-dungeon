@@ -27,7 +27,7 @@
   const manual = $derived(step.roll === null || step.skipped);
   const kindName = $derived(step.roll?.kind === 'small' ? 'Small room' : step.roll?.kind === 'large' ? 'Large room' : 'Room');
   const twoD6 = $derived(step.roll !== null && step.roll.kind !== 'rooms');
-  const chooseDoor = $derived(step.skipped && step.chosen.length > 0 && step.draft.sizeClass !== 'small');
+  const chooseDoor = $derived((step.skipped || (step.roll === null && step.draft.doorsFromTable === true)) && step.chosen.length > 0 && step.draft.sizeClass !== 'small');
 
   const title = $derived(step.draft.source.kind === 'entrance' ? 'Entrance room' : `Room ${step.draft.room.number}`);
 </script>
@@ -55,7 +55,7 @@
     </div>
   </form>
 {:else if step.roll && !step.roll.available}
-  <p data-testid="no-level-tables">Your table file has no Level {step.roll.level} room tables.</p>
+  <p data-testid="no-level-tables">{step.error ?? `Your table file has no Level ${step.roll.level} room tables.`}</p>
   <div class="row"><button type="button" onclick={() => flow.skipRoomTable()}>Skip</button></div>
 {:else if step.roll && !step.result}
   <p>{kindName} roll — {twoD6 ? 'roll two dice, added together' : 'roll the red and blue dice'}, then type them in, or let the app roll.</p>
@@ -63,7 +63,7 @@
     dice={twoD6 ? '2d6' : 'd66'}
     labels={twoD6 ? ['Die 1', 'Die 2'] : ['Red', 'Blue']}
     error={step.error}
-    onenter={(v) => flow.enterRoomTable(v)}
+    onenter={(v) => { rerolled = 0; flow.enterRoomTable(v); }}
     onroll={() => {
       const r = flow.rollRoomTable();
       rerolled = r?.rerolls ?? 0;
@@ -85,7 +85,8 @@
     {#if r.contents}
       <p data-testid="exit-result"><strong>Exits:</strong> {doorName(r.contents.door)}{r.contents.locked ? ', locked' : ''}</p>
     {/if}
-    {#if rerolled > 0}<p class="note">Re-rolled {rerolled} {rerolled === 1 ? 'time' : 'times'}: unique rooms already on this level.</p>{/if}
+    {#if r.capped}<p class="note">No unused rooms left on this table — accepted anyway</p>{/if}
+    {#if rerolled > 0 && !r.capped}<p class="note">Re-rolled {rerolled} {rerolled === 1 ? 'time' : 'times'}: unique rooms already on this level.</p>{/if}
   </div>
   {#if r.needsExit}
     <p>This room's exit type is random. Roll the Exit Type table.</p>
@@ -100,7 +101,7 @@
     />
   {:else}
     <div class="row">
-      <button type="button" onclick={() => flow.discardRoomRoll()}>Roll again</button>
+      <button type="button" onclick={() => { rerolled = 0; flow.discardRoomRoll(); }}>Roll again</button>
       <button type="button" class="primary" onclick={() => oncommit(() => flow.finish(null))}>Done</button>
     </div>
   {/if}

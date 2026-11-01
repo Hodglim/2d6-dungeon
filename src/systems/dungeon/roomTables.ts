@@ -1,7 +1,7 @@
 /** Room-table lookups, unique-room re-rolls and the command that applies a roll to a room. */
 
 import type { Command } from '../../core/commands';
-import { perimeterEdges } from '../../core/geometry';
+import { cellEdge, perimeterEdges, step } from '../../core/geometry';
 import { doorAt, roomsAcross } from '../../core/query';
 import type { DungeonMap, Rect, Room, RoomContents } from '../../core/types';
 import { classify, rollD6, type Rng, type RoomSize } from './rules';
@@ -88,12 +88,18 @@ export function applyRoomRoll(room: Room, contents: RoomContents, unique: boolea
     label: 'Roll room',
     apply: (m) => {
       const ids = new Set<string>();
-      for (const { edge } of perimeterEdges(room)) {
+      const far = new Set<string>();
+      for (const { edge, inside, dir } of perimeterEdges(room)) {
         const d = doorAt(m, edge);
         if (!d || d.secret || d.id === room.entryDoorId) continue;
-        const [a, b] = roomsAcross(m, edge);
-        if (a && b) continue;
+        const other = roomsAcross(m, edge).find((r) => r !== undefined && r.id !== room.id);
+        // A neighbouring room shares the wall; an exit square (passage) beyond it does not.
+        if (other && other.kind !== 'passage') continue;
         ids.add(d.id);
+        if (other) {
+          const fd = doorAt(m, cellEdge(step(inside, dir), dir));
+          if (fd && !fd.secret) far.add(fd.id);
+        }
       }
       return {
         ...m,
@@ -102,7 +108,7 @@ export function applyRoomRoll(room: Room, contents: RoomContents, unique: boolea
           : r),
         doors: m.doors.map((d) => ids.has(d.id)
           ? { ...d, type: contents.door, lock: contents.locked ? { locked: true, note: '', quality: null } : null }
-          : d),
+          : far.has(d.id) ? { ...d, type: contents.door } : d),
       };
     },
   };

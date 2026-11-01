@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import fixture from '../fixtures/dungeon-tables.fixture.json';
+import { createRoomFromExit } from '../../src/core/playflow';
+import { sequentialIds } from '../../src/core/ids';
 import { door, emptyMap, room, withContent } from '../core/fixtures';
 import type { RoomContents } from '../../src/core/types';
 import type { RoomSize } from '../../src/systems/dungeon/rules';
@@ -135,5 +137,27 @@ describe('applyRoomRoll', () => {
     m.doors = m.doors.map((x) => (x.id === 'ownE' ? { ...x, lock: { locked: true, note: 'x', quality: 1 } } : x));
     const out = applyRoomRoll(m.rooms[1]!, { ...contents('Z'), door: 'wooden' }, false).apply(m);
     expect(out.doors.find((x) => x.id === 'ownE')).toMatchObject({ type: 'wooden', lock: null });
+  });
+});
+
+describe('applyRoomRoll on a placed room with exit squares', () => {
+  it('retypes the exit doors and their far doors, locks only the room-side door, leaves the entry', () => {
+    const base = withContent(emptyMap(12, 12), [room('A', 0, 8, 4, 3, 'room', 1)], [door('open', 1, 8, 'N')]);
+    const r = { ...room('B', 1, 4, 3, 3, 'room', 2), entryDoorId: 'in' };
+    const m0 = withContent(base, [...base.rooms], [door('in', 1, 7, 'N'), ...base.doors.filter((d) => d.id !== 'open')]);
+    const exits = [{ x: 2, y: 4, side: 'N' as const }, { x: 4, y: 5, side: 'W' as const }];
+    const m = createRoomFromExit(m0, { room: r, exits, exitType: 'archway' }, sequentialIds('n')).apply(m0);
+    const placed = m.rooms.find((x) => x.id === 'B')!;
+    const out = applyRoomRoll(placed, { ...contents('Z'), door: 'metal', locked: true }, false).apply(m);
+    const exitDoors = m.doors.filter((d) => d.type === 'archway' && !['in'].includes(d.id));
+    expect(exitDoors.length).toBe(4); // two room-side doors and two far doors
+    const lockedIds = out.doors.filter((d) => d.lock?.locked).map((d) => d.id);
+    expect(lockedIds).toHaveLength(2);
+    for (const d of out.doors) {
+      if (d.id === 'in') expect(d).toEqual(m.doors.find((x) => x.id === 'in'));
+      else expect(d.type).toBe('metal');
+    }
+    // far doors are not locked
+    expect(out.doors.filter((d) => d.type === 'metal' && d.lock === null)).toHaveLength(2);
   });
 });
