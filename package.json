@@ -11,7 +11,9 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit && svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
     "screenshot": "node scripts/screenshot.mjs",
-    "e2e:pwa": "node scripts/e2e-pwa.mjs"
+    "e2e:pwa": "node scripts/e2e-pwa.mjs",
+    "e2e:persistence": "node scripts/e2e-persistence.mjs",
+    "deploy": "npm run build && node scripts/check-dist.mjs && wrangler pages deploy dist --project-name 2d6-map-maker"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "7.3.1",
@@ -21,6 +23,7 @@
     "svelte-check": "4.7.7",
     "typescript": "6.0.3",
     "vite": "8.3.4",
-    "vitest": "5.0.5"
+    "vitest": "5.0.5",
+    "wrangler": "4.151.1"
   }
 }
