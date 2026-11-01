@@ -1,0 +1,56 @@
+{
+  "format": 1,
+  "systemId": "dungeon",
+  "name": "Practice tables (made up)",
+  "tables": {
+    "starting": {
+      "level": 1, "xp": 0, "shift": 2, "discipline": 3, "precision": 4, "hp": 11, "rations": 2,
+      "potions": [
+        { "name": "Draught of Mild Cheer", "effect": "Restores a few made-up hit points." },
+        { "name": "Tonic of Brief Hush", "effect": "Quiets your footsteps for one made-up turn." }
+      ],
+      "kit": ["Practice Lantern", "Spare Bootlace"]
+    },
+    "startingArmour": [
+      { "name": "Sackcloth Vest", "dice": [3], "modifier": "+0" },
+      { "name": "Padded Tablecloth", "dice": [2, 5], "modifier": "-1" }
+    ],
+    "startingScrolls": [
+      { "name": "Scroll of Mild Glow", "effect": "A faint light appears.", "orbit": "Sun", "dispelDoubles": "1-2", "effectModifier": "+1" },
+      { "name": "Scroll of Gentle Breeze", "effect": "A small breeze stirs.", "orbit": "Moon", "dispelDoubles": "3-4", "effectModifier": "0" }
+    ],
+    "weapons": [
+      {
+        "name": "Practice Sword",
+        "manoeuvres": [
+          { "level": 1, "name": "Wobbly Poke", "dice": [1, 4], "damage": "1" },
+          { "level": 1, "name": "Gentle Swipe", "dice": [2, 6], "damage": "2" },
+          { "level": 2, "name": "Cheerful Flourish", "dice": [3, 3], "damage": "3" },
+          { "level": 3, "name": "Grand Wave", "dice": [5, 6], "damage": "4" }
+        ]
+      },
+      {
+        "name": "Training Club",
+        "manoeuvres": [
+          { "level": 1, "name": "Soft Bonk", "dice": [1, 2], "damage": "1" },
+          { "level": 1, "name": "Sideways Thump", "dice": [4, 5], "damage": "2" },
+          { "level": 2, "name": "Overhead Plod", "dice": [6, 6], "damage": "3" }
+        ]
+      }
+    ],
+    "levels": [
+      { "level": 1, "title": "Wanderer", "manoeuvres": 2, "maxManoeuvreLevel": 1, "xpToLevelUp": 10, "shift": 2, "discipline": 3, "precision": 4, "hpBaseline": 11 },
+      { "level": 2, "title": "Explorer", "manoeuvres": 3, "maxManoeuvreLevel": 2, "xpToLevelUp": 25, "shift": 3, "discipline": 3, "precision": 5, "hpBaseline": 14 },
+      { "level": 3, "title": "Seasoned Snoozer", "manoeuvres": 4, "maxManoeuvreLevel": 3, "xpToLevelUp": null, "shift": 3, "discipline": 4, "precision": 5, "hpBaseline": 17 }
+    ],
+    "gods": ["Old Mossbeard", "The Quiet Kettle", "Lady Threepence"],
+    "conditions": {
+      "bloodied": { "label": "Scraped Up", "boxes": 3 },
+      "soaked": { "label": "Dripping", "boxes": 2 },
+      "fever": { "label": "Sniffles", "effect": "Made-up penalty to checks." },
+      "pneumonia": { "label": "Grand Sniffles", "effect": "Bigger made-up penalty." }
+    },
+    "favourBoxes": 4,
+    "limits": { "potions": 3, "scrolls": 2, "largeItems": 2, "armour": 1 }
+  }
+}
