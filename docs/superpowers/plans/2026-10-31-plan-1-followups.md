@@ -148,6 +148,27 @@ Minor findings from the Plan 3 reviews, not fixed:
 - entry-door note says "a passage" for exit-square doors; stairs and note can share a square; room selection highlight too heavy
 - visual.mjs relies on fixed sleeps
 
+## Plan 4a deferred items (merged 2026-11-01)
+
+- **Save format vs schema version:** `SAVE_FORMAT` is not tied to `CURRENT_SCHEMA_VERSION`, and start-up doesn't run `parseCampaign` on the restored campaign (`hero` passes through unvalidated). Before the first schema bump: store `schemaVersion` in the record or add a test forcing a `SAVE_FORMAT` bump, and migrate every snapshot. Needed before the character sheet adds `hero`.
+- **Over-cap history is rejected, not trimmed** (`parseHistoryState`). If `HISTORY_CAP` ever changes, trim to the newest entries instead, or bump `SAVE_FORMAT`.
+- **Two tabs:** a stale tab silently overwrites newer work (documented as "last change wins"). Option: compare `savedAt` before writing and show the banner.
+- **Build id changes on every build** (`Date.now()`), so an unchanged deploy still shows the update prompt. Use the git SHA or a content hash.
+- **WebKit never tested automatically.** `BROWSER=webkit npm run e2e:persistence` needs `libicu74`, `libxml2` and `libflite1`. Run the README's iPad checklist after the first deploy.
+- **wrangler 4.151.1:** `npm audit` flags undici via miniflare (local dev server only; we only upload). Update once a fixed wrangler is 14 days old (after 2026-11-14).
+- **Smaller UI items:**
+  - dialogs don't make the background `inert` or manage focus
+  - NewMapDialog values are lost when the replace confirmation is cancelled
+  - a share fallback outside the tap gesture may silently do nothing on iOS (`NotAllowedError`)
+  - no flush on component destroy (HMR only)
+  - the maskable icon's corners are cropped
+  - deep-path navigations offline would break relative asset URLs (there is no router, so this is unlikely)
+- **Test gaps:**
+  - parseHistoryState future-side and missing-field cases
+  - restore array isolation
+  - cross-tab saves only approximated
+  - an `onblocked` open that later succeeds could leak a connection
+
 ## Performance notes (no action needed yet)
 
 On a 100×100 map, A* across one open room takes about 57 ms. A worst case of 2,500
