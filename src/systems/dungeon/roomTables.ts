@@ -82,25 +82,31 @@ export function contentsFrom(
   };
 }
 
+/** The doors applyRoomRoll would retype: this room's own exits (ids) and their exit-square far doors (far). */
+export function ownExitDoors(m: DungeonMap, room: Room): { ids: Set<string>; far: Set<string> } {
+  const ids = new Set<string>();
+  const far = new Set<string>();
+  for (const { edge, inside, dir } of perimeterEdges(room)) {
+    const d = doorAt(m, edge);
+    if (!d || d.secret || d.id === room.entryDoorId) continue;
+    const other = roomsAcross(m, edge).find((r) => r !== undefined && r.id !== room.id);
+    // Another room shares the wall; only the exit square built from this very door is ours.
+    if (other && !(other.kind === 'passage' && other.entryDoorId === d.id)) continue;
+    ids.add(d.id);
+    if (other) {
+      const fd = doorAt(m, cellEdge(step(inside, dir), dir));
+      if (fd && !fd.secret) far.add(fd.id);
+    }
+  }
+  return { ids, far };
+}
+
 /** Names the room, records the roll and sets the room's own exit doors (not the entry door or shared edges). */
 export function applyRoomRoll(room: Room, contents: RoomContents, unique: boolean): Command {
   return {
     label: 'Roll room',
     apply: (m) => {
-      const ids = new Set<string>();
-      const far = new Set<string>();
-      for (const { edge, inside, dir } of perimeterEdges(room)) {
-        const d = doorAt(m, edge);
-        if (!d || d.secret || d.id === room.entryDoorId) continue;
-        const other = roomsAcross(m, edge).find((r) => r !== undefined && r.id !== room.id);
-        // Another room shares the wall; only the exit square built from this very door is ours.
-        if (other && !(other.kind === 'passage' && other.entryDoorId === d.id)) continue;
-        ids.add(d.id);
-        if (other) {
-          const fd = doorAt(m, cellEdge(step(inside, dir), dir));
-          if (fd && !fd.secret) far.add(fd.id);
-        }
-      }
+      const { ids, far } = ownExitDoors(m, room);
       return {
         ...m,
         rooms: m.rooms.map((r) => r.id === room.id

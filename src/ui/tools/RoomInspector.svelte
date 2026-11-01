@@ -81,7 +81,7 @@
         </dl>
       {:else if rolling}
         <RoomRoll {map} {room} {tables} onapply={(c, u) => applyRoll(room, c, u)} oncancel={() => (rolling = false)} />
-      {:else}
+      {:else if tables}
         <div class="row">
           <button type="button" onclick={() => (rolling = true)}>Roll for this room</button>
         </div>

@@ -3,14 +3,13 @@
   // "Roll for this room"). The same dice entry and result as the label step, but the state
   // is local: nothing changes on the map until Apply.
   import type { DungeonMap, Room, RoomContents } from '../core/types';
-  import { contentsFrom, levelTables, lookupRoom, resolveExit, rollRoom, tableKindFor, uniqueTaken } from '../systems/dungeon/roomTables';
+  import { contentsFrom, levelTables, lookupRoom, ownExitDoors, resolveExit, rollRoom, uniqueTaken } from '../systems/dungeon/roomTables';
   import { dungeonSystem } from '../systems/dungeon';
   import { rollD6, type Rng } from '../systems/dungeon/rules';
   import type { DungeonTables } from '../systems/dungeon/tables';
   import DiceEntry from './DiceEntry.svelte';
   import DieFace from './DieFace.svelte';
-  import { roomExitCount } from './tapRouting';
-
+  
   interface Props {
     map: DungeonMap;
     room: Room;
@@ -25,7 +24,7 @@
   const lv = $derived(levelTables(tables, map.level));
   const kind = $derived(room.sizeClass === 'small' ? 'small' : room.sizeClass === 'large' ? 'large' : 'rooms');
   const twoD6 = $derived(kind !== 'rooms');
-  const noExits = $derived(kind === 'small' || roomExitCount(map, room) === 0);
+  const noExits = $derived(kind === 'small' || ownExitDoors(map, room).ids.size === 0);
   const doorName = (id: string) => dungeonSystem.doorTypes.find((t) => t.id === id)?.name ?? id;
 
   interface Result {
@@ -38,7 +37,7 @@
     /** null until a random exit has been rolled. */
     contents: RoomContents | null;
   }
-  let result = $state<Result | null>(null);
+  let result = $state.raw<Result | null>(null);
   let error = $state<string | null>(null);
   let rerolled = $state(0);
   /** Dice of a roll that found nothing unused; accepted once. */
@@ -131,10 +130,14 @@
         onroll={() => [rollD6(rng), rollD6(rng)]}
         onrolled={(v) => acceptExit(v)}
       />
+      <div class="row">
+        <button type="button" onclick={() => { result = null; error = null; rerolled = 0; }}>Roll again</button>
+        <button type="button" onclick={oncancel}>Cancel</button>
+      </div>
     {:else}
       <div class="row">
         <button type="button" onclick={() => { result = null; error = null; rerolled = 0; }}>Roll again</button>
-        <button type="button" class="primary" onclick={() => onapply(r.contents!, r.unique)}>Apply</button>
+        <button type="button" class="primary" onclick={() => onapply($state.snapshot(r.contents!), r.unique)}>Apply</button>
       </div>
     {/if}
   {/if}

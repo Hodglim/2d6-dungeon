@@ -559,6 +559,8 @@
       notice = "That change can't be made here";
       return false;
     }
+    // Dev guard: a Svelte proxy in a command would only fail later, at save time.
+    if (import.meta.env?.DEV) structuredClone(cmd.apply(history.map));
     const res = history.execute(cmd);
     if (!res.ok) notice = res.reason;
     return res.ok;

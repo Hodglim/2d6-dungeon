@@ -1158,6 +1158,7 @@ for (const reduced of [false, true]) {
   await shot('45-room-roll.png', p);
   await btn('Done');
   await p.waitForTimeout(1500);
+  if (await p.isVisible('text=/Autosave isn.t working/')) problems.push(`${tag}: autosave banner after the room roll`);
   const after = await undo();
   if (!after.includes('Add Room 2')) problems.push(`${tag}: undo label "${after}"`);
   await shot('46-room-rolled.png', p);
@@ -1259,7 +1260,8 @@ for (const reduced of [false, true]) {
   console.log(`${tag}: "${result}"`);
   if (!result.includes('Practice Room 34') || !/Wooden/i.test(result) || !/locked/.test(result)) problems.push(`${tag}: bad result "${result}"`);
   await btn('Apply');
-  await p.waitForTimeout(500);
+  await p.waitForTimeout(2500);
+  if (await p.isVisible('text=/Autosave isn.t working/')) problems.push(`${tag}: autosave banner after Apply`);
   if (!(await undo()).includes('Roll room 2')) problems.push(`${tag}: undo label "${await undo()}"`);
   const after = [await doorNow(...entry), await doorNow(...exitE), await doorNow(...exitN)];
   console.log(`${tag}: doors before ${before.join(' | ')}; after ${after.join(' | ')}`);
