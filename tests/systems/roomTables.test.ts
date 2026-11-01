@@ -161,3 +161,19 @@ describe('applyRoomRoll on a placed room with exit squares', () => {
     expect(out.doors.filter((d) => d.type === 'metal' && d.lock === null)).toHaveLength(2);
   });
 });
+
+describe('applyRoomRoll with a neighbour\'s exit square', () => {
+  it('leaves another room\'s exit door and far door alone', () => {
+    // R is 3x3 at (3,3). X's exit square at (2,3)... sits west of R; its far door is on R's west wall.
+    const r = { ...room('R', 3, 3, 3, 3, 'room', 1), entryDoorId: 'rin' };
+    const x = room('X', 0, 3, 2, 2, 'room', 2);
+    const sq = { ...room('SQ', 2, 4, 1, 1, 'passage'), entryDoorId: 'xdoor' };
+    const m = withContent(emptyMap(10, 10), [r, x, sq], [
+      door('rin', 4, 6, 'N'),
+      door('xdoor', 2, 4, 'W'), // X's room-side exit door
+      door('far', 3, 4, 'W'), // far door of X's exit square, on R's west wall
+    ]);
+    const out = applyRoomRoll(r, { ...contents('Z'), door: 'metal', locked: true }, false).apply(m);
+    for (const id of ['xdoor', 'far', 'rin']) expect(out.doors.find((d) => d.id === id)).toEqual(m.doors.find((d) => d.id === id));
+  });
+});

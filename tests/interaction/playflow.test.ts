@@ -819,7 +819,6 @@ describe('PlayFlow Room step (table file loaded)', () => {
     flow.enterSize('3', '4');
     flow.place();
     flow.enterExitCount('1');
-    console.log(history.map.rooms.filter((x) => x.contents).length, Object.values(lv.rooms).filter((e) => e.unique).length, JSON.stringify(flow.rollRoomTable()));
     const r = flow.rollRoomTable()!;
     expect(r.capped).toBe(true);
     flow.applyRoomTableResult(r.dice);

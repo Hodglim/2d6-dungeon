@@ -93,8 +93,8 @@ export function applyRoomRoll(room: Room, contents: RoomContents, unique: boolea
         const d = doorAt(m, edge);
         if (!d || d.secret || d.id === room.entryDoorId) continue;
         const other = roomsAcross(m, edge).find((r) => r !== undefined && r.id !== room.id);
-        // A neighbouring room shares the wall; an exit square (passage) beyond it does not.
-        if (other && other.kind !== 'passage') continue;
+        // Another room shares the wall; only the exit square built from this very door is ours.
+        if (other && !(other.kind === 'passage' && other.entryDoorId === d.id)) continue;
         ids.add(d.id);
         if (other) {
           const fd = doorAt(m, cellEdge(step(inside, dir), dir));

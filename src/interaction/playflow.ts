@@ -157,18 +157,20 @@ export class PlayFlow {
 
   /** The player's table file (or null). Takes effect for rooms not yet at their exit type step. */
   setTables(t: DungeonTables | null): void {
+    const changed = t !== this.tables;
     this.tables = t;
     const s = this.current;
-    if (s.kind !== 'label' || !s.roll) return;
+    if (!changed || s.kind !== 'label' || !s.roll) return;
+    // A result from the old tables is no longer trustworthy, even if the level still has tables.
     const available = this.levelFor() !== null;
-    if (available === s.roll.available) return;
     const roll = { ...s.roll, available };
     this.cappedDice = null;
-    this.set(
-      available
-        ? { ...s, roll, error: null }
-        : { ...s, roll, result: null, error: t === null ? 'Your table file is no longer loaded' : null },
-    );
+    this.set({
+      ...s,
+      roll,
+      result: null,
+      error: !available && t === null ? 'Your table file is no longer loaded' : null,
+    });
   }
 
   /** Stops listening to History; later History changes no longer touch this flow. */
@@ -718,6 +720,7 @@ export class PlayFlow {
     this.withRoom = null;
     this.door = null;
     this.recorded = [];
+    this.cappedDice = null;
     if (this.current.kind === 'idle' && this.current.error === error) return;
     this.set(error === null ? IDLE : { kind: 'idle', error });
   }
