@@ -31,13 +31,8 @@ function jambs(ctx: CanvasRenderingContext2D, theme: Theme): void {
   ctx.stroke();
 }
 
+// An archway is a plain open gap in the wall: just the jambs, no arc.
 const archway: DoorSymbol = (ctx, theme) => {
-  ctx.strokeStyle = theme.ink;
-  ctx.lineWidth = LW;
-  ctx.beginPath();
-  ctx.moveTo(-0.5, 0);
-  ctx.quadraticCurveTo(0, 0.32, 0.5, 0);
-  ctx.stroke();
   jambs(ctx, theme);
 };
 
