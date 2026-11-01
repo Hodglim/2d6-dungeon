@@ -52,7 +52,8 @@
         enterLabel="Place for me"
         rollLabel="🎲 Roll and place"
         onenter={([v]) => placeTyped(v ?? '')}
-        onroll={() => flow.placeExitsForMe('roll')}
+        onroll={() => [flow.rollDie()]}
+        onrolled={([v]) => v !== undefined && flow.placeExitsForMe(v)}
       />
     {/key}
   {/if}

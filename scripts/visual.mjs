@@ -25,10 +25,10 @@ page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
 await page.goto(url, { waitUntil: 'load' });
 await page.waitForTimeout(1000);
 
-const shot = async (name) => {
-  await page.waitForTimeout(250); // let the canvas paint the latest overlay
+const shot = async (name, pg = page) => {
+  await pg.waitForTimeout(250); // let the canvas paint the latest overlay
   const path = join(outDir, name);
-  await page.screenshot({ path });
+  await pg.screenshot({ path });
   console.log(`Saved ${path}`);
 };
 
@@ -921,6 +921,96 @@ if (!(await page.isVisible('text=This replaces your current game.'))) problems.p
   await p.waitForTimeout(300);
   if (!(await p.isVisible('.toast:has-text("Load your table file first")'))) problems.push('Hero with no table file: toast missing');
   if (await p.isVisible('[aria-labelledby=wizard-title]')) problems.push('Hero with no table file opened the wizard');
+  await ctx.close();
+}
+
+// 12. Animated dice rolls: faces cycle, then land; the result step shows pip faces; the sound toggle persists.
+for (const reduced of [false, true]) {
+  const tag = reduced ? 'roll (reduced motion)' : 'roll';
+  const ctx = await browser.newContext({ viewport: { width: 1180, height: 820 }, deviceScaleFactor: 2, hasTouch: true, reducedMotion: reduced ? 'reduce' : 'no-preference' });
+  await ctx.addInitScript(() => localStorage.setItem('2d6.installHintDismissed', '1'));
+  const p = await ctx.newPage();
+  p.on('pageerror', (e) => errors.push(e.message));
+  await p.goto(url, { waitUntil: 'load' });
+  await p.waitForTimeout(800);
+  const tap = async (x, y) => {
+    const at = await p.$eval('canvas', (c, [wx, wy]) => {
+      const [cx, cy, sc] = (c.dataset.camera ?? '').split(',').map(Number);
+      const r = c.getBoundingClientRect();
+      return { x: r.left + (wx - cx) * sc, y: r.top + (wy - cy) * sc };
+    }, [x, y]);
+    await p.mouse.click(at.x, at.y);
+    await p.waitForTimeout(150);
+  };
+  const btn = (name) => p.click(`aside.panel button:text-is("${name}")`);
+  const stepNow = () => p.getAttribute('aside.panel .body', 'data-step');
+  const waitStep = (want) => p.waitForFunction((w) => document.querySelector('aside.panel .body')?.getAttribute('data-step') === w, want, { timeout: 5000 }).then(() => true, () => false);
+  await tap(12.5, 25.5);
+  const ins = await p.$$('aside.panel form.dice input');
+  await ins[0].fill('3');
+  await ins[1].fill('4');
+  await btn('Use these');
+  await btn('Place');
+  await btn('Done');
+  await btn('Done');
+  await p.waitForTimeout(1500);
+  await tap(12.5, 20);
+  // Roll until the result is a position step (doubles ask for another roll first).
+  let guard = 0;
+  let sampled = new Set();
+  while ((await stepNow()) === 'size' && guard++ < 6) {
+    const label = 'aside.panel form.dice .face [role=img]';
+    await p.click('aside.panel button:text-is("🎲 Roll for me")');
+    if (await p.locator('aside.panel form.dice button:disabled').count() < 2) problems.push(`${tag}: buttons not disabled while rolling`);
+    if (!reduced && guard === 1) {
+      for (let i = 0; i < 8; i++) {
+        await p.waitForTimeout(70);
+        const l = await p.getAttribute(label, 'aria-label').catch(() => null);
+        if (l) sampled.add(l);
+        if (i === 3) await shot('44-rolling.png', p);
+      }
+      if (sampled.size < 2) problems.push(`${tag}: die face did not change during the first ~600 ms (${[...sampled].join(', ')})`);
+    }
+    await waitStep('position').then((ok) => ok || p.waitForTimeout(1800));
+  }
+  if (!(await waitStep('position'))) problems.push(`${tag}: never reached the position step`);
+  else {
+    const text = (await p.textContent('[data-testid=rolled]'))?.replace(/\s+/g, ' ').trim() ?? '';
+    const faces = await p.$$eval('[data-testid=roll-faces] [role=img]', (els) => els.map((e) => e.getAttribute('aria-label')));
+    console.log(`${tag}: "${text}" faces ${faces.join(', ')}`);
+    const m = text.match(/Rolled (\d+) × (\d+)/);
+    if (!m) problems.push(`${tag}: result text missing: "${text}"`);
+    if (faces.length < 2 || faces.length % 2 !== 0) problems.push(`${tag}: expected pairs of die faces, got ${faces.length}`);
+    else {
+      if (!faces.every((f, i) => f.startsWith(i % 2 === 0 ? 'red ' : 'blue '))) problems.push(`${tag}: face colours wrong: ${faces.join(', ')}`);
+      const sum = (c) => faces.filter((f) => f.startsWith(c)).reduce((a, f) => a + Number(f.split(' ')[1]), 0);
+      if (m && (sum('red') !== Number(m[1]) || sum('blue') !== Number(m[2]))) problems.push(`${tag}: faces ${faces.join(', ')} do not add up to ${m[1]} × ${m[2]}`);
+    }
+    if (!reduced) await shot('43-roll-result.png', p);
+  }
+  // Exit count roll: place, then roll the exit D6 and expect it to advance.
+  if ((await stepNow()) === 'position') {
+    if (await p.isDisabled('aside.panel button:text-is("Place")')) await btn('Shrink to fit').catch(() => {});
+    await btn('Place');
+    if (await waitStep('exitCount')) {
+      await p.click('aside.panel button:text-is("🎲 Roll for me")');
+      const left = await p.waitForFunction(() => document.querySelector('aside.panel .body')?.getAttribute('data-step') !== 'exitCount', null, { timeout: 5000 }).then(() => true, () => false);
+      if (!left) problems.push(`${tag}: exit count roll never advanced`);
+    } else problems.push(`${tag}: no exit count step after placing`);
+  }
+  // Sound toggle: present, on by default, remembers off across a reload.
+  if (!reduced) {
+    const menu = () => p.click('header.toolbar button[aria-label="Menu"]');
+    await menu();
+    const box = p.locator('.menu label:has-text("Sound effects") input');
+    if (!(await box.isChecked())) problems.push('sound effects not on by default');
+    await box.uncheck();
+    await p.keyboard.press('Escape');
+    await p.reload({ waitUntil: 'load' });
+    await p.waitForTimeout(800);
+    await menu();
+    if (await p.locator('.menu label:has-text("Sound effects") input').isChecked()) problems.push('sound toggle did not remember off after reload');
+  }
   await ctx.close();
 }
 

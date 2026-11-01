@@ -4,8 +4,10 @@
     value: number;
     /** red is the primary die, blue the secondary. */
     colour: 'red' | 'blue';
+    /** Side length in px (default 36). */
+    size?: number;
   }
-  let { value, colour }: Props = $props();
+  let { value, colour, size = 36 }: Props = $props();
 
   const L = 8;
   const M = 15;
@@ -21,7 +23,7 @@
   const pips = $derived(LAYOUTS[value] ?? []);
 </script>
 
-<span class="die {colour}" role="img" aria-label="{colour} {value}">
+<span class="die {colour}" role="img" aria-label="{colour} {value}" style:width="{size}px" style:height="{size}px">
   <svg viewBox="0 0 30 30" aria-hidden="true" focusable="false">
     {#each pips as [x, y], i (i)}<circle cx={x} cy={y} r="3.1" />{/each}
   </svg>

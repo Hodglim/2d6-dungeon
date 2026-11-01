@@ -397,6 +397,56 @@ describe('PlayFlow dice rolls', () => {
   });
 });
 
+describe('PlayFlow split rolls (animation support)', () => {
+  it('rollSizeDice does not advance; applyRolledSize does, keeping the dice', () => {
+    const { history, flow } = withEntrance();
+    flow.startFromExit(northExit(history.map).id);
+    const d = flow.rollSizeDice()!;
+    expect(flow.step.kind).toBe('size');
+    flow.applyRolledSize(d);
+    if (d.primary === d.secondary && d.primary !== 6) {
+      expect(flow.step.kind).toBe('size');
+    } else {
+      expect(expectKind(flow, 'position').size.dice).toEqual([d]);
+    }
+  });
+
+  it('matches what rollSize would have rolled with the same seed', () => {
+    const a = withEntrance();
+    const b = withEntrance();
+    a.flow.startFromExit(northExit(a.history.map).id);
+    b.flow.startFromExit(northExit(b.history.map).id);
+    a.flow.applyRolledSize(a.flow.rollSizeDice()!);
+    b.flow.rollSize();
+    expect(a.flow.step).toEqual(b.flow.step);
+  });
+
+  it('keeps both pairs after a double', () => {
+    const { history, flow } = withEntrance();
+    flow.startFromExit(northExit(history.map).id);
+    flow.applyRolledSize({ primary: 3, secondary: 3 });
+    expect(expectKind(flow, 'size').needsSecond).toBe(true);
+    flow.applyRolledSize({ primary: 4, secondary: 5 });
+    const pos = expectKind(flow, 'position');
+    expect(pos.size).toMatchObject({ w: 7, h: 8, doubled: true });
+    expect(pos.size.dice).toEqual([{ primary: 3, secondary: 3 }, { primary: 4, secondary: 5 }]);
+  });
+
+  it('rollDie and applyRolledExitCount split the exit count roll', () => {
+    const { history, flow } = withEntrance();
+    flow.startFromExit(northExit(history.map).id);
+    flow.applyRolledSize({ primary: 3, secondary: 4 });
+    if (!expectKind(flow, 'position').placement.ok) flow.shrink();
+    flow.place();
+    const d = flow.rollDie();
+    expect(d).toBeGreaterThanOrEqual(1);
+    expect(d).toBeLessThanOrEqual(6);
+    expect(flow.step.kind).toBe('exitCount');
+    flow.applyRolledExitCount(d);
+    expect(flow.step.kind).not.toBe('exitCount');
+  });
+});
+
 describe('PlayFlow exit count is enforced', () => {
   it('refuses with 1 of 2 chosen while another exit is allowed', () => {
     const { history, flow } = withEntrance();

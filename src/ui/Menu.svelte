@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { DisplayToggles } from '../render/renderer';
+  import { isSoundEnabled, setSoundEnabled } from './sound';
 
   interface Props {
     toggles: DisplayToggles;
@@ -28,6 +29,8 @@
     token: 'Token',
   };
   const toggleNames = Object.keys(toggleLabels) as (keyof DisplayToggles)[];
+
+  let sound = $state(isSoundEnabled());
 
   function act(fn: () => void) {
     return () => {
@@ -61,6 +64,8 @@
   {#each toggleNames as name (name)}
     <label><input type="checkbox" bind:checked={toggles[name]} /> {toggleLabels[name]}</label>
   {/each}
+  <h3>Sound</h3>
+  <label><input type="checkbox" checked={sound} onchange={(e) => setSoundEnabled((sound = e.currentTarget.checked))} /> Sound effects</label>
 </div>
 
 <style>

@@ -17,6 +17,8 @@ export interface RoomSize {
   doubled: boolean;
   /** The first roll was a double (6-6 and 1-1 included; never the entrance): counts for 'large'. */
   fromDouble: boolean;
+  /** The pairs actually rolled (one, or two after a double); absent when not known. */
+  dice?: D66[];
 }
 
 export function rollD6(rng: Rng): number {
@@ -54,7 +56,7 @@ export function clampEntranceArea(w: number, h: number): { w: number; h: number 
 export function resolveRoomSize(first: D66, second: D66 | null, entrance: boolean): RoomSize {
   if (entrance) {
     const { w, h } = clampEntranceArea(first.primary, first.secondary);
-    return { w, h, corridor: false, doubled: false, fromDouble: false };
+    return { w, h, corridor: false, doubled: false, fromDouble: false, dice: [first] };
   }
   const isDouble = first.primary === first.secondary;
   const corridor = !isDouble && (first.primary === 1 || first.secondary === 1);
@@ -65,6 +67,7 @@ export function resolveRoomSize(first: D66, second: D66 | null, entrance: boolea
     corridor,
     doubled,
     fromDouble: isDouble,
+    dice: doubled ? [first, second] : [first],
   };
 }
 

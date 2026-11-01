@@ -192,6 +192,16 @@ export class PlayFlow {
     this.applySize(rollD66(this.rng));
   }
 
+  /** Rolls the room dice with the injected rng but applies nothing; pass the result to applyRolledSize. */
+  rollSizeDice(): D66 | null {
+    return this.current.kind === 'size' ? rollD66(this.rng) : null;
+  }
+
+  /** Applies dice from rollSizeDice (after the UI has shown them rolling). */
+  applyRolledSize(dice: D66): void {
+    this.applySize(dice);
+  }
+
   private applySize(dice: D66): void {
     if (this.current.kind !== 'size') return;
     const { source, first } = this.current;
@@ -310,6 +320,16 @@ export class PlayFlow {
   rollExitCount(): void {
     if (this.current.kind !== 'exitCount') return;
     this.applyExitCount(rollD6(this.rng));
+  }
+
+  /** Rolls one D6 with the injected rng without applying it (exit count, first wall). */
+  rollDie(): number {
+    return rollD6(this.rng);
+  }
+
+  /** Applies a D6 from rollDie as the exit count. */
+  applyRolledExitCount(d6: number): void {
+    this.applyExitCount(d6);
   }
 
   private applyExitCount(d6: number): void {
