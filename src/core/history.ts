@@ -109,6 +109,11 @@ export class History {
     return this.future[this.future.length - 1]?.label ?? null;
   }
 
+  /** True when an execute with this key right now would fold into the newest step. */
+  canMerge(key: string): boolean {
+    return this.past.length > 0 && this.lastMerge?.key === key && this.now() - this.lastMerge.at < MERGE_WINDOW_MS;
+  }
+
   execute(cmd: Command | HeroCommand, opts: { mergeKey?: string } = {}): ExecResult {
     let map = this.current;
     let hero = this.currentHero;
@@ -128,7 +133,7 @@ export class History {
     const at = this.now();
     const key = opts.mergeKey;
     const top = this.past[this.past.length - 1];
-    const merge = key !== undefined && top !== undefined && this.lastMerge?.key === key && at - this.lastMerge.at < MERGE_WINDOW_MS;
+    const merge = key !== undefined && top !== undefined && this.canMerge(key);
     if (merge) {
       top.label = cmd.label;
     } else {

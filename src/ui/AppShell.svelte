@@ -38,6 +38,7 @@
   import HeroWizard from './wizard/HeroWizard.svelte';
   import ReplaceGameDialog from './ReplaceGameDialog.svelte';
   import SaveBanner from './SaveBanner.svelte';
+  import HeroPanel from './hero/HeroPanel.svelte';
   import StepPanel from './StepPanel.svelte';
   import { resolveSelection, routeEditorTap, routePlayTap, type Selection } from './tapRouting';
   import Toolbar from './Toolbar.svelte';
@@ -99,6 +100,9 @@
   let tables = $state.raw<DungeonTables | null>(null);
   let cards = $state.raw<CardPack | null>(null);
   let panelCollapsed = $state(false);
+  /** Which panel fills the right-hand sidebar (Task 8 adds 'encounter'). */
+  let sidebar = $state<'steps' | 'hero'>('steps');
+  const heroShown = $derived(sidebar === 'hero' && $view.hero !== null);
   let mapView = $state<ReturnType<typeof MapView>>();
   let step = $state.raw<Step>(flow.step);
   /** One-line panel message: a tap hint, or what happened on the last commit. */
@@ -116,6 +120,7 @@
     if (s.kind !== 'idle') {
       gapMode = false;
       panelCollapsed = false; // the steps live in the panel
+      sidebar = 'steps';
     }
   });
 
@@ -302,10 +307,24 @@
     });
   }
 
-  /** Add a hero to the current game (opened from the Hero button in a later task). */
+  /** Add a hero to the current game (opened from the Hero button when there is none). */
   function beginAddHero(v: { hero: Hero | null }) {
     newMapOpen = false;
-    if (v.hero) history.execute(setHero(v.hero, 'Create hero'));
+    if (v.hero) {
+      history.execute(setHero(v.hero, 'Create hero'));
+      sidebar = 'hero';
+    }
+  }
+
+  /** The toolbar's Hero button: create one, or show or hide the sheet. */
+  function onHeroButton() {
+    if (!started || loadError) return;
+    if ($view.hero === null) {
+      wizardMode = 'add-hero';
+      newMapOpen = true;
+    } else {
+      sidebar = heroShown ? 'steps' : 'hero';
+    }
   }
 
   function loadDemo() {
@@ -492,18 +511,20 @@
 
 <svelte:window onkeydown={onKey} />
 
-<div class="shell" class:collapsed={panelCollapsed}>
+<div class="shell" class:collapsed={panelCollapsed && !heroShown} class:wide={heroShown}>
   <div class="top">
     <Toolbar
       view={$view}
       {tool}
       coverage={cover}
       {menuOpen}
+      heroOpen={heroShown}
       disabled={!started || !!loadError}
       ontool={selectTool}
       onundo={() => history.undo()}
       onredo={() => history.redo()}
       onmenu={() => started && !loadError && (menuOpen = !menuOpen)}
+      onhero={onHeroButton}
     />
     <UpdatePrompt />
     {#if saveFailing}<SaveBanner onexport={exportGame} />{/if}
@@ -536,6 +557,9 @@
     dragsGhost={step.kind === 'position'}
     ghost={step.kind === 'position' ? step.placement.rect : null}
   />
+  {#if heroShown}
+    <HeroPanel hero={$view.hero as Hero} {history} {tables} onclose={() => (sidebar = 'steps')} />
+  {:else}
   <StepPanel
     {tool}
     map={$view.map}
@@ -554,6 +578,7 @@
     collapsed={panelCollapsed}
     ontoggle={() => (panelCollapsed = !panelCollapsed)}
   />
+  {/if}
 </div>
 
 <input bind:this={fileInput} type="file" accept=".json,application/json" hidden onchange={onFileChosen} />
@@ -646,6 +671,9 @@
       'top top'
       'map panel';
   }
+  .shell.wide {
+    grid-template-columns: minmax(0, 1fr) clamp(420px, 48%, 640px);
+  }
   .shell.collapsed {
     grid-template-columns: minmax(0, 1fr) 48px;
   }
@@ -657,11 +685,13 @@
   .shell > :global(.map-view) {
     grid-area: map;
   }
-  .shell > :global(.panel) {
+  .shell > :global(.panel),
+  .shell > :global(.hero-panel) {
     grid-area: panel;
   }
   @media (max-width: 699.98px) {
     .shell,
+    .shell.wide,
     .shell.collapsed {
       grid-template-columns: minmax(0, 1fr);
       grid-template-rows: auto minmax(0, 1fr) auto;
@@ -672,6 +702,9 @@
     }
     .shell > :global(.panel) {
       max-height: 40dvh;
+    }
+    .shell > :global(.hero-panel) {
+      max-height: 60dvh;
     }
   }
 

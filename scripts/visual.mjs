@@ -577,6 +577,105 @@ if (!(await page.isVisible('text=This replaces your current game.'))) problems.p
   const afterCancel = await readSaved();
   if (!afterCancel.includes('Pip Tester') || afterCancel.includes('Nobody')) problems.push('Cancel changed the game');
 
+  // The Hero panel: quick strip, limits, level-up and the sheet tabs.
+  const panel = '.hero-panel';
+  const val = (label) => p.inputValue(`${panel} [aria-label="${label}"]`);
+  const undoText = async () => (await p.textContent('header.toolbar button.history')) ?? '';
+  const mapWidth = () => p.$eval('.map-view', (e) => Math.round(e.getBoundingClientRect().width));
+  const canvasWidth = () => p.$eval('.map-view canvas', (e) => e.width);
+  const widthBefore = await mapWidth();
+  const canvasBefore = await canvasWidth();
+  await p.click('header.toolbar button.hero');
+  await p.waitForSelector(panel);
+  await p.waitForTimeout(400);
+  if ((await mapWidth()) >= widthBefore) problems.push('map did not narrow beside the hero panel');
+  if ((await canvasWidth()) >= canvasBefore) problems.push('map canvas did not resize beside the hero panel');
+  if (await p.isVisible('.panel[aria-label="Step panel"]')) problems.push('step panel still showing beside the hero panel');
+  const hp0 = Number(await val('HP'));
+  for (let i = 0; i < 3; i++) await p.click(`${panel} [aria-label="HP down"]`);
+  if (Number(await val('HP')) !== hp0 - 3) problems.push('HP taps did not reduce HP by 3');
+  if (!(await undoText()).includes('HP −3')) problems.push(`merged HP label: ${await undoText()}`);
+  await p.click('header.toolbar button.history >> nth=0');
+  if (Number(await val('HP')) !== hp0) problems.push('one undo did not restore all three HP taps');
+  await p.click('header.toolbar button.history >> nth=1');
+  if (Number(await val('HP')) !== hp0 - 3) problems.push('redo did not reapply the HP taps');
+  await p.fill(`${panel} [aria-label="XP to add"]`, '50');
+  await p.click(`${panel} button:text-is("Add XP")`);
+  await p.click(`${panel} [aria-label="GC up"]`);
+  await p.fill(`${panel} [aria-label="Add item"]`, 'Rope');
+  await p.click(`${panel} button:text-is("Add")`);
+  if (!(await p.isVisible(`${panel} .offer:has-text("Level up to Explorer?")`))) problems.push('level-up offer missing at 50 XP');
+  await wshot('33-hero-strip.png');
+  const smallHero = async (where) => {
+    const n = await p.$$eval(`${panel} button, ${panel} input, ${panel} select`, (els) => els.map((e) => e.getBoundingClientRect()).filter((r) => r.width > 0 && (r.width < 44 || r.height < 44)).length);
+    if (n) problems.push(`hero ${where} has ${n} controls under 44px`);
+    const over = await p.$eval(`${panel} .body`, (e) => e.scrollWidth > e.clientWidth + 1);
+    if (over) problems.push(`hero ${where} scrolls sideways`);
+  };
+  await smallHero('strip');
+
+  // Reload: the values persist.
+  await p.waitForTimeout(800);
+  await p.reload({ waitUntil: 'load' });
+  await p.waitForTimeout(1000);
+  if (!(await p.isVisible('header.toolbar button.hero:text-is("Hero")'))) problems.push('Hero button missing after reload');
+  await p.click('header.toolbar button.hero');
+  await p.waitForSelector(panel);
+  if (Number(await val('HP')) !== hp0 - 3 || Number(await val('GC')) !== 1 || (await val('XP to add')) !== '' || !(await p.textContent(`${panel} .strip`))?.includes('50')) problems.push('quick-strip values lost after reload');
+
+  // Limits warn but never block.
+  const addLarge = async (t) => {
+    await p.fill(`${panel} [aria-label="Add item"]`, t);
+    await p.click(`${panel} .items button:text-is("Add")`);
+  };
+  await addLarge('Torch');
+  if (await p.isVisible(`${panel} [role=alert]`)) problems.push('warning shown below the limit');
+  await addLarge('Anvil');
+  if (!(await p.isVisible(`${panel} [role=alert]:has-text("Your backpack holds 2 large items")`))) problems.push('limit warning missing');
+  await wshot('37-hero-limit-warning.png');
+  await p.click(`${panel} [role=alert] button:text-is("Cancel")`);
+  await p.click(`${panel} #hero-tab-items`);
+  if ((await p.$$eval(`${panel} .slots li:not(.over) .grow:not(.empty)`, (e) => e.length)) !== 2) problems.push('Cancel did not leave the items alone');
+  await p.fill(`${panel} [aria-label="New large item"]`, 'Anvil');
+  await p.click(`${panel} .page form button:text-is("Add")`);
+  await p.click(`${panel} [role=alert] button:text-is("Add anyway")`);
+  if ((await p.$$eval(`${panel} .slots li`, (e) => e.length)) !== 3) problems.push('Add anyway did not add the item');
+  await wshot('36-hero-items.png');
+  await smallHero('items tab');
+
+  // Level up, twice.
+  if (!(await undoText()).includes('Add Anvil')) problems.push(`undo label after Add anyway: ${await undoText()}`);
+  await p.click(`${panel} .offer button:text-is("Level up")`);
+  if (!(await undoText()).includes('Level up to Explorer')) problems.push(`level-up label: ${await undoText()}`);
+  if (!(await p.isVisible(`${panel} .offer:has-text("Level up to Seasoned Snoozer?")`))) problems.push('second level-up offer missing');
+  await p.click(`${panel} .offer button:text-is("Level up")`);
+  if (await p.isVisible(`${panel} .offer`)) problems.push('level-up offer still showing at the top level');
+
+  // Stats page: manoeuvres offered from the loaded table file.
+  await p.click(`${panel} #hero-tab-stats`);
+  if (!(await p.isVisible(`${panel} button[aria-label="Add Grand Wave"]`))) problems.push('weapon manoeuvres not offered');
+  await p.click(`${panel} button[aria-label="Add Cheerful Flourish"]`);
+  if (await p.isVisible(`${panel} [role=alert]`)) problems.push('warning shown within the manoeuvre limit');
+  await wshot('34-hero-stats.png');
+  await smallHero('stats tab');
+
+  await p.click(`${panel} #hero-tab-potions`);
+  await p.click(`${panel} button[aria-label="Scraped Up box 2"]`);
+  await p.click(`${panel} button[aria-label="Old Mossbeard favour box 3"]`);
+  await wshot('35-hero-potions.png');
+  await smallHero('potions tab');
+  await p.click(`${panel} #hero-tab-story`);
+  await p.fill(`${panel} textarea`, 'Found a very small door.');
+  await p.click(`${panel} #hero-tab-items`);
+  await p.waitForTimeout(1500);
+  const savedHero = await readSaved();
+
+  for (const want of ['Found a very small door.', 'Seasoned Snoozer']) if (!savedHero.includes(want)) problems.push(`hero sheet edit not in the saved game: ${want}`);
+
+  // Close restores the step panel; without a table file the picker says so.
+  await p.click(`${panel} button[aria-label="Close hero panel"]`);
+  if (!(await p.isVisible('.panel[aria-label="Step panel"]'))) problems.push('closing the hero panel did not restore the step panel');
+
   await p.reload({ waitUntil: 'load' });
   await p.waitForTimeout(1000);
   const afterReload = await statusOf('tables');
@@ -603,6 +702,9 @@ if (!(await page.isVisible('text=This replaces your current game.'))) problems.p
   await p.reload({ waitUntil: 'load' });
   await p.waitForTimeout(1000);
   if ((await statusOf('tables')) !== 'No table file loaded') problems.push('table file came back after Remove and reload');
+  await p.click('header.toolbar button.hero');
+  await p.waitForSelector('.hero-panel');
+  if (!(await p.isVisible('.hero-panel >> text=Load your table file to choose manoeuvres'))) problems.push('no-tables manoeuvre hint missing');
   await ctx.close();
 }
 
