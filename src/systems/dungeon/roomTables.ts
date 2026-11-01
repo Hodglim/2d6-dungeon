@@ -83,14 +83,14 @@ export function contentsFrom(
 }
 
 /** Names the room, records the roll and sets the room's own exit doors (not the entry door or shared edges). */
-export function applyRoomRoll(room: Room, contents: RoomContents, unique = false): Command {
+export function applyRoomRoll(room: Room, contents: RoomContents, unique: boolean): Command {
   return {
     label: 'Roll room',
     apply: (m) => {
       const ids = new Set<string>();
       for (const { edge } of perimeterEdges(room)) {
         const d = doorAt(m, edge);
-        if (!d || d.id === room.entryDoorId) continue;
+        if (!d || d.secret || d.id === room.entryDoorId) continue;
         const [a, b] = roomsAcross(m, edge);
         if (a && b) continue;
         ids.add(d.id);

@@ -88,42 +88,52 @@ describe('unique rooms', () => {
 });
 
 describe('applyRoomRoll', () => {
+  // A (0,1,3,2) is west of B (3,1,3,3); C (4,0,1,1) is above B.
   const build = () => {
-    const a = room('A', 0, 0, 3, 3, 'room', 1);
-    const b = { ...room('B', 4, 0, 3, 3, 'room', 2), entryDoorId: 'in' };
+    const a = room('A', 0, 1, 3, 2, 'room', 1);
+    const b = { ...room('B', 3, 1, 3, 3, 'room', 2), entryDoorId: 'in' };
+    const c = room('C', 4, 0, 1, 1, 'room', 3);
     const doors = [
-      door('in', 4, 1, 'W'),
-      door('a2', 1, 3, 'N'), // A's other exit (south of A)
-      door('b1', 7, 1, 'W'), // B's own exit, east
-      door('b2', 5, 3, 'N'), // B's own exit, south
+      door('in', 3, 1, 'W'), // entry, shared with A
+      door('shareW', 3, 2, 'W'), // shared with A, not the entry
+      door('ownW', 3, 3, 'W'), // B's own exit, W-canonical
+      door('shareN', 4, 1, 'N'), // shared with C
+      door('ownN', 5, 1, 'N'), // B's own exit, N-canonical
+      door('ownE', 6, 2, 'W'), // B's own exit, east edge
+      door('ownS', 4, 4, 'N'), // B's own exit, south edge
+      { ...door('secret', 5, 4, 'N'), secret: true },
+      door('far', 0, 1, 'N'), // not on B's perimeter
     ];
-    return withContent(emptyMap(), [a, b], doors);
+    return withContent(emptyMap(), [a, b, c], doors);
   };
-  it('rewrites only the room\'s own exits and sets label and contents', () => {
+  const run = (c: RoomContents, unique = false) => {
     const m = build();
+    const out = applyRoomRoll(m.rooms[1]!, c, unique).apply(m);
+    return { m, out, d: (id: string) => out.doors.find((x) => x.id === id)!, was: (id: string) => m.doors.find((x) => x.id === id)! };
+  };
+
+  it('rewrites the room\'s own exits on all four sides and sets label and contents', () => {
     const c: RoomContents = { ...contents('Fire Pit'), door: 'metal', locked: true };
-    const out = applyRoomRoll(m.rooms[1]!, c, true).apply(m);
-    const d = (id: string) => out.doors.find((x) => x.id === id)!;
-    expect(d('b1')).toMatchObject({ type: 'metal', lock: { locked: true, note: '', quality: null } });
-    expect(d('b2')).toMatchObject({ type: 'metal' });
-    expect(d('in')).toEqual(m.doors[0]);
-    expect(d('a2')).toEqual(m.doors[1]);
-    const rb = out.rooms[1]!;
-    expect(rb.contents).toEqual(c);
-    expect(rb.label).toEqual({ type: 'Fire Pit', unique: true, narrative: 'd' });
+    const { m, out, d } = run(c, true);
+    for (const id of ['ownW', 'ownN', 'ownE', 'ownS']) {
+      expect(d(id)).toMatchObject({ type: 'metal', lock: { locked: true, note: '', quality: null } });
+    }
+    expect(out.rooms[1]!.contents).toEqual(c);
+    expect(out.rooms[1]!.label).toEqual({ type: 'Fire Pit', unique: true, narrative: 'd' });
     expect(out.rooms[0]).toEqual(m.rooms[0]);
   });
-  it('clears the lock when not locked and leaves a neighbour\'s door alone', () => {
-    const m = build();
-    m.doors[2] = { ...m.doors[2]!, lock: { locked: true, note: 'x', quality: 1 } };
-    const out = applyRoomRoll(m.rooms[1]!, { ...contents('Z'), door: 'wooden' }, false).apply(m);
-    expect(out.doors.find((x) => x.id === 'b1')).toMatchObject({ type: 'wooden', lock: null });
+  it('leaves the entry door, doors shared with neighbours and far doors unchanged', () => {
+    const { d, was } = run({ ...contents('Z'), door: 'metal', locked: true });
+    for (const id of ['in', 'shareW', 'shareN', 'far']) expect(d(id)).toEqual(was(id));
   });
-  it('leaves doors shared with another room untouched', () => {
+  it('leaves secret doors unchanged', () => {
+    const { d, was } = run({ ...contents('Z'), door: 'metal', locked: true });
+    expect(d('secret')).toEqual(was('secret'));
+  });
+  it('clears an old lock when the roll is not locked', () => {
     const m = build();
-    const c = { ...m, rooms: [...m.rooms, room('C', 4, 3, 3, 2)], doors: [...m.doors] };
-    const out = applyRoomRoll(c.rooms[1]!, { ...contents('Z'), door: 'metal' }, false).apply(c);
-    expect(out.doors.find((x) => x.id === 'b2')!.type).toBe('archway');
-    expect(out.doors.find((x) => x.id === 'b1')!.type).toBe('metal');
+    m.doors = m.doors.map((x) => (x.id === 'ownE' ? { ...x, lock: { locked: true, note: 'x', quality: 1 } } : x));
+    const out = applyRoomRoll(m.rooms[1]!, { ...contents('Z'), door: 'wooden' }, false).apply(m);
+    expect(out.doors.find((x) => x.id === 'ownE')).toMatchObject({ type: 'wooden', lock: null });
   });
 });
