@@ -53,7 +53,6 @@ These would count as failure even if everything technically worked:
   - test fixtures and the format doc use made-up names and numbers
 - **Losing the hero silently:**
   - every rule from Plan 4a applies to the hero (autosave, a damaged-save dialog, never overwriting without asking)
-  - an old save from before this change must still load, as a game with no hero
 - **A sheet that fights the player:**
   - the limits warn but never stop a hand edit
   - the app never changes stats without the player seeing it
@@ -68,7 +67,7 @@ These would count as failure even if everything technically worked:
   - The UI lives in `src/ui`.
   - Browser storage lives in `src/persistence`.
 - **Every change to the game state goes through `History.execute`,** and that now includes hero edits.
-- **Saved games from Plan 4a (save format 1, schema version 1) must load.** Changing the saved shape bumps the version and adds a migration, as Plan 4a §14 requires. Fix the deferred "save format vs schema version" item here, because this plan is the first to change the saved shape:
+- **No backwards compatibility is needed** (user decision, 2026-11-01: the app isn't in use yet). Bump the versions, with no migrations. Older saves or files are refused through the existing damaged/can't-import handling. Fix the deferred "save format vs schema version" item here, because this plan is the first to change the saved shape:
   - tie the two versions together
   - run campaign validation on restore
   - validate `hero`
@@ -152,7 +151,7 @@ The wizard **replaces today's New map dialog**. Its behaviour, as agreed with th
   - The hero holds the player's choices **as written on their sheet**, such as the manoeuvre name, dice and damage. That is the player's own sheet, much like a filled-in paper copy, so it's acceptable.
   - The **table file itself is never included** in exports.
 - **Versions:**
-  - Bump the save format and the campaign schema version, and add migrations. An old save loads with no hero.
+  - Bump the save format and the campaign schema version, with no migrations. An old save is refused through the damaged-save dialog.
   - Validate the hero on load and on import with the same "damaged" handling as the map.
 - **Tables are only needed to create and level up a hero:** a game with a hero still loads and its sheet still works when no table file is loaded, for example on a second device.
 
@@ -164,7 +163,7 @@ The wizard **replaces today's New map dialog**. Its behaviour, as agreed with th
   - the wizard's choices produce the right hero
   - HP baseline rules, the level-up offer and its effects, and limit warnings
   - hero edits are undoable and redoable and share the 20-step cap with map edits
-  - migrating a format 1 save to the new format, and import with and without a hero
+  - refusing a format 1 save, and import with and without a hero
 - **Visual and e2e checks (Playwright):**
   - load a fixture table file, run the wizard, check the sheet, reload, and check the hero and Undo
   - the quick strip changes HP, XP, coins and inventory

@@ -24,8 +24,9 @@
 - **Layering:**
   - `src/core` has no DOM, Svelte, render, persistence or systems imports.
   - The hero is `unknown | null` in core. The dungeon system supplies the hero type and `heroProblem`.
-- **Plan 4a saves must load:** `SAVE_FORMAT` 1 and schema version 1 load as a game with no hero.
-  - Bump to `SAVE_FORMAT = 2` and `CURRENT_SCHEMA_VERSION = 2`, with migrations.
+- **No backwards compatibility needed** (user decision, 2026-11-01: the app isn't in use yet).
+  - Bump to `SAVE_FORMAT = 2` and `CURRENT_SCHEMA_VERSION = 2`, with no migrations.
+  - An older save or file is refused with the existing "damaged / can't import" handling, never silently overwritten.
   - A test asserts the two versions are bumped together.
 - **Never lose the game silently.** Every Plan 4a rule applies to the hero: autosave, the damaged-save dialog, and asking before replacing anything.
 - **The table file and the card pack:**
@@ -42,11 +43,7 @@
 ## Review Focus
 
 1. **Editing the hero while a room is half-placed must not cancel the placement.** PlayFlow should only react to *map* changes. *(Task 1 test.)*
-2. **Old saves still load:**
-   - A Plan 4a save (format 1, with `meta.hero` present or absent) restores as a game with no hero, with Undo intact.
-   - An exported file from Plan 4a (schema version 1) imports.
-
-   *(Task 2 tests.)*
+2. **Replacing or removing the table file after a hero exists must not change that hero.** It keeps its own copied rules and choices. *(Task 5 test.)*
 3. **Rapid HP or coin taps must not wipe the map's undo history.** Taps on the same field within 1.5 s merge into one step. *(Task 1 merge test; Task 7 UI test.)*
 4. **Bad data files** must be refused with a plain message, leaving whatever was loaded before untouched:
    - a table file for the wrong system or with a missing table
@@ -110,7 +107,7 @@
 - [ ] **Step 4: Run** `npm test && npm run typecheck` → PASS. Existing tests may need `hero: null` added to hand-built `HistoryState`s.
 - [ ] **Step 5: Commit** `feat(core): history snapshots carry an opaque hero, with merged quick edits`
 
-### Task 2: Save format 2, schema version 2, hero validation on load
+### Task 2: Save format 2, schema version 2, hero validation on load (no migrations)
 
 **Files:**
 - Modify: `src/core/serialize.ts`, `src/core/campaign.ts`, `src/core/system.ts`, `src/persistence/record.ts`, `src/persistence/startup.ts`, `src/persistence/files.ts`, `src/ui/AppShell.svelte` (only where meta and hero are wired)
@@ -123,30 +120,30 @@
   // core/system.ts — GameSystem gains:
   heroProblem?: (hero: unknown) => string | null;          // null = valid; called only for non-null heroes
   // core/serialize.ts
-  export function parseHistoryState(raw: unknown, heroProblem?: (h: unknown) => string | null): HistoryParse;  // accepts v1 shape (no hero fields → null)
-  export function parseCampaign(text: string, heroProblem?: (h: unknown) => string | null): ParseResult;        // migrates schema 1 → 2
+  export function parseHistoryState(raw: unknown, heroProblem?: (h: unknown) => string | null): HistoryParse;  // hero fields required
+  export function parseCampaign(text: string, heroProblem?: (h: unknown) => string | null): ParseResult;        // schema must be 2
   // persistence/record.ts
   export const SAVE_FORMAT = 2;
   export interface CampaignMeta { id: string; name: string; systemId: string }   // hero moves into history
-  export function decodeSave(raw: unknown, heroProblem?: (h: unknown) => string | null): SaveDecode;  // format 1 → 2
+  export function decodeSave(raw: unknown, heroProblem?: (h: unknown) => string | null): SaveDecode;  // format must be 2
   export function campaignFrom(meta: CampaignMeta, map: DungeonMap, hero: unknown | null): Campaign;
   // persistence/startup.ts
   export function decideStartup(raw: unknown | null, heroProblem?: (h: unknown) => string | null): StartupDecision;
   ```
 - **Behaviour:**
-  - `CURRENT_SCHEMA_VERSION = 2`. Schema 2 adds nothing structural: `hero` is validated with `heroProblem` when it isn't null.
-  - The 1 → 2 migration keeps `hero: null`.
-  - A format 1 record's `meta.hero` is ignored, because it was always null in Plan 4a.
+  - `CURRENT_SCHEMA_VERSION = 2`. `hero` is validated with `heroProblem` when it isn't null.
+  - No migrations. Remove `meta.hero` from the record.
+  - A format 1 save or a schema 1 file is refused through the existing paths: the load-error dialog, or the import message.
   - `decideStartup` also runs `parseCampaign(serializeCampaign(campaignFrom(...)))` on the restored current state. This closes the deferred item "start-up doesn't run parseCampaign".
   - A hero problem reads "The saved hero is damaged: …".
   - Export and import carry `campaign.hero`.
   - On import, `history.reset(map, campaign.hero)`.
 
-- [ ] **Step 1: Write the failing tests (Review Focus 2)**
-  - A Plan 4a-shaped record (format 1, `meta.hero: null`, history without hero fields) → `decideStartup` → `restore`, with `history.hero === null` and labels intact.
-  - The same record without `meta.hero` → `restore`.
-  - A schema 1 campaign JSON → `parseCampaign` ok, with `hero === null`.
-  - A version-coupling test: `expect(SAVE_FORMAT).toBe(2)` and `expect(CURRENT_SCHEMA_VERSION).toBe(2)`. Its comment says to bump both together and add migrations.
+- [ ] **Step 1: Write the failing tests**
+  - A format 2 record with `hero: null` → `decideStartup` → `restore`, with `history.hero === null` and labels intact.
+  - A format 1 record → `error` (the dialog), and the record is untouched.
+  - A schema 1 campaign JSON → `parseCampaign` refuses it with a plain message.
+  - A version-coupling test: `expect(SAVE_FORMAT).toBe(2)` and `expect(CURRENT_SCHEMA_VERSION).toBe(2)`. Its comment says to bump both together.
   - A record whose `history.past[0].hero` fails `heroProblem` → `error` starting "The saved hero is damaged".
   - A format 3 record → the "newer version" error.
   - An export → import round trip keeps a (fixture) hero object.
@@ -321,6 +318,7 @@
   - "This file is too large to be a card pack."
 
 - [ ] **Step 1: Write the failing tests:**
+  - **Review Focus 2:** create a hero from the fixture tables, then `saveExtra` a different table file, then `removeExtra`. The hero object is deep-equal to before, and `levelUpAvailable` / `listLimit` give the same answers.
   - **Extras:** `saveExtra` → `loadExtra` round-trips, and `removeExtra` → null. `save(record)` followed by `saveExtra` doesn't change `load()`.
   - **Card pack (Review Focus 4):**
     - A made-up 3-card fixture parses (build it in the test with tiny 1×1 PNG data URLs).
