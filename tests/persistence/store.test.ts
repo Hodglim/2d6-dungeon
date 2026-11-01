@@ -195,3 +195,58 @@ describe('IdbSaveStore with a dead connection', () => {
     expect(await internal(s).db!).not.toBe(first);
   });
 });
+
+describe('extras', async () => {
+  const { TABLES_KEY, CARDS_KEY } = await import('../../src/persistence/store');
+  const { parseTableFile } = await import('../../src/systems/dungeon/tables');
+  const { createHero, levelUpAvailable, listLimit } = await import('../../src/systems/dungeon/hero');
+  const fixture = (await import('../fixtures/dungeon-tables.fixture.json')).default;
+
+  for (const [label, make] of [
+    ['IdbSaveStore', () => new IdbSaveStore(`t-x-${Math.random()}`)],
+    ['MemorySaveStore', () => new MemorySaveStore()],
+  ] as const) {
+    it(`${label}: round-trips and removes an extra`, async () => {
+      const s = make();
+      expect(await s.loadExtra(TABLES_KEY)).toBeNull();
+      await s.saveExtra(TABLES_KEY, { a: [1, 2] });
+      expect(await s.loadExtra(TABLES_KEY)).toEqual({ a: [1, 2] });
+      expect(await s.loadExtra(CARDS_KEY)).toBeNull();
+      await s.removeExtra(TABLES_KEY);
+      expect(await s.loadExtra(TABLES_KEY)).toBeNull();
+    });
+
+    it(`${label}: extras never change the game record`, async () => {
+      const s = make();
+      expect(await s.load()).toBeNull();
+      const r = rec(2);
+      await s.save(r);
+      const before = JSON.stringify(await s.load());
+      await s.saveExtra(TABLES_KEY, { x: 1 });
+      await s.saveExtra(CARDS_KEY, { y: 2 });
+      expect(JSON.stringify(await s.load())).toBe(before);
+      await s.removeExtra(TABLES_KEY);
+      await s.removeExtra(CARDS_KEY);
+      expect(JSON.stringify(await s.load())).toBe(before);
+    });
+  }
+
+  it('a hero is unaffected by storing or removing a different table file', async () => {
+    const text = JSON.stringify(fixture);
+    const parsed = parseTableFile(text, text.length);
+    if (!parsed.ok) throw new Error(parsed.error);
+    const hero = createHero(parsed.tables, {
+      name: 'Tester', weapon: 'Practice Sword', manoeuvres: ['Wobbly Poke', 'Gentle Swipe'],
+      armour: 'Sackcloth Vest', scroll: 'Scroll of Mild Glow',
+    });
+    const snapshot = structuredClone(hero);
+    const answers = () => [levelUpAvailable(hero), listLimit(hero, 'potions'), listLimit(hero, 'scrolls'), listLimit(hero, 'largeItems'), listLimit(hero, 'armour')];
+    const before = answers();
+    const s = new IdbSaveStore('t-hero-extra');
+    const other = { ...fixture, name: 'A different made-up file' };
+    await s.saveExtra(TABLES_KEY, other);
+    await s.removeExtra(TABLES_KEY);
+    expect(hero).toEqual(snapshot);
+    expect(answers()).toEqual(before);
+  });
+});

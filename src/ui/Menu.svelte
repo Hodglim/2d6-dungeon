@@ -9,9 +9,15 @@
     onfit: () => void;
     onexport: () => void;
     onimport: () => void;
+    tablesName: string | null;
+    cardsName: string | null;
+    onloadtables: () => void;
+    onloadcards: () => void;
+    onremovetables: () => void;
+    onremovecards: () => void;
   }
 
-  let { toggles = $bindable(), onclose, onnewmap, ondemo, onfit, onexport, onimport }: Props = $props();
+  let { toggles = $bindable(), onclose, onnewmap, ondemo, onfit, onexport, onimport, tablesName, cardsName, onloadtables, onloadcards, onremovetables, onremovecards }: Props = $props();
 
   const toggleLabels: Record<keyof DisplayToggles, string> = {
     grid: 'Grid',
@@ -40,6 +46,17 @@
   <button role="menuitem" onclick={act(onfit)}>Fit map to screen</button>
   <button role="menuitem" onclick={act(onexport)}>Export game</button>
   <button role="menuitem" onclick={act(onimport)}>Import game…</button>
+  <h3>Your files</h3>
+  <button role="menuitem" onclick={act(onloadtables)}>Load table file…</button>
+  <div class="status" data-status="tables">
+    <span>{tablesName ? `Table file: ${tablesName}` : 'No table file loaded'}</span>
+    {#if tablesName}<button class="remove" onclick={onremovetables}>Remove</button>{/if}
+  </div>
+  <button role="menuitem" onclick={act(onloadcards)}>Load creature cards…</button>
+  <div class="status" data-status="cards">
+    <span>{cardsName ? `Creature cards: ${cardsName}` : 'No creature cards loaded'}</span>
+    {#if cardsName}<button class="remove" onclick={onremovecards}>Remove</button>{/if}
+  </div>
   <h3>Display</h3>
   {#each toggleNames as name (name)}
     <label><input type="checkbox" bind:checked={toggles[name]} /> {toggleLabels[name]}</label>
@@ -96,6 +113,23 @@
     height: 24px;
     margin: 0;
     accent-color: var(--ink);
+  }
+  .status {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: 48px;
+    padding: 0 18px;
+    font-size: 16px;
+    color: var(--muted);
+    overflow-wrap: anywhere;
+  }
+  .remove {
+    min-width: 72px;
+    justify-content: center;
+    border: 2px solid var(--ink);
+    border-radius: 6px;
   }
   h3 {
     margin: 6px 0 0;

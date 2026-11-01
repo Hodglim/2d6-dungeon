@@ -5,7 +5,7 @@
 // then uses the Door, Stairs, Note and Select tools on it.
 // Exits non-zero on undersized buttons, a wrong play-flow step, the panel overlapping the
 // map, or any page error.
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { firefox } from 'playwright';
 
@@ -459,6 +459,72 @@ if (!(await page.isVisible('text=This replaces your current game.'))) problems.p
     window.matchMedia = (q) => (q.includes('display-mode: standalone') ? { ...orig(q), matches: true, media: q } : orig(q));
   }));
   if (await p.isVisible(hintSel)) problems.push('hint shown in standalone mode');
+  await ctx.close();
+}
+
+// 11. Table file and creature cards: load through the menu, survive a reload, a bad file keeps the loaded one.
+{
+  const ctx = await browser.newContext({ viewport: { width: 1180, height: 820 }, deviceScaleFactor: 2, hasTouch: true });
+  await ctx.addInitScript(() => localStorage.setItem('2d6.installHintDismissed', '1'));
+  const p = await ctx.newPage();
+  p.on('pageerror', (e) => errors.push(e.message));
+  await p.goto(url, { waitUntil: 'load' });
+  await p.waitForTimeout(800);
+  const openMenu = () => p.click('header.toolbar button[aria-label="Menu"]');
+  const statusOf = async (which) => {
+    await openMenu();
+    const t = (await p.textContent(`.menu [data-status="${which}"] span`))?.trim();
+    await p.keyboard.press('Escape');
+    return t;
+  };
+  const fixture = readFileSync('tests/fixtures/dungeon-tables.fixture.json');
+  const fixtureName = JSON.parse(fixture.toString()).name;
+  const pick = async (which, name, buffer) => {
+    await p.setInputFiles(`input[data-extra="${which}"]`, { name, mimeType: 'application/json', buffer });
+    await p.waitForTimeout(400);
+  };
+
+  await openMenu();
+  const noTable = (await p.textContent('.menu [data-status="tables"] span'))?.trim();
+  if (noTable !== 'No table file loaded') problems.push(`table status before load: "${noTable}"`);
+  await p.keyboard.press('Escape');
+
+  await pick('tables', 'tables.json', fixture);
+  const afterLoad = await statusOf('tables');
+  if (!afterLoad?.includes(fixtureName)) problems.push(`table status after load: "${afterLoad}"`);
+
+  const onePx = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+  const packText = JSON.stringify({ format: 1, systemId: 'dungeon', name: 'Made-up cards', cards: [{ id: 'a', name: 'Goblin Thing', level: 1, image: onePx }] });
+  await pick('cards', 'cards.json', Buffer.from(packText));
+  const cardsStatus = await statusOf('cards');
+  if (!cardsStatus?.includes('Made-up cards')) problems.push(`cards status after load: "${cardsStatus}"`);
+
+  await p.reload({ waitUntil: 'load' });
+  await p.waitForTimeout(1000);
+  const afterReload = await statusOf('tables');
+  if (!afterReload?.includes(fixtureName)) problems.push(`table status after reload: "${afterReload}"`);
+  if (!(await statusOf('cards'))?.includes('Made-up cards')) problems.push('cards status after reload lost the pack');
+  await openMenu();
+  await p.screenshot({ path: join(outDir, '25-menu-files.png') });
+  const small = await p.$$eval('.menu button', (els) => els.map((e) => e.getBoundingClientRect()).filter((r) => r.width > 0 && (r.width < 44 || r.height < 44)).length);
+  if (small) problems.push('menu buttons are under 44px');
+  await p.keyboard.press('Escape');
+
+  // A corrupt table file: message shown, status unchanged.
+  await pick('tables', 'bad.json', Buffer.from('{ not json'));
+  if (!(await p.isVisible("text=This isn't a 2D6 Dungeon table file"))) problems.push('corrupt table file: message not shown');
+  await p.screenshot({ path: join(outDir, '26-bad-table-file.png') });
+  await p.click('[role=alertdialog] button:text-is("OK")');
+  const afterBad = await statusOf('tables');
+  if (!afterBad?.includes(fixtureName)) problems.push(`table status changed after a bad file: "${afterBad}"`);
+
+  // Remove clears it, and stays cleared after a reload.
+  await openMenu();
+  await p.click('.menu [data-status="tables"] button:text-is("Remove")');
+  await p.keyboard.press('Escape');
+  await p.reload({ waitUntil: 'load' });
+  await p.waitForTimeout(1000);
+  if ((await statusOf('tables')) !== 'No table file loaded') problems.push('table file came back after Remove and reload');
   await ctx.close();
 }
 
