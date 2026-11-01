@@ -523,20 +523,43 @@ if (!(await page.isVisible('text=This replaces your current game.'))) problems.p
     const n = await p.$$eval('[aria-labelledby=wizard-title] button, [aria-labelledby=wizard-title] input', (els) => els.map((e) => e.getBoundingClientRect()).filter((r) => r.width > 0 && (r.width < 44 || r.height < 44)).length);
     if (n) problems.push(`wizard has ${n} controls under 44px`);
   };
+  // Column x positions must match across rows, nothing may overflow the dialog.
+  const wizAlign = async (where) => {
+    const r = await p.evaluate(() => {
+      const d = document.querySelector('[aria-labelledby=wizard-title]');
+      const body = d.querySelector('.body');
+      const xs = [...d.querySelectorAll('.mtable .row')].map((row) => [...row.querySelectorAll('.dcell, .dmg')].map((c) => Math.round(c.getBoundingClientRect().left)));
+      const dr = d.getBoundingClientRect();
+      const over = [...d.querySelectorAll('.mtable *, .weapons *')].filter((e) => e.getBoundingClientRect().right > dr.right + 1 || e.getBoundingClientRect().left < dr.left - 1).length;
+      return { xs, over, hs: body.scrollWidth > body.clientWidth + 1, dr: [dr.width, dr.height] };
+    });
+    if (!r.xs.length) problems.push(`wizard ${where}: no table rows`);
+    if (r.xs.some((x) => x.join() !== r.xs[0].join())) problems.push(`wizard ${where}: columns misaligned ${JSON.stringify(r.xs)}`);
+    if (r.over || r.hs) problems.push(`wizard ${where}: overflow (${r.over} elements, hscroll ${r.hs})`);
+  };
   const runWizard = async (name, shots) => {
     await openMenu();
     await p.click('[role=menuitem]:text-is("New game…")');
     await wiz('Next');
     await p.fill('[aria-labelledby=wizard-title] input[type=text]', name);
     await wiz('Next');
-    await p.click('.option:has-text("Practice Sword")');
+    // No weapon chosen: preview with disabled ticks, Next disabled.
     if (shots) await wshot('30-wizard-weapon.png');
-    await wizSmall();
-    await wiz('Next');
+    if (await p.isEnabled('.next')) problems.push('wizard Next enabled with no weapon chosen');
+    if (!(await p.isDisabled('.mtable button.row'))) problems.push('wizard preview ticks not disabled');
+    await wizAlign('weapon preview');
+    await p.click('.weapon:has-text("Training Club")');
+    await p.click('.mtable .row:has-text("Soft Bonk")');
+    await p.click('.weapon:has-text("Practice Sword")');
+    if (!(await p.isVisible('text=Your picks were cleared'))) problems.push('wizard switch-weapon notice missing');
+    if (await p.locator('.mtable [aria-checked=true]').count()) problems.push('picks not cleared on weapon switch');
     if (await p.isEnabled('.next')) problems.push('wizard Next enabled with no manoeuvres chosen');
-    await p.click('.option:has-text("Wobbly Poke")');
-    await p.click('.option:has-text("Gentle Swipe")');
+    await p.click('.mtable .row:has-text("Wobbly Poke")');
+    await p.click('.mtable .row:has-text("Gentle Swipe")');
+    if (!(await p.isVisible('text=Deselect one to choose another'))) problems.push('wizard limit hint missing');
+    await wizAlign('weapon+manoeuvres');
     if (shots) await wshot('31-wizard-manoeuvres.png');
+    await wizSmall();
     await wiz('Next');
     await p.click('.option:has-text("Padded Tablecloth")');
     await wiz('Next');
@@ -576,6 +599,22 @@ if (!(await page.isVisible('text=This replaces your current game.'))) problems.p
   await p.waitForTimeout(500);
   const afterCancel = await readSaved();
   if (!afterCancel.includes('Pip Tester') || afterCancel.includes('Nobody')) problems.push('Cancel changed the game');
+
+  // Portrait: the bigger wizard still fits and aligns.
+  await p.setViewportSize({ width: 820, height: 1180 });
+  await openMenu();
+  await p.click('[role=menuitem]:text-is("New game…")');
+  await wiz('Next');
+  await p.fill('[aria-labelledby=wizard-title] input[type=text]', 'Narrow');
+  await wiz('Next');
+  await wizAlign('weapon preview (820x1180)');
+  await p.click('.weapon:has-text("Training Club")');
+  await p.click('.mtable .row:has-text("Soft Bonk")');
+  await wizAlign('weapon+manoeuvres (820x1180)');
+  await wizSmall();
+  await wiz('Cancel');
+  await p.setViewportSize({ width: 1180, height: 820 });
+  await p.waitForTimeout(300);
 
   // The Hero panel: quick strip, limits, level-up and the sheet tabs.
   const panel = '.hero-panel';
@@ -980,9 +1019,9 @@ for (const reduced of [false, true]) {
     console.log(`${tag}: "${text}" faces ${faces.join(', ')}`);
     const m = text.match(/(\d+) × (\d+)/);
     if (!m) problems.push(`${tag}: result text missing: "${text}"`);
-    if (faces.length < 2 || faces.length % 2 !== 0) problems.push(`${tag}: expected pairs of die faces, got ${faces.length}`);
+    if (faces.length < 2 || faces.length % 2 !== 0) problems.push(`${tag}: expected equal red and blue face counts, got ${faces.length}`);
     else {
-      if (!faces.every((f, i) => f.startsWith(i % 2 === 0 ? 'red ' : 'blue '))) problems.push(`${tag}: face colours wrong: ${faces.join(', ')}`);
+      if (!faces.every((f, i) => f.startsWith(i < faces.length / 2 ? 'red ' : 'blue '))) problems.push(`${tag}: face colours wrong: ${faces.join(', ')}`);
       const sum = (c) => faces.filter((f) => f.startsWith(c)).reduce((a, f) => a + Number(f.split(' ')[1]), 0);
       if (m && (sum('red') !== Number(m[1]) || sum('blue') !== Number(m[2]))) problems.push(`${tag}: faces ${faces.join(', ')} do not add up to ${m[1]} × ${m[2]}`);
     }

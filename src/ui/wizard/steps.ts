@@ -3,7 +3,7 @@ import { MAX_MAP_SIZE } from '../../core/campaign';
 import { creationProblem } from '../../systems/dungeon/hero';
 import type { DungeonTables } from '../../systems/dungeon/tables';
 
-export type WizardStep = 'game' | 'name' | 'weapon' | 'manoeuvres' | 'armour' | 'scroll' | 'review';
+export type WizardStep = 'game' | 'name' | 'weapon' | 'armour' | 'scroll' | 'review';
 export type WizardMode = 'new-game' | 'add-hero';
 
 export const MIN_MAP_SIZE = 20;
@@ -22,7 +22,7 @@ export interface WizardDraft {
 
 export const emptyDraft = (): WizardDraft => ({ width: 25, height: 25, title: '', name: '', weapon: '', manoeuvres: [], armour: '', scroll: '' });
 
-const HERO_STEPS: WizardStep[] = ['name', 'weapon', 'manoeuvres', 'armour', 'scroll', 'review'];
+const HERO_STEPS: WizardStep[] = ['name', 'weapon', 'armour', 'scroll', 'review'];
 
 /** Add-hero skips the Game step: the map is already there. */
 export const wizardSteps = (mode: WizardMode): WizardStep[] => (mode === 'new-game' ? ['game', ...HERO_STEPS] : HERO_STEPS);
@@ -50,9 +50,8 @@ export function wizardStepValid(step: WizardStep, d: WizardDraft, t: DungeonTabl
   switch (step) {
     case 'name':
       return d.name.trim().length > 0;
-    case 'weapon':
-      return t.tables.weapons.some((w) => w.name === d.weapon);
-    case 'manoeuvres': {
+    case 'weapon': {
+      if (!t.tables.weapons.some((w) => w.name === d.weapon)) return false;
       const names = new Set(pickableManoeuvres(t, d.weapon).map((m) => m.name));
       return d.manoeuvres.length === startingManoeuvreCount(t) && d.manoeuvres.every((n) => names.has(n));
     }
