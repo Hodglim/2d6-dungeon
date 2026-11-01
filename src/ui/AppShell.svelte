@@ -11,6 +11,7 @@
   import { moveToken } from '../core/token';
   import type { Campaign, Cell, DungeonMap } from '../core/types';
   import { PlayFlow, type Step } from '../interaction/playflow';
+  import { setBeforeReload } from '../pwa/register';
   import { Autosaver } from '../persistence/autosave';
   import { exportCampaignFile, readImportText } from '../persistence/files';
   import { campaignFrom, metaFrom, type CampaignMeta } from '../persistence/record';
@@ -25,6 +26,7 @@
   import { classicTheme } from '../systems/dungeon/classic';
   import { drawOverlay, overlayFor, selectionOverlay } from './overlay';
   import { historyStore, type Tool } from './historyStore';
+  import UpdatePrompt from './UpdatePrompt.svelte';
   import MapView from './MapView.svelte';
   import InstallHint from './InstallHint.svelte';
   import LoadErrorDialog from './LoadErrorDialog.svelte';
@@ -157,6 +159,7 @@
     document.addEventListener('visibilitychange', onHide);
     window.addEventListener('pagehide', onPageHide);
 
+    setBeforeReload(() => saver.flush());
     saver.pause(); // nothing is saved until the start-up check has run
     void startUp(() => alive);
 
@@ -429,6 +432,7 @@
       onredo={() => history.redo()}
       onmenu={() => started && !loadError && (menuOpen = !menuOpen)}
     />
+    <UpdatePrompt />
     {#if saveFailing}<SaveBanner onexport={exportGame} />{/if}
     {#if showHint && started && !loadError}
       <InstallHint ios={iosTab} hasGame={hasContent($view.map)} onexport={exportGame} ondismiss={dismissHint} />
