@@ -22,8 +22,6 @@
     mergeKey?: string;
     /** Warn (never block) when this edit pushes the list past its limit. */
     limit?: ListKey;
-    /** The hero a typed edit was made against: dropped silently if the game has moved on. */
-    from?: Hero;
   }
 
   const TABS = [
@@ -58,13 +56,22 @@
   }
 
   function edit(next: Hero, opts: EditOpts = {}) {
-    if (opts.from && history.hero !== opts.from) return;
     const key = opts.limit;
     if (key && next[key].length > hero[key].length && overLimit(next, key)) {
       pending = { next, opts, message: limitMessage(next, key) };
       return;
     }
     commitHero(history, next, opts);
+  }
+
+  /**
+   * Typed text, rebased onto the current hero: other edits may have landed since typing began
+   * (iPad may not blur the box). Dropped when there is no hero or the field changed underneath.
+   */
+  function editText(field: 'narrative' | 'notes', from: Hero, value: string) {
+    const cur = history.hero as Hero | null;
+    if (!cur || cur[field] !== from[field] || cur[field] === value) return;
+    commitHero(history, { ...cur, [field]: value });
   }
 
   function addAnyway() {
@@ -121,9 +128,9 @@
       {:else if tab === 'potions'}
         <SheetPotions {hero} onedit={edit} />
       {:else if tab === 'story'}
-        <SheetNarrative {hero} onedit={edit} />
+        <SheetNarrative {hero} ontext={editText} />
       {:else}
-        <SheetItems {hero} onedit={edit} />
+        <SheetItems {hero} onedit={edit} ontext={editText} />
       {/if}
     </div>
   </div>

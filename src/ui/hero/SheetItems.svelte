@@ -6,9 +6,10 @@
 
   interface Props {
     hero: Hero;
-    onedit: (next: Hero, opts?: { label?: string; mergeKey?: string; limit?: ListKey; from?: Hero }) => void;
+    onedit: (next: Hero, opts?: { label?: string; mergeKey?: string; limit?: ListKey }) => void;
+    ontext: (field: 'notes', from: Hero, value: string) => void;
   }
-  let { hero, onedit }: Props = $props();
+  let { hero, onedit, ontext }: Props = $props();
 
   const slots = $derived(Math.max(hero.rules.limits.largeItems, hero.largeItems.length));
   let slotText = $state('');
@@ -27,7 +28,7 @@
   function setNotes() {
     const from = typedFrom;
     typedFrom = null;
-    if (from && notesBox && notesBox.value !== from.notes) onedit({ ...from, notes: notesBox.value }, { from });
+    if (from && notesBox && notesBox.value !== from.notes) ontext('notes', from, notesBox.value);
   }
   function setRationsNote(e: Event) {
     const v = (e.currentTarget as HTMLInputElement).value;

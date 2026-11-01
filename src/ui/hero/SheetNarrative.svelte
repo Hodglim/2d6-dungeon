@@ -3,9 +3,9 @@
 
   interface Props {
     hero: Hero;
-    onedit: (next: Hero, opts?: { from?: Hero }) => void;
+    ontext: (field: 'narrative', from: Hero, value: string) => void;
   }
-  let { hero, onedit }: Props = $props();
+  let { hero, ontext }: Props = $props();
 
   let area: HTMLTextAreaElement | undefined;
   /** The hero the text is being typed against; the teardown commit never reads the (possibly null) prop. */
@@ -14,7 +14,7 @@
   function commit() {
     const from = typedFrom;
     typedFrom = null;
-    if (from && area && area.value !== from.narrative) onedit({ ...from, narrative: area.value }, { from });
+    if (from && area && area.value !== from.narrative) ontext('narrative', from, area.value);
   }
 
   // Tapping a button on iPad Safari may not blur the box: keep the text when the page goes away.

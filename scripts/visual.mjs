@@ -706,6 +706,17 @@ if (!(await page.isVisible('text=This replaces your current game.'))) problems.p
   await p.waitForSelector('.hero-panel');
   if (!(await p.isVisible('.hero-panel >> text=Load your table file to choose manoeuvres'))) problems.push('no-tables manoeuvre hint missing');
 
+  // Typed text with no blur, then another edit, then a tab switch: both survive.
+  await p.click('.hero-panel #hero-tab-story');
+  await p.fill('.hero-panel textarea', 'typed before an HP tap');
+  const hpNow = Number(await val('HP'));
+  await p.evaluate(() => document.querySelector('.hero-panel [aria-label="HP down"]').click());
+  await p.evaluate(() => document.querySelector('.hero-panel #hero-tab-items').click());
+  await p.waitForTimeout(1500);
+  const rebased = await readSaved();
+  if (!rebased.includes('typed before an HP tap')) problems.push('typed narrative lost after another edit');
+  if (Number(await val('HP')) !== hpNow - 1) problems.push('HP tap lost when rebasing typed text');
+
   // Teardown with typed text: New game without a hero while the Story tab is open must not crash.
   const errorsBefore = errors.length;
   await p.click('.hero-panel #hero-tab-story');
