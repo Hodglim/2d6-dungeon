@@ -3,6 +3,8 @@
 export const TABLE_FILE_FORMAT = 1;
 export const MAX_TABLE_FILE_BYTES = 2_000_000;
 
+import { dungeonSystem } from './index';
+
 /** Die faces 1-6, in printed order; primary (red) first. */
 export type Dice = number[];
 
@@ -23,6 +25,24 @@ export interface Limits {
   scrolls: number;
   largeItems: number;
   armour: number;
+}
+
+export type DoorId = 'archway' | 'wooden' | 'metal' | 'reinforced' | 'curtain' | 'portcullis' | 'stoneSlab';
+export type ExitSpec = { door: DoorId; locked?: boolean } | 'random';
+export interface RoomEntry { type: string; description: string; encounter: string; exit: ExitSpec; unique: boolean }
+/** Small rooms always have archway exits, so there is no exit column. */
+export interface SmallRoomEntry { type: string; description: string; unique: boolean }
+export interface LevelTables {
+  level: number;
+  name: string;
+  /** Key into exitTables, e.g. "EXT1". */
+  exitTable: string;
+  /** Keys "11".."66". */
+  rooms: Record<string, RoomEntry>;
+  /** Keys "2".."12". */
+  smallRooms: Record<string, SmallRoomEntry>;
+  /** Keys "2".."12". */
+  largeRooms: Record<string, RoomEntry>;
 }
 
 export interface DungeonTables {
@@ -47,6 +67,10 @@ export interface DungeonTables {
     };
     favourBoxes: number;
     limits: Limits;
+    /** Room tables per dungeon level (optional, so older files still load). Not the hero `levels` above. */
+    dungeonLevels?: LevelTables[];
+    /** Exit Type tables, each keyed "11".."66". */
+    exitTables?: Record<string, Record<string, Exclude<ExitSpec, 'random'>>>;
   };
 }
 
@@ -132,6 +156,58 @@ const TABLES: [string, string, Check][] = [
   ['limits', 'Limits', (v) => (isObj(v) ? field(v, 'Limits', ['potions', 'scrolls', 'largeItems', 'armour'], isCount) : 'Limits')],
 ];
 
+const D66_KEYS = [1, 2, 3, 4, 5, 6].flatMap((a) => [1, 2, 3, 4, 5, 6].map((b) => `${a}${b}`));
+const TWO_D6_KEYS = Array.from({ length: 11 }, (_, i) => String(i + 2));
+const DOOR_IDS: string[] = dungeonSystem.doorTypes.map((d) => d.id);
+
+/** Every key present, each entry an object; `each` checks one entry and returns a place or null. */
+const keyed = (at: string, v: unknown, keys: string[], each: (e: Record<string, unknown>, eat: string) => string | null): string | null => {
+  if (!isObj(v)) return at;
+  for (const k of keys) {
+    const e = v[k];
+    if (!isObj(e)) return `${at} ${k}`;
+    const p = each(e, `${at} ${k}`);
+    if (p) return p;
+  }
+  return null;
+};
+const exitProblem = (at: string, v: unknown, allowRandom: boolean): string | null => {
+  if (allowRandom && v === 'random') return null;
+  if (isObj(v) && isStr(v.door) && DOOR_IDS.includes(v.door) && (v.locked === undefined || typeof v.locked === 'boolean')) return null;
+  return `${at} exit — use one of ${DOOR_IDS.join(', ')}`;
+};
+const roomEntry = (r: Record<string, unknown>, at: string, hasExit: boolean, hasEncounter: boolean): string | null =>
+  field(r, at, hasEncounter ? ['type', 'description', 'encounter'] : ['type', 'description'], isStr) ??
+  (typeof r.unique === 'boolean' ? null : `${at} unique`) ??
+  (hasExit ? exitProblem(at, r.exit, true) : null);
+
+function roomTablesProblem(t: Record<string, unknown>): string | null {
+  const exitTables = t.exitTables;
+  if (exitTables !== undefined) {
+    if (!isObj(exitTables)) return 'Exit Tables';
+    for (const [name, table] of Object.entries(exitTables)) {
+      const p = keyed(`Exit Tables ${name}`, table, D66_KEYS, (e, at) => exitProblem(at, e, false));
+      if (p) return p;
+    }
+  }
+  const dl = t.dungeonLevels;
+  if (dl === undefined) return null;
+  const seen = new Set<number>();
+  return rows('Dungeon Levels', dl, false, (l, at) => {
+    const p = field(l, at, ['name', 'exitTable'], isStr);
+    if (p) return p;
+    if (!isInt(l.level) || (l.level as number) < 1 || (l.level as number) > 10) return `${at} level (must be a whole number from 1 to 10)`;
+    if (seen.has(l.level as number)) return `${at} level (another entry already uses level ${l.level})`;
+    seen.add(l.level as number);
+    if (!isObj(exitTables) || !(l.exitTable as string in exitTables)) {
+      return `${at} exitTable (no table named ${l.exitTable} in Exit Tables)`;
+    }
+    return keyed(`${at} rooms`, l.rooms, D66_KEYS, (r, rat) => roomEntry(r, rat, true, true)) ??
+      keyed(`${at} smallRooms`, l.smallRooms, TWO_D6_KEYS, (r, rat) => roomEntry(r, rat, false, false)) ??
+      keyed(`${at} largeRooms`, l.largeRooms, TWO_D6_KEYS, (r, rat) => roomEntry(r, rat, true, true));
+  });
+}
+
 const damaged = (detail: string): TablesParse => ({ ok: false, error: `The table file is damaged: ${detail}` });
 
 /** Size guard first, then JSON parse and full validation. */
@@ -178,5 +254,7 @@ export function validateTableFile(data: unknown): TablesParse {
       return damaged(`Weapons[${i}] has fewer than ${need} level 1 manoeuvres`);
     }
   }
+  const roomProblem = roomTablesProblem(t);
+  if (roomProblem) return damaged(roomProblem);
   return { ok: true, tables: data as unknown as DungeonTables };
 }

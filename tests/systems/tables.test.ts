@@ -105,6 +105,55 @@ describe('parseTableFile', () => {
   });
 });
 
+describe('room and exit tables', () => {
+  it('parses the fixture with a dungeon level and exit table', () => {
+    const r = parseTableFile(text, text.length);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.tables.tables.dungeonLevels?.[0]?.name).toBe('Test Halls');
+      expect(Object.keys(r.tables.tables.exitTables ?? {})).toEqual(['EXT1']);
+    }
+  });
+  it('refuses a missing D66 key in rooms, naming it', () => {
+    const o = clone(); delete o.tables.dungeonLevels[0].rooms['34'];
+    expect(err(parse(o))).toBe('The table file is damaged: Dungeon Levels[0] rooms 34');
+  });
+  it('refuses a missing key in an exit table, small rooms and large rooms', () => {
+    const o = clone(); delete o.tables.exitTables.EXT1['66'];
+    expect(err(parse(o))).toBe('The table file is damaged: Exit Tables EXT1 66');
+    const p = clone(); delete p.tables.dungeonLevels[0].smallRooms['7'];
+    expect(err(parse(p))).toBe('The table file is damaged: Dungeon Levels[0] smallRooms 7');
+    const q = clone(); delete q.tables.dungeonLevels[0].largeRooms['12'];
+    expect(err(parse(q))).toBe('The table file is damaged: Dungeon Levels[0] largeRooms 12');
+  });
+  it('refuses an unknown door id and lists the allowed ones', () => {
+    const o = clone(); o.tables.dungeonLevels[0].rooms['23'].exit = { door: 'trapdoor' };
+    expect(err(parse(o))).toBe(
+      'The table file is damaged: Dungeon Levels[0] rooms 23 exit — use one of archway, wooden, metal, reinforced, curtain, portcullis, stoneSlab',
+    );
+    const p = clone(); p.tables.exitTables.EXT1['11'] = 'random';
+    expect(err(parse(p))).toMatch(/Exit Tables EXT1 11/);
+  });
+  it('refuses an exitTable that names no table', () => {
+    const o = clone(); o.tables.dungeonLevels[0].exitTable = 'EXQ9';
+    expect(err(parse(o))).toBe('The table file is damaged: Dungeon Levels[0] exitTable (no table named EXQ9 in Exit Tables)');
+  });
+  it('refuses a duplicate or out-of-range level', () => {
+    const o = clone(); o.tables.dungeonLevels.push(structuredClone(o.tables.dungeonLevels[0]));
+    expect(err(parse(o))).toMatch(/Dungeon Levels\[1\] level/);
+    const p = clone(); p.tables.dungeonLevels[0].level = 11;
+    expect(err(parse(p))).toMatch(/Dungeon Levels\[0\] level/);
+  });
+  it('refuses bad text fields', () => {
+    const o = clone(); o.tables.dungeonLevels[0].rooms['11'].encounter = 3;
+    expect(err(parse(o))).toBe('The table file is damaged: Dungeon Levels[0] rooms 11 encounter');
+  });
+  it('still parses a file with no dungeon levels or exit tables', () => {
+    const o = clone(); delete o.tables.dungeonLevels; delete o.tables.exitTables;
+    expect(parse(o).ok).toBe(true);
+  });
+});
+
 describe('docs/table-file-format.md', () => {
   it('the inline example is a valid table file', () => {
     const doc = readFileSync('docs/table-file-format.md', 'utf8');
