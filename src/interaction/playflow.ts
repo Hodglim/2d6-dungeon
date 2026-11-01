@@ -99,6 +99,7 @@ export class PlayFlow {
   private recorded: string[] = [];
   private committing = false;
   private walk: Cell[] | null = null;
+  private readonly unsubscribe: () => void;
 
   constructor(
     private readonly history: History,
@@ -106,11 +107,16 @@ export class PlayFlow {
     private readonly newId: IdFn,
   ) {
     this.base = history.map;
-    history.subscribe(() => {
+    this.unsubscribe = history.subscribe(() => {
       if (this.committing) return;
       this.walk = null;
       this.reset(null);
     });
+  }
+
+  /** Stops listening to History; later History changes no longer touch this flow. */
+  dispose(): void {
+    this.unsubscribe();
   }
 
   get step(): Step {

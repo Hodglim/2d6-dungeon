@@ -18,7 +18,7 @@ export interface HistoryState {
   future: HistoryEntry[];
 }
 
-export const HISTORY_CAP = 200;
+export const HISTORY_CAP = 20;
 
 /**
  * The single undo/redo timeline for every action. Stores map snapshots (unchanged parts
@@ -47,6 +47,15 @@ export class History {
 
   exportState(): HistoryState {
     return { current: this.current, past: [...this.past], future: [...this.future] };
+  }
+
+  /** Replaces current/past/future in place (past/future trimmed to the cap) and emits once,
+   * so existing subscribers keep working. Trusts its input like fromState. */
+  restore(state: HistoryState): void {
+    this.current = state.current;
+    this.past = state.past.slice(-this.cap);
+    this.future = state.future.slice(-this.cap);
+    this.emit();
   }
 
   get map(): DungeonMap {

@@ -1,6 +1,8 @@
 import { createCampaign } from '../../src/core/campaign';
 import { sequentialIds } from '../../src/core/ids';
-import { parseCampaign, serializeCampaign } from '../../src/core/serialize';
+import { History } from '../../src/core/history';
+import { addRoom } from '../../src/core/commands';
+import { mapProblem, parseCampaign, parseHistoryState, serializeCampaign } from '../../src/core/serialize';
 import { dungeonSystem } from '../../src/systems/dungeon';
 import { door, room } from './fixtures';
 
@@ -119,5 +121,53 @@ describe('serialize / parse', () => {
     const c = { ...sample(), schemaVersion: 0 };
     const migs = { 0: () => null as unknown as Record<string, unknown> };
     expect(parseCampaign(JSON.stringify(c), migs, 1)).toEqual({ ok: false, error: 'Cannot upgrade this file from version 0.' });
+  });
+});
+
+describe('mapProblem', () => {
+  it('accepts a valid map and describes a broken one', () => {
+    expect(mapProblem(sample().maps[0])).toBeNull();
+    const { rooms: _rooms, ...noRooms } = sample().maps[0]!;
+    expect(typeof mapProblem(noRooms)).toBe('string');
+  });
+});
+
+describe('parseHistoryState', () => {
+  function state() {
+    const h = new History(sample().maps[0]!);
+    h.execute(addRoom(room('r2', 7, 7, 2, 2, 'room', 2)));
+    h.execute(addRoom(room('r3', 1, 7, 2, 2, 'room', 3)));
+    h.undo();
+    return JSON.parse(JSON.stringify(h.exportState())) as Record<string, any>;
+  }
+
+  it('accepts a valid exported state', () => {
+    const s = state();
+    expect(parseHistoryState(s)).toEqual({ ok: true, state: s });
+  });
+
+  it('rejects a broken map deep in past, mentioning the history', () => {
+    const s = state();
+    s.past[0].map.rooms.push(room('x', 2, 2, 3, 3, 'room', 9), room('y', 3, 3, 3, 3, 'room', 10));
+    const r = parseHistoryState(s);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/history/i);
+  });
+
+  it('rejects a non-string label', () => {
+    const s = state();
+    s.past[0].label = 5;
+    expect(parseHistoryState(s).ok).toBe(false);
+  });
+
+  it('rejects more than 20 past entries', () => {
+    const s = state();
+    s.past = Array.from({ length: 21 }, () => s.past[0]);
+    expect(parseHistoryState(s).ok).toBe(false);
+  });
+
+  it('rejects a non-object', () => {
+    expect(parseHistoryState(null).ok).toBe(false);
+    expect(parseHistoryState('x').ok).toBe(false);
   });
 });

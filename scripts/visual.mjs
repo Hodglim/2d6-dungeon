@@ -13,7 +13,10 @@ const [url = 'http://localhost:5173', outDir = 'visual'] = process.argv.slice(2)
 mkdirSync(outDir, { recursive: true });
 
 const browser = await firefox.launch();
-const page = await browser.newPage({ viewport: { width: 1180, height: 820 }, deviceScaleFactor: 2, hasTouch: true });
+// The home-screen hint is tested in step 10; the other steps start with it dismissed so layouts don't shift.
+const mainCtx = await browser.newContext({ viewport: { width: 1180, height: 820 }, deviceScaleFactor: 2, hasTouch: true });
+await mainCtx.addInitScript(() => localStorage.setItem('2d6.installHintDismissed', '1'));
+const page = await mainCtx.newPage();
 const errors = [];
 const problems = [];
 page.on('pageerror', (e) => errors.push(e.message));
@@ -107,7 +110,17 @@ await checkPanel('entrance label');
 await shot('05-label.png');
 await panelButton('Done');
 await stepIs('idle', 'labelling the entrance room');
-await page.waitForTimeout(1500); // token walks in
+await page.waitForTimeout(1500); // token walks in (also longer than the autosave debounce)
+
+// 2b. Reload: the autosave brings the entrance back, with its undo step.
+await page.reload({ waitUntil: 'load' });
+await page.waitForTimeout(1000);
+const undoAfterReload = (await page.textContent('header.toolbar button.history'))?.replace(/\s+/g, ' ').trim();
+console.log(`Undo after reload: ${undoAfterReload}`);
+if (!undoAfterReload?.endsWith('Undo Add entrance')) problems.push(`after reload the undo button reads "${undoAfterReload}", expected "Undo Add entrance"`);
+if ((await page.textContent('header.toolbar .coverage'))?.trim() === '0%') problems.push('after reload the map is empty');
+await stepIs('idle', 'reloading');
+await shot('20-after-reload.png');
 
 // 3. Room 2 from the entrance room's north exit (12,20): doubles 4-4, then 2-1 → 6×5.
 await tapWorld(12.5, 20);
@@ -311,7 +324,7 @@ await shot('08-menu.png');
 
 // 7. Load the demo map (the map has content now, so confirm), then wheel-zoom on the map.
 await page.click('text=Load demo map');
-await page.click('button:has-text("Replace map")');
+await page.click('[role=alertdialog] button:text-is("Replace")');
 await page.waitForTimeout(500);
 const canvas = await page.$('canvas');
 const box = await canvas.boundingBox();
@@ -323,10 +336,131 @@ await shot('09-demo.png');
 // 8. New map dialog shows the discard confirmation over a map with content.
 await page.click('header.toolbar button[aria-label="Menu"]');
 await page.click('text=New map…');
-await page.click('button:has-text("Create")');
+await page.click('button:text-is("Create")');
 await page.waitForTimeout(200);
 await shot('10-new-map-confirm.png');
-if (!(await page.isVisible("text=This replaces the current map — there's no saving yet"))) problems.push('new map confirmation not shown');
+if (!(await page.isVisible('text=This replaces your current game.'))) problems.push('new game confirmation not shown');
+
+// 9. A corrupt autosave record (fresh browser context): blocking dialog; Start new game asks first; Cancel leaves it all alone.
+{
+  const ctx = await browser.newContext({ viewport: { width: 1180, height: 820 }, deviceScaleFactor: 2, hasTouch: true });
+  await ctx.addInitScript(() => localStorage.setItem('2d6.installHintDismissed', '1'));
+  const p2 = await ctx.newPage();
+  p2.on('pageerror', (e) => errors.push(e.message));
+  await p2.goto(url, { waitUntil: 'load' });
+  await p2.waitForTimeout(800); // the app opens (and creates) the database
+  const readRecord = () =>
+    p2.evaluate(
+      () =>
+        new Promise((resolve, reject) => {
+          const r = indexedDB.open('2d6-map-maker', 1);
+          r.onsuccess = () => {
+            const g = r.result.transaction('saves').objectStore('saves').get('current');
+            g.onsuccess = () => resolve(JSON.stringify(g.result ?? null));
+            g.onerror = () => reject(g.error);
+          };
+          r.onerror = () => reject(r.error);
+        }),
+    );
+  await p2.evaluate(
+    () =>
+      new Promise((resolve, reject) => {
+        const r = indexedDB.open('2d6-map-maker', 1);
+        r.onsuccess = () => {
+          const tx = r.result.transaction('saves', 'readwrite');
+          tx.objectStore('saves').put({ format: 1, broken: true }, 'current');
+          tx.oncomplete = () => resolve(null);
+          tx.onerror = () => reject(tx.error);
+        };
+        r.onerror = () => reject(r.error);
+      }),
+  );
+  const corrupt = await readRecord();
+  await p2.reload({ waitUntil: 'load' });
+  await p2.waitForTimeout(800);
+  if (!(await p2.isVisible("text=Your saved game couldn't be loaded"))) problems.push('corrupt record: load-error dialog not shown');
+  await p2.screenshot({ path: join(outDir, '21-load-error.png') });
+  await p2.click('button:text-is("Start new game")');
+  await p2.waitForTimeout(200);
+  if (!(await p2.isVisible('text=This replaces your saved game.'))) problems.push('Start new game did not ask for confirmation');
+  if (!(await p2.isVisible('button:text-is("Export first")'))) problems.push('damaged-record confirmation lacks Export first');
+  await p2.screenshot({ path: join(outDir, '22-load-error-confirm.png') });
+  await p2.click('[role=alertdialog] button:text-is("Cancel")');
+  await p2.waitForTimeout(1500);
+  if (!(await p2.isVisible("text=Your saved game couldn't be loaded"))) problems.push('Cancel did not leave the load-error dialog in place');
+  if ((await readRecord()) !== corrupt) problems.push('the damaged record changed without the user choosing');
+  await ctx.close();
+}
+
+// 10. Home-screen hint: shows in a tab, doesn't cover or break the map, dismisses and stays dismissed; hidden when standalone.
+{
+  const mk = async (init) => {
+    const ctx = await browser.newContext({ viewport: { width: 1180, height: 820 }, deviceScaleFactor: 2, hasTouch: true });
+    if (init) await ctx.addInitScript(init);
+    const p = await ctx.newPage();
+    p.on('pageerror', (e) => errors.push(e.message));
+    await p.goto(url, { waitUntil: 'load' });
+    await p.waitForTimeout(800);
+    return { ctx, p };
+  };
+  const geom = (p) => p.evaluate(() => ({
+    hint: document.querySelector('[aria-label="Install the app"]')?.getBoundingClientRect().toJSON() ?? null,
+    tool: document.querySelector('header.toolbar').getBoundingClientRect().toJSON(),
+    map: document.querySelector('canvas').getBoundingClientRect().toJSON(),
+    panel: document.querySelector('aside.panel').getBoundingClientRect().toJSON(),
+    canvasW: document.querySelector('canvas').width, canvasH: document.querySelector('canvas').height,
+  }));
+  const hintSel = '[aria-label="Install the app"]';
+
+  // 10a. Empty game in a tab: hint shown, no Export; the map sits below it, canvas matches its box.
+  let { ctx, p } = await mk();
+  if (!(await p.isVisible(hintSel))) problems.push('hint not shown in a normal tab');
+  const g = await geom(p);
+  if (g.hint && g.map.top < g.hint.bottom - 0.5) problems.push('hint overlaps the map');
+  if (g.hint && g.hint.top < g.tool.bottom - 0.5) problems.push('hint overlaps the toolbar');
+  if (Math.abs(g.canvasW - Math.round(g.map.width * 2)) > 2 || Math.abs(g.canvasH - Math.round(g.map.height * 2)) > 2) problems.push(`canvas not resized to map box: ${g.canvasW}x${g.canvasH} vs ${g.map.width}x${g.map.height}`);
+  if (g.panel.top < g.hint.bottom - 0.5) problems.push('hint overlaps the panel');
+  if (await p.isVisible(`${hintSel} button:text-is("Export")`)) problems.push('Export shown for an empty game');
+  console.log(`Hint ${g.hint.height}px tall, map top ${g.map.top}`);
+  await p.screenshot({ path: join(outDir, '23-install-hint-empty.png') });
+
+  // 10b. With a room on the map: the move-game line and Export button appear.
+  await p.evaluate(() => 0);
+  await p.click('header.toolbar button[aria-label="Menu"]');
+  await p.click('text=Load demo map');
+  await p.waitForTimeout(600);
+  if (!(await p.isVisible(`${hintSel} button:text-is("Export")`))) problems.push('hint lacks Export once the map has rooms');
+  if (!(await p.isVisible('text=Move this game into the installed app: Export it here, then Import it there'))) problems.push('move-game line missing');
+  const small = await p.$$eval(`${hintSel} button`, (els) => els.map((e) => e.getBoundingClientRect()).filter((r) => r.width < 44 || r.height < 44).length);
+  if (small) problems.push('hint buttons are under 44px');
+  const g2 = await geom(p);
+  if (g2.map.top < g2.hint.bottom - 0.5) problems.push('hint (with game) overlaps the map');
+  await p.screenshot({ path: join(outDir, '24-install-hint-with-game.png') });
+
+  // 10c. The Export button downloads a file.
+  const [dl] = await Promise.all([p.waitForEvent('download', { timeout: 5000 }).catch(() => null), p.click(`${hintSel} button:text-is("Export")`)]);
+  if (!dl) problems.push('hint Export did not download a file');
+
+  // 10d. Dismiss: gone, and the map grows; stays gone after a reload.
+  await p.click(`${hintSel} button:text-is("Dismiss")`);
+  await p.waitForTimeout(400);
+  if (await p.isVisible(hintSel)) problems.push('hint still visible after Dismiss');
+  const g3 = await geom(p);
+  if (g3.map.top > g3.tool.bottom + 0.5) problems.push('map did not close up after the hint was dismissed');
+  if (Math.abs(g3.canvasH - Math.round(g3.map.height * 2)) > 2) problems.push('canvas not resized after dismissal');
+  await p.reload({ waitUntil: 'load' });
+  await p.waitForTimeout(800);
+  if (await p.isVisible(hintSel)) problems.push('hint came back after reload');
+  await ctx.close();
+
+  // 10e. Standalone (matchMedia override): never shown.
+  ({ ctx, p } = await mk(() => {
+    const orig = window.matchMedia.bind(window);
+    window.matchMedia = (q) => (q.includes('display-mode: standalone') ? { ...orig(q), matches: true, media: q } : orig(q));
+  }));
+  if (await p.isVisible(hintSel)) problems.push('hint shown in standalone mode');
+  await ctx.close();
+}
 
 await browser.close();
 if (errors.length) problems.push('page errors:\n' + errors.join('\n'));

@@ -11,13 +11,11 @@
   import { MAX_MAP_SIZE } from '../core/campaign';
 
   interface Props {
-    /** The current map has content that would be lost, so ask before replacing it. */
-    confirmDiscard: boolean;
     oncreate: (values: NewMapValues) => void;
     oncancel: () => void;
   }
 
-  let { confirmDiscard, oncreate, oncancel }: Props = $props();
+  let { oncreate, oncancel }: Props = $props();
 
   const MIN = 20;
   const MAX = MAX_MAP_SIZE;
@@ -26,7 +24,6 @@
   let height = $state(25);
   let level = $state('');
   let title = $state('');
-  let confirming = $state(false);
 
   function sizeError(name: string, v: unknown): string | null {
     return typeof v === 'number' && Number.isInteger(v) && v >= MIN && v <= MAX ? null : `${name} must be a whole number from ${MIN} to ${MAX}`;
@@ -36,10 +33,6 @@
   function submit(e: SubmitEvent) {
     e.preventDefault();
     if (error) return;
-    if (confirmDiscard && !confirming) {
-      confirming = true;
-      return;
-    }
     oncreate({ width, height, level: level.trim(), title: title.trim() });
   }
 </script>
@@ -50,25 +43,17 @@
   <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="new-map-title">
     <form onsubmit={submit}>
       <h2 id="new-map-title">New map</h2>
-      {#if confirming}
-        <p class="warn">This replaces the current map — there's no saving yet</p>
-        <div class="actions">
-          <button type="button" onclick={() => (confirming = false)}>Back</button>
-          <button type="submit" class="primary">Replace map</button>
-        </div>
-      {:else}
-        <div class="row">
-          <label>Width <input type="number" min={MIN} max={MAX} step="1" inputmode="numeric" bind:value={width} /></label>
-          <label>Height <input type="number" min={MIN} max={MAX} step="1" inputmode="numeric" bind:value={height} /></label>
-        </div>
-        <label>Level <input type="text" bind:value={level} placeholder="e.g. 1" /></label>
-        <label>Title <input type="text" bind:value={title} placeholder="Optional" /></label>
-        {#if error}<p class="error" role="alert">{error}</p>{/if}
-        <div class="actions">
-          <button type="button" onclick={oncancel}>Cancel</button>
-          <button type="submit" class="primary" disabled={!!error}>Create</button>
-        </div>
-      {/if}
+      <div class="row">
+        <label>Width <input type="number" min={MIN} max={MAX} step="1" inputmode="numeric" bind:value={width} /></label>
+        <label>Height <input type="number" min={MIN} max={MAX} step="1" inputmode="numeric" bind:value={height} /></label>
+      </div>
+      <label>Level <input type="text" bind:value={level} placeholder="e.g. 1" /></label>
+      <label>Title <input type="text" bind:value={title} placeholder="Optional" /></label>
+      {#if error}<p class="error" role="alert">{error}</p>{/if}
+      <div class="actions">
+        <button type="button" onclick={oncancel}>Cancel</button>
+        <button type="submit" class="primary" disabled={!!error}>Create</button>
+      </div>
     </form>
   </div>
 </div>
@@ -132,11 +117,6 @@
     margin: 0;
     color: var(--danger);
     font-size: 17px;
-  }
-  .warn {
-    margin: 0;
-    font-size: 19px;
-    line-height: 1.4;
   }
   .actions {
     display: flex;

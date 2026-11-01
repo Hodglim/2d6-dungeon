@@ -1,6 +1,7 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { demoMap } from '../app/demo';
-  import { createMap } from '../core/campaign';
+  import { createCampaign } from '../core/campaign';
   import { addFeature, type Command } from '../core/commands';
   import { rectContains } from '../core/geometry';
   import { type ExecResult, History } from '../core/history';
@@ -8,8 +9,16 @@
   import { findPath } from '../core/pathfinding';
   import { coverage } from '../core/query';
   import { moveToken } from '../core/token';
-  import type { Cell, DungeonMap } from '../core/types';
+  import type { Campaign, Cell, DungeonMap } from '../core/types';
   import { PlayFlow, type Step } from '../interaction/playflow';
+  import { setBeforeReload } from '../pwa/register';
+  import { Autosaver } from '../persistence/autosave';
+  import { exportCampaignFile, readImportText } from '../persistence/files';
+  import { campaignFrom, metaFrom, type CampaignMeta } from '../persistence/record';
+  import { shareOrDownload } from '../persistence/share';
+  import { isIosSafari, isStandalone, readDisplayEnv } from '../persistence/standalone';
+  import { decideStartup, loadWithTimeout } from '../persistence/startup';
+  import { IdbSaveStore } from '../persistence/store';
   import type { Point } from '../render/camera';
   import type { Pick } from '../render/hit';
   import { DEFAULT_TOGGLES, type DisplayToggles } from '../render/renderer';
@@ -17,14 +26,30 @@
   import { classicTheme } from '../systems/dungeon/classic';
   import { drawOverlay, overlayFor, selectionOverlay } from './overlay';
   import { historyStore, type Tool } from './historyStore';
+  import UpdatePrompt from './UpdatePrompt.svelte';
   import MapView from './MapView.svelte';
+  import InstallHint from './InstallHint.svelte';
+  import LoadErrorDialog from './LoadErrorDialog.svelte';
   import Menu from './Menu.svelte';
   import NewMapDialog, { type NewMapValues } from './NewMapDialog.svelte';
+  import ReplaceGameDialog from './ReplaceGameDialog.svelte';
+  import SaveBanner from './SaveBanner.svelte';
   import StepPanel from './StepPanel.svelte';
   import { resolveSelection, routeEditorTap, routePlayTap, type Selection } from './tapRouting';
   import Toolbar from './Toolbar.svelte';
 
-  const history = new History(createMap(dungeonSystem, { width: 25, height: 25 }));
+  function activeMap(c: Campaign): DungeonMap {
+    const m = c.maps.find((x) => x.id === c.activeMapId) ?? c.maps[0];
+    if (!m) throw new Error('Campaign has no map');
+    return m;
+  }
+
+  const firstGame = createCampaign(dungeonSystem, 'My dungeon', { width: 25, height: 25 });
+  const history = new History(activeMap(firstGame));
+  /** Everything about the game except its map (which is the history's current). Replaced with the game. */
+  let meta: CampaignMeta = metaFrom(firstGame);
+  const store = new IdbSaveStore();
+  const saver = new Autosaver(history, store, () => meta);
   const view = historyStore(history);
   // Real dice and ids for the app. Its History listener cancels a draft on any Undo/Redo.
   const flow = new PlayFlow(history, Math.random, randomId);
@@ -33,7 +58,36 @@
   let toggles = $state<DisplayToggles>({ ...DEFAULT_TOGGLES });
   let menuOpen = $state(false);
   let newMapOpen = $state(false);
-  let confirmDemo = $state(false);
+  /** A "this replaces your game" confirmation waiting for an answer. */
+  let pendingReplace = $state<{ title: string; message?: string; onexport?: () => void; run: () => void } | null>(null);
+  let saveFailing = $state(false);
+  const DISMISS_KEY = '2d6.installHintDismissed';
+  const displayEnv = readDisplayEnv();
+  const iosTab = isIosSafari(displayEnv);
+  function readDismissed(): boolean {
+    try {
+      return localStorage.getItem(DISMISS_KEY) === '1';
+    } catch {
+      return false;
+    }
+  }
+  /** The home-screen hint shows in a browser tab only, until dismissed. */
+  let hintDismissed = $state(readDismissed());
+  const showHint = $derived(!isStandalone(displayEnv) && !hintDismissed);
+  function dismissHint() {
+    hintDismissed = true;
+    try {
+      localStorage.setItem(DISMISS_KEY, '1');
+    } catch {
+      // not remembered; hidden for this session
+    }
+  }
+  /** False until the saved game has been loaded and checked: nothing may change the game before then. */
+  let started = $state(false);
+  /** Set when the saved record can't be loaded: it stays untouched until the user picks Import or Start new game. */
+  let loadError = $state<{ kind: 'damaged'; error: string; raw: unknown } | { kind: 'unreadable'; error: string } | null>(null);
+  let importError = $state<string | null>(null);
+  let fileInput: HTMLInputElement | undefined;
   let panelCollapsed = $state(false);
   let mapView = $state<ReturnType<typeof MapView>>();
   let step = $state.raw<Step>(flow.step);
@@ -64,8 +118,8 @@
     return tool === 'play' && step.kind !== 'idle' ? flow.draftMap : committed;
   });
 
-  /** A modal (menu, New map dialog, demo confirm) is open: map taps and shortcuts are off. */
-  const modalOpen = $derived(menuOpen || newMapOpen || confirmDemo);
+  /** A modal (menu, dialogs, start-up) is open: map taps and shortcuts are off. */
+  const modalOpen = $derived(!started || !!loadError || menuOpen || newMapOpen || !!pendingReplace || !!importError);
 
   // The overlay follows the step (and the map, for idle highlights). draftMap isn't reactive,
   // but it only changes together with the step or the committed map.
@@ -95,14 +149,144 @@
     return m.rooms.length > 0 || m.doors.length > 0 || m.features.length > 0 || m.token !== null;
   }
 
+  onMount(() => {
+    let alive = true;
+    const unsubscribe = saver.subscribe((s) => (saveFailing = s.failing));
+    const onHide = () => {
+      if (document.visibilityState === 'hidden') void saver.flush();
+    };
+    const onPageHide = () => void saver.flush();
+    document.addEventListener('visibilitychange', onHide);
+    window.addEventListener('pagehide', onPageHide);
+
+    setBeforeReload(() => saver.flush());
+    saver.pause(); // nothing is saved until the start-up check has run
+    void startUp(() => alive);
+
+    return () => {
+      alive = false;
+      document.removeEventListener('visibilitychange', onHide);
+      window.removeEventListener('pagehide', onPageHide);
+      unsubscribe();
+      saver.dispose();
+      flow.dispose();
+    };
+  });
+
+  /** Loads the record (with a timeout) and decides. Also used by Try again. */
+  async function startUp(isAlive: () => boolean = () => true) {
+    started = false;
+    loadError = null;
+    const out = await loadWithTimeout(() => store.load());
+    if (!isAlive()) return;
+    if (out.kind === 'unreadable') {
+      // Storage didn't answer: not a damaged record. The autosaver stays off; nothing is overwritten.
+      loadError = { kind: 'unreadable', error: out.error };
+      started = true;
+      return;
+    }
+    let decision: ReturnType<typeof decideStartup>;
+    try {
+      decision = decideStartup(out.raw);
+      if (decision.kind === 'restore') history.restore(decision.history);
+    } catch (err) {
+      decision = { kind: 'error', error: `The saved game is damaged: ${err instanceof Error ? err.message : String(err)}` };
+    }
+    if (decision.kind === 'error') {
+      loadError = { kind: 'damaged', error: decision.error, raw: out.raw };
+      started = true;
+      return; // the autosaver stays paused and never started: the record is not touched
+    }
+    if (decision.kind === 'restore') meta = decision.meta;
+    saver.start();
+    saver.resume();
+    started = true;
+  }
+
+  /** From the load-error dialog: replacing the game overwrites the stored record, so confirm first. */
+  function askOverwriteSaved(run: () => void) {
+    const damaged = loadError?.kind === 'damaged';
+    pendingReplace = { title: 'Replace saved game', message: 'This replaces your saved game.', onexport: damaged ? exportDamaged : undefined, run };
+  }
+
+  /** Swap in a whole new game (fresh history) and write it now, replacing whatever was saved. */
+  function replaceGame(next: CampaignMeta, map: DungeonMap) {
+    meta = next;
+    selection = null;
+    gapMode = false;
+    notice = null;
+    loadError = null;
+    importError = null;
+    saver.start();
+    saver.resume();
+    history.reset(map);
+    void saver.flush();
+  }
+
+  /** Confirm first if the current game has anything in it, then run. */
+  function askReplace(title: string, run: () => void) {
+    if (hasWork) pendingReplace = { title, run };
+    else run();
+  }
+
   function createNewMap(v: NewMapValues) {
     newMapOpen = false;
-    history.reset(createMap(dungeonSystem, { width: v.width, height: v.height, level: v.level, title: v.title }));
+    askReplace('New game', () => {
+      const c = createCampaign(dungeonSystem, v.title || 'My dungeon', { width: v.width, height: v.height, level: v.level, title: v.title });
+      replaceGame(metaFrom(c), activeMap(c));
+    });
   }
 
   function loadDemo() {
-    confirmDemo = false;
-    history.reset(demoMap());
+    const c = createCampaign(dungeonSystem, 'Demo dungeon');
+    replaceGame(metaFrom(c), demoMap());
+  }
+
+  function exportGame() {
+    // Build the File synchronously so shareOrDownload runs inside the click's user gesture.
+    const { name, text } = exportCampaignFile(campaignFrom(meta, history.map));
+    shareOrDownload(new File([text], name, { type: 'application/json' }));
+  }
+
+  function exportDamaged() {
+    if (loadError?.kind !== 'damaged') return;
+    try {
+      const d = new Date();
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const day = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; // local day, like exportFileName
+      shareOrDownload(new File([JSON.stringify(loadError.raw)], `2d6-damaged-save-${day}.json`, { type: 'application/json' }));
+    } catch (err) {
+      importError = `The damaged save couldn't be exported: ${err instanceof Error ? err.message : String(err)}`;
+    }
+  }
+
+  function pickImport() {
+    importError = null;
+    fileInput?.click();
+  }
+
+  async function onFileChosen() {
+    const file = fileInput?.files?.[0];
+    if (fileInput) fileInput.value = ''; // so the same file can be picked again
+    if (!file) return;
+    let text: string;
+    try {
+      text = await file.text();
+    } catch {
+      importError = "That file couldn't be read.";
+      return;
+    }
+    const res = readImportText(text, file.size);
+    if (!res.ok) {
+      importError = res.error;
+      return;
+    }
+    const campaign = res.campaign;
+    const map = activeMap(campaign);
+    const run = () => replaceGame(metaFrom(campaign), map);
+    // From the load-error dialog there's no current game to lose, but the stored record is overwritten.
+    if (loadError) askOverwriteSaved(run);
+    else askReplace('Import game', run);
   }
 
   /** Pointer over the map (or dragging it, at the position step): the ghost follows. Nothing else reacts. */
@@ -244,18 +428,26 @@
       {tool}
       coverage={cover}
       {menuOpen}
+      disabled={!started || !!loadError}
       ontool={selectTool}
       onundo={() => history.undo()}
       onredo={() => history.redo()}
-      onmenu={() => (menuOpen = !menuOpen)}
+      onmenu={() => started && !loadError && (menuOpen = !menuOpen)}
     />
+    <UpdatePrompt />
+    {#if saveFailing}<SaveBanner onexport={exportGame} />{/if}
+    {#if showHint && started && !loadError}
+      <InstallHint ios={iosTab} hasGame={hasContent($view.map)} onexport={exportGame} ondismiss={dismissHint} />
+    {/if}
     {#if menuOpen}
       <Menu
         bind:toggles
         onclose={() => (menuOpen = false)}
         onnewmap={() => (newMapOpen = true)}
-        ondemo={() => (hasWork ? (confirmDemo = true) : loadDemo())}
+        ondemo={() => askReplace('Load demo map', loadDemo)}
         onfit={() => mapView?.fit()}
+        onexport={exportGame}
+        onimport={pickImport}
       />
     {/if}
   </div>
@@ -284,21 +476,56 @@
   />
 </div>
 
+<input bind:this={fileInput} type="file" accept=".json,application/json" hidden onchange={onFileChosen} />
+
 {#if newMapOpen}
-  <NewMapDialog confirmDiscard={hasWork} oncreate={createNewMap} oncancel={() => (newMapOpen = false)} />
+  <NewMapDialog oncreate={createNewMap} oncancel={() => (newMapOpen = false)} />
 {/if}
 
-{#if confirmDemo}
+{#if loadError}
+  <LoadErrorDialog
+    kind={loadError.kind}
+    error={loadError.error}
+    {importError}
+    onexport={exportDamaged}
+    onretry={() => void startUp()}
+    onimport={pickImport}
+    onnew={() =>
+      askOverwriteSaved(() => {
+        const c = createCampaign(dungeonSystem, 'My dungeon', { width: 25, height: 25 });
+        replaceGame(metaFrom(c), activeMap(c));
+      })}
+  />
+{:else if importError}
   <div class="scrim">
-    <div class="confirm" role="alertdialog" aria-modal="true" aria-labelledby="demo-title">
-      <h2 id="demo-title">Load demo map</h2>
-      <p>This replaces the current map — there's no saving yet</p>
+    <div class="confirm" role="alertdialog" aria-modal="true" aria-labelledby="import-error-title">
+      <h2 id="import-error-title">Can't import that file</h2>
+      <p>{importError}</p>
       <div class="actions">
-        <button onclick={() => (confirmDemo = false)}>Cancel</button>
-        <button class="primary" onclick={loadDemo}>Replace map</button>
+        <button class="primary" onclick={() => (importError = null)}>OK</button>
       </div>
     </div>
   </div>
+{/if}
+
+{#if !started}
+  <div class="scrim">
+    <p class="loading" role="status">Loading your game…</p>
+  </div>
+{/if}
+
+{#if pendingReplace}
+  <ReplaceGameDialog
+    title={pendingReplace.title}
+    message={pendingReplace.message}
+    onexport={pendingReplace.onexport ?? (pendingReplace.message ? undefined : exportGame)}
+    onreplace={() => {
+      const run = pendingReplace?.run;
+      pendingReplace = null;
+      run?.();
+    }}
+    oncancel={() => (pendingReplace = null)}
+  />
 {/if}
 
 <style>
@@ -368,6 +595,14 @@
     place-items: center;
     padding: 16px;
     background: rgba(20, 16, 10, 0.45);
+  }
+  .loading {
+    margin: 0;
+    padding: 16px 24px;
+    font-size: 20px;
+    background: var(--paper);
+    border: 2px solid var(--ink);
+    border-radius: 8px;
   }
   .confirm {
     width: min(460px, 100%);

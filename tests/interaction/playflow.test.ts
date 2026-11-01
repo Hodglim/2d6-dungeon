@@ -552,3 +552,36 @@ describe('PlayFlow snapping to valid positions', () => {
     expect(expectKind(flow, 'position').placement.ok).toBe(true);
   });
 });
+
+describe('PlayFlow.dispose', () => {
+  it('stops reacting to History changes', () => {
+    const { history, flow } = withEntrance();
+    flow.startFromExit(northExit(history.map).id);
+    flow.enterSize('3', '4');
+    const before = flow.step;
+    flow.dispose();
+    history.undo();
+    expect(flow.step).toBe(before);
+  });
+});
+
+describe('PlayFlow follows whole-state replacement', () => {
+  it('reset and restore cancel an open draft and go back to idle on the new map', () => {
+    for (const replace of ['reset', 'restore'] as const) {
+      const { history, flow } = withEntrance();
+      flow.startFromExit(northExit(history.map).id);
+      flow.enterSize('3', '4');
+      flow.place();
+      expect(flow.step.kind).toBe('exitCount');
+      const next = emptyMap(12, 12);
+      if (replace === 'reset') history.reset(next);
+      else history.restore({ current: next, past: [], future: [] });
+      expect(flow.step.kind).toBe('idle');
+      expect(flow.draftMap).toBe(next);
+      expect(history.map).toBe(next);
+      // The flow works against the new map: an entrance can start again.
+      flow.startEntrance({ x: 4, y: 12 });
+      expect(flow.step.kind).toBe('size');
+    }
+  });
+});
