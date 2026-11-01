@@ -3,6 +3,7 @@
   import { createHero } from '../../systems/dungeon/hero';
   import type { DungeonTables } from '../../systems/dungeon/tables';
   import DicePair from '../DicePair.svelte';
+  import ManoeuvreTable from '../ManoeuvreTable.svelte';
   import {
     MAX_MAP_SIZE,
     MIN_MAP_SIZE,
@@ -37,6 +38,7 @@
   const sizeError = $derived(mapSizeProblem(draft));
   const count = $derived(tables ? startingManoeuvreCount(tables) : 0);
   const pickable = $derived(tables ? pickableManoeuvres(tables, draft.weapon) : []);
+  const shownWeapon = $derived(tables?.tables.weapons.find((w) => w.name === draft.weapon) ?? tables?.tables.weapons[0] ?? null);
   const TITLES: Record<WizardStep, string> = {
     game: 'New game',
     name: 'Name your hero',
@@ -99,28 +101,32 @@
           <p class="note">Every hero starts the same: Level {s.level}, {s.hp} HP, Shift {s.shift}, Discipline {s.discipline}, Precision {s.precision}.</p>
         {/if}
       {:else if step === 'weapon' && tables}
-        <div class="options">
+        {@const level = tables.tables.starting.level}
+        <div class="weapons" role="group" aria-label="Weapons">
           {#each tables.tables.weapons as w (w.name)}
-            <button type="button" class="option" aria-pressed={draft.weapon === w.name} onclick={() => chooseWeapon(w.name)}>
+            {@const n = w.manoeuvres.filter((m) => m.level === level).length}
+            <button type="button" class="option weapon" class:preview={shownWeapon?.name === w.name && draft.weapon !== w.name} aria-pressed={draft.weapon === w.name} onclick={() => chooseWeapon(w.name)}>
               <strong>{w.name}</strong>
-              <ul>
-                {#each w.manoeuvres.filter((m) => m.level === tables.tables.starting.level) as m (m.name)}
-                  <li><span>{m.name}</span> <DicePair dice={m.dice} /> <span class="dmg">{m.damage}</span></li>
-                {/each}
-              </ul>
+              <span class="dmg">{n} manoeuvre{n === 1 ? '' : 's'}</span>
             </button>
           {/each}
         </div>
+        {#if shownWeapon}
+          <p class="note">{draft.weapon ? `${shownWeapon.name}: level ${level} manoeuvres` : `Tap a weapon to choose it. Previewing ${shownWeapon.name}.`}</p>
+          <ManoeuvreTable label="{shownWeapon.name} manoeuvres" rows={shownWeapon.manoeuvres.filter((m) => m.level === level)} />
+        {/if}
       {:else if step === 'manoeuvres'}
-        <p class="note">Pick {count} ({draft.manoeuvres.length} chosen).</p>
-        <div class="options">
-          {#each pickable as m (m.name)}
-            <button type="button" class="option" aria-pressed={draft.manoeuvres.includes(m.name)} onclick={() => (draft.manoeuvres = toggleManoeuvre(draft.manoeuvres, m.name, count))}>
-              <strong>{m.name}</strong>
-              <span class="line"><DicePair dice={m.dice} /> <span class="dmg">Damage {m.damage}</span></span>
-            </button>
-          {/each}
-        </div>
+        <p class="note">
+          Pick {count} ({draft.manoeuvres.length} chosen).
+          {#if draft.manoeuvres.length >= count}<span class="hint">Deselect one to choose another</span>{/if}
+        </p>
+        <ManoeuvreTable
+          label="Choose manoeuvres"
+          rows={pickable}
+          selected={draft.manoeuvres}
+          full={draft.manoeuvres.length >= count}
+          ontoggle={(name) => (draft.manoeuvres = toggleManoeuvre(draft.manoeuvres, name, count))}
+        />
       {:else if step === 'armour' && tables}
         <div class="options">
           {#each tables.tables.startingArmour as a (a.name)}
@@ -177,8 +183,8 @@
   .dialog {
     display: flex;
     flex-direction: column;
-    width: min(640px, 100%);
-    height: min(560px, 100%);
+    width: min(900px, 100%);
+    height: min(85vh, calc(100vh - 32px));
     padding: 18px 22px;
     box-sizing: border-box;
     background: var(--paper);
@@ -266,7 +272,24 @@
     border-width: 4px;
     padding: 8px 12px;
   }
-  .option ul,
+  .weapons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .weapon {
+    flex: 1 1 180px;
+    min-height: 64px;
+    justify-content: center;
+  }
+  .weapon.preview {
+    border-style: dashed;
+  }
+  .hint {
+    margin-left: 8px;
+    font-weight: 600;
+    color: var(--danger);
+  }
   .sheet ul {
     margin: 0;
     padding: 0;
@@ -275,7 +298,6 @@
     flex-direction: column;
     gap: 4px;
   }
-  .option li,
   .sheet li,
   .line {
     display: flex;
