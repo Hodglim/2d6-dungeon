@@ -15,6 +15,7 @@
   import { exportCampaignFile, readImportText } from '../persistence/files';
   import { campaignFrom, metaFrom, type CampaignMeta } from '../persistence/record';
   import { shareOrDownload } from '../persistence/share';
+  import { isIosSafari, isStandalone, readDisplayEnv } from '../persistence/standalone';
   import { decideStartup, loadWithTimeout } from '../persistence/startup';
   import { IdbSaveStore } from '../persistence/store';
   import type { Point } from '../render/camera';
@@ -25,6 +26,7 @@
   import { drawOverlay, overlayFor, selectionOverlay } from './overlay';
   import { historyStore, type Tool } from './historyStore';
   import MapView from './MapView.svelte';
+  import InstallHint from './InstallHint.svelte';
   import LoadErrorDialog from './LoadErrorDialog.svelte';
   import Menu from './Menu.svelte';
   import NewMapDialog, { type NewMapValues } from './NewMapDialog.svelte';
@@ -57,6 +59,27 @@
   /** A "this replaces your game" confirmation waiting for an answer. */
   let pendingReplace = $state<{ title: string; message?: string; onexport?: () => void; run: () => void } | null>(null);
   let saveFailing = $state(false);
+  const DISMISS_KEY = '2d6.installHintDismissed';
+  const displayEnv = readDisplayEnv();
+  const iosTab = isIosSafari(displayEnv);
+  function readDismissed(): boolean {
+    try {
+      return localStorage.getItem(DISMISS_KEY) === '1';
+    } catch {
+      return false;
+    }
+  }
+  /** The home-screen hint shows in a browser tab only, until dismissed. */
+  let hintDismissed = $state(readDismissed());
+  const showHint = $derived(!isStandalone(displayEnv) && !hintDismissed);
+  function dismissHint() {
+    hintDismissed = true;
+    try {
+      localStorage.setItem(DISMISS_KEY, '1');
+    } catch {
+      // not remembered; hidden for this session
+    }
+  }
   /** False until the saved game has been loaded and checked: nothing may change the game before then. */
   let started = $state(false);
   /** Set when the saved record can't be loaded: it stays untouched until the user picks Import or Start new game. */
@@ -407,6 +430,9 @@
       onmenu={() => started && !loadError && (menuOpen = !menuOpen)}
     />
     {#if saveFailing}<SaveBanner onexport={exportGame} />{/if}
+    {#if showHint && started && !loadError}
+      <InstallHint ios={iosTab} hasGame={hasContent($view.map)} onexport={exportGame} ondismiss={dismissHint} />
+    {/if}
     {#if menuOpen}
       <Menu
         bind:toggles

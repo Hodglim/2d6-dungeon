@@ -13,7 +13,10 @@ const [url = 'http://localhost:5173', outDir = 'visual'] = process.argv.slice(2)
 mkdirSync(outDir, { recursive: true });
 
 const browser = await firefox.launch();
-const page = await browser.newPage({ viewport: { width: 1180, height: 820 }, deviceScaleFactor: 2, hasTouch: true });
+// The home-screen hint is tested in step 10; the other steps start with it dismissed so layouts don't shift.
+const mainCtx = await browser.newContext({ viewport: { width: 1180, height: 820 }, deviceScaleFactor: 2, hasTouch: true });
+await mainCtx.addInitScript(() => localStorage.setItem('2d6.installHintDismissed', '1'));
+const page = await mainCtx.newPage();
 const errors = [];
 const problems = [];
 page.on('pageerror', (e) => errors.push(e.message));
@@ -341,6 +344,7 @@ if (!(await page.isVisible('text=This replaces your current game.'))) problems.p
 // 9. A corrupt autosave record (fresh browser context): blocking dialog; Start new game asks first; Cancel leaves it all alone.
 {
   const ctx = await browser.newContext({ viewport: { width: 1180, height: 820 }, deviceScaleFactor: 2, hasTouch: true });
+  await ctx.addInitScript(() => localStorage.setItem('2d6.installHintDismissed', '1'));
   const p2 = await ctx.newPage();
   p2.on('pageerror', (e) => errors.push(e.message));
   await p2.goto(url, { waitUntil: 'load' });
@@ -385,6 +389,76 @@ if (!(await page.isVisible('text=This replaces your current game.'))) problems.p
   await p2.waitForTimeout(1500);
   if (!(await p2.isVisible("text=Your saved game couldn't be loaded"))) problems.push('Cancel did not leave the load-error dialog in place');
   if ((await readRecord()) !== corrupt) problems.push('the damaged record changed without the user choosing');
+  await ctx.close();
+}
+
+// 10. Home-screen hint: shows in a tab, doesn't cover or break the map, dismisses and stays dismissed; hidden when standalone.
+{
+  const mk = async (init) => {
+    const ctx = await browser.newContext({ viewport: { width: 1180, height: 820 }, deviceScaleFactor: 2, hasTouch: true });
+    if (init) await ctx.addInitScript(init);
+    const p = await ctx.newPage();
+    p.on('pageerror', (e) => errors.push(e.message));
+    await p.goto(url, { waitUntil: 'load' });
+    await p.waitForTimeout(800);
+    return { ctx, p };
+  };
+  const geom = (p) => p.evaluate(() => ({
+    hint: document.querySelector('[aria-label="Install the app"]')?.getBoundingClientRect().toJSON() ?? null,
+    tool: document.querySelector('header.toolbar').getBoundingClientRect().toJSON(),
+    map: document.querySelector('canvas').getBoundingClientRect().toJSON(),
+    panel: document.querySelector('aside.panel').getBoundingClientRect().toJSON(),
+    canvasW: document.querySelector('canvas').width, canvasH: document.querySelector('canvas').height,
+  }));
+  const hintSel = '[aria-label="Install the app"]';
+
+  // 10a. Empty game in a tab: hint shown, no Export; the map sits below it, canvas matches its box.
+  let { ctx, p } = await mk();
+  if (!(await p.isVisible(hintSel))) problems.push('hint not shown in a normal tab');
+  const g = await geom(p);
+  if (g.hint && g.map.top < g.hint.bottom - 0.5) problems.push('hint overlaps the map');
+  if (g.hint && g.hint.top < g.tool.bottom - 0.5) problems.push('hint overlaps the toolbar');
+  if (Math.abs(g.canvasW - Math.round(g.map.width * 2)) > 2 || Math.abs(g.canvasH - Math.round(g.map.height * 2)) > 2) problems.push(`canvas not resized to map box: ${g.canvasW}x${g.canvasH} vs ${g.map.width}x${g.map.height}`);
+  if (g.panel.top < g.hint.bottom - 0.5) problems.push('hint overlaps the panel');
+  if (await p.isVisible(`${hintSel} button:text-is("Export")`)) problems.push('Export shown for an empty game');
+  console.log(`Hint ${g.hint.height}px tall, map top ${g.map.top}`);
+  await p.screenshot({ path: join(outDir, '23-install-hint-empty.png') });
+
+  // 10b. With a room on the map: the move-game line and Export button appear.
+  await p.evaluate(() => 0);
+  await p.click('header.toolbar button[aria-label="Menu"]');
+  await p.click('text=Load demo map');
+  await p.waitForTimeout(600);
+  if (!(await p.isVisible(`${hintSel} button:text-is("Export")`))) problems.push('hint lacks Export once the map has rooms');
+  if (!(await p.isVisible('text=Move this game into the installed app: Export it here, then Import it there'))) problems.push('move-game line missing');
+  const small = await p.$$eval(`${hintSel} button`, (els) => els.map((e) => e.getBoundingClientRect()).filter((r) => r.width < 44 || r.height < 44).length);
+  if (small) problems.push('hint buttons are under 44px');
+  const g2 = await geom(p);
+  if (g2.map.top < g2.hint.bottom - 0.5) problems.push('hint (with game) overlaps the map');
+  await p.screenshot({ path: join(outDir, '24-install-hint-with-game.png') });
+
+  // 10c. The Export button downloads a file.
+  const [dl] = await Promise.all([p.waitForEvent('download', { timeout: 5000 }).catch(() => null), p.click(`${hintSel} button:text-is("Export")`)]);
+  if (!dl) problems.push('hint Export did not download a file');
+
+  // 10d. Dismiss: gone, and the map grows; stays gone after a reload.
+  await p.click(`${hintSel} button:text-is("Dismiss")`);
+  await p.waitForTimeout(400);
+  if (await p.isVisible(hintSel)) problems.push('hint still visible after Dismiss');
+  const g3 = await geom(p);
+  if (g3.map.top > g3.tool.bottom + 0.5) problems.push('map did not close up after the hint was dismissed');
+  if (Math.abs(g3.canvasH - Math.round(g3.map.height * 2)) > 2) problems.push('canvas not resized after dismissal');
+  await p.reload({ waitUntil: 'load' });
+  await p.waitForTimeout(800);
+  if (await p.isVisible(hintSel)) problems.push('hint came back after reload');
+  await ctx.close();
+
+  // 10e. Standalone (matchMedia override): never shown.
+  ({ ctx, p } = await mk(() => {
+    const orig = window.matchMedia.bind(window);
+    window.matchMedia = (q) => (q.includes('display-mode: standalone') ? { ...orig(q), matches: true, media: q } : orig(q));
+  }));
+  if (await p.isVisible(hintSel)) problems.push('hint shown in standalone mode');
   await ctx.close();
 }
 
