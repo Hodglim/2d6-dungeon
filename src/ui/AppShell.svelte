@@ -251,7 +251,9 @@
   function exportDamaged() {
     if (loadError?.kind !== 'damaged') return;
     try {
-      const day = new Date().toISOString().slice(0, 10);
+      const d = new Date();
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const day = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; // local day, like exportFileName
       shareOrDownload(new File([JSON.stringify(loadError.raw)], `2d6-damaged-save-${day}.json`, { type: 'application/json' }));
     } catch (err) {
       importError = `The damaged save couldn't be exported: ${err instanceof Error ? err.message : String(err)}`;

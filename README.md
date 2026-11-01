@@ -20,6 +20,12 @@ The first deploy creates the `2d6-map-maker` Pages project and prints the `*.pag
 
 After the first real deploy, open the URL on the iPad once while online, then switch to airplane mode and check the app still opens.
 
+### Check on the iPad after the first deploy
+
+- Install from Safari, build a room, swipe the app away within 1 second, reopen in airplane mode: the room is there and Undo works.
+- Leave the app in the background overnight, then place a room: no "Autosave isn't working" banner stays up.
+- Deploy a trivial change: the "New version available — reload" prompt appears and works.
+
 ## Install on iPad
 
 Open the URL in Safari, then Share, then Add to Home Screen. The app then opens full-screen and works offline. When a new version is published, a "New version available" bar offers a reload.

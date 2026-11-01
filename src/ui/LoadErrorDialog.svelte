@@ -27,10 +27,10 @@
       {#if kind === 'damaged'}
         <button type="button" onclick={onexport}>Export damaged save</button>
       {:else}
-        <button type="button" onclick={onretry}>Try again</button>
+        <button type="button" class="primary" onclick={onretry}>Try again</button>
       {/if}
       <button type="button" onclick={onimport}>Import a file…</button>
-      <button type="button" class="primary" onclick={onnew}>Start new game</button>
+      <button type="button" class={kind === 'damaged' ? 'primary' : ''} onclick={onnew}>Start new game</button>
     </div>
   </div>
 </div>

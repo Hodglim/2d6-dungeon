@@ -1,8 +1,10 @@
 import { vi } from 'vitest';
 import { History } from '../../src/core/history';
 import { addRoom } from '../../src/core/commands';
+import { encodeSave } from '../../src/persistence/record';
 import { Autosaver, type AutosaveStatus } from '../../src/persistence/autosave';
-import { MemorySaveStore } from '../../src/persistence/store';
+import 'fake-indexeddb/auto';
+import { IdbSaveStore, MemorySaveStore } from '../../src/persistence/store';
 import { emptyMap, room } from '../core/fixtures';
 
 const meta = { id: 'c1', name: 'Camp', systemId: 'dungeon', hero: null };
@@ -173,5 +175,30 @@ describe('Autosaver', () => {
     await vi.advanceTimersByTimeAsync(60_000);
     await auto.flush();
     expect(save).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('Autosaver over a dead IndexedDB connection', () => {
+  beforeEach(() => vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] }));
+  afterEach(() => vi.useRealTimers());
+
+  it('shows failing, then clears on the retry with no reload', async () => {
+    const history = new History(emptyMap(30, 30));
+    const store = new IdbSaveStore('t-auto-dead');
+    await store.save(encodeSave(meta, history.exportState()));
+    const dead = await (store as unknown as { db: Promise<IDBDatabase> }).db;
+    vi.spyOn(dead, 'transaction').mockImplementation(() => {
+      throw new DOMException('dead', 'InvalidStateError');
+    });
+    const auto = new Autosaver(history, store, () => meta);
+    const seen: boolean[] = [];
+    auto.subscribe((s) => seen.push(s.failing));
+    auto.start();
+    history.execute(addRoom(room('r0', 1, 1, 2, 2, 'room', 1)));
+    await vi.advanceTimersByTimeAsync(1000);
+    await vi.waitFor(() => expect(seen).toEqual([true]));
+    await vi.advanceTimersByTimeAsync(1000); // backoff retry
+    await vi.waitFor(() => expect(seen).toEqual([true, false])); // fake-indexeddb settles on real timers
+    expect(await store.load()).not.toBeNull();
   });
 });

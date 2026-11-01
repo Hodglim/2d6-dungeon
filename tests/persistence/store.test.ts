@@ -125,3 +125,61 @@ describe('IdbSaveStore with an open that never answers', () => {
     expect(close).toHaveBeenCalled();
   });
 });
+
+describe('IdbSaveStore with a dead connection', () => {
+  const internal = (s: IdbSaveStore) => s as unknown as { db: Promise<IDBDatabase> | null };
+
+  it('drops the connection when transaction() throws, and the next save reopens', async () => {
+    const s = new IdbSaveStore('t-throw');
+    await s.save(rec(1));
+    const first = await internal(s).db!;
+    const close = vi.spyOn(first, 'close');
+    vi.spyOn(first, 'transaction').mockImplementationOnce(() => {
+      throw new DOMException('The database connection is closing.', 'InvalidStateError');
+    });
+    await expect(s.save(rec(2))).rejects.toThrow('closing');
+    expect(close).toHaveBeenCalled();
+    expect(internal(s).db).toBeNull();
+    await s.save(rec(3));
+    expect(await internal(s).db!).not.toBe(first);
+    expect(await s.load()).not.toBeNull();
+  });
+
+  it('drops the connection when load\'s transaction() throws', async () => {
+    const s = new IdbSaveStore('t-throw-load');
+    await s.save(rec(1));
+    const first = await internal(s).db!;
+    vi.spyOn(first, 'transaction').mockImplementationOnce(() => {
+      throw new DOMException('lost', 'InvalidStateError');
+    });
+    await expect(s.load()).rejects.toThrow('lost');
+    expect(await s.load()).not.toBeNull();
+    expect(await internal(s).db!).not.toBe(first);
+  });
+
+  it('drops the connection when a transaction aborts', async () => {
+    const s = new IdbSaveStore('t-abort');
+    await s.save(rec(1));
+    const first = await internal(s).db!;
+    const real = first.transaction.bind(first);
+    vi.spyOn(first, 'transaction').mockImplementationOnce((...a: Parameters<IDBDatabase['transaction']>) => {
+      const tx = real(...a);
+      const realStore = tx.objectStore.bind(tx);
+      vi.spyOn(tx, 'objectStore').mockImplementation((n: string) => {
+        const st = realStore(n);
+        const put = st.put.bind(st);
+        st.put = (...args: Parameters<IDBObjectStore['put']>) => {
+          const r = put(...args);
+          tx.abort();
+          return r;
+        };
+        return st;
+      });
+      return tx;
+    });
+    await expect(s.save(rec(2))).rejects.toBeTruthy();
+    expect(internal(s).db).toBeNull();
+    await s.save(rec(3));
+    expect(await internal(s).db!).not.toBe(first);
+  });
+});

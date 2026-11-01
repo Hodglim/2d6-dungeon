@@ -15,7 +15,7 @@ export function decideStartup(raw: unknown | null): StartupDecision {
 
 export type LoadOutcome = { kind: 'loaded'; raw: unknown | null } | { kind: 'unreadable'; error: string };
 
-export const LOAD_TIMEOUT_MS = 5000;
+export const LOAD_TIMEOUT_MS = 8000;
 
 /**
  * Runs `load` and settles exactly once: with the record, or as unreadable if it rejects or

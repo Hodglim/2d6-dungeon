@@ -6,6 +6,7 @@ import { join, relative, sep } from 'node:path';
 
 const DIST = 'dist';
 const FORBIDDEN_DIRS = ['pdf', 'local-data', 'reference', '.superpowers'];
+const ALLOWED = [/^index\.html$/, /^sw\.js$/, /^_headers$/, /^manifest\.webmanifest$/, /^icons\/[^/]+\.png$/, /^assets\/[^/]+\.(js|css)$/];
 const problems = [];
 const files = [];
 
@@ -19,6 +20,7 @@ const walk = (dir) => {
     } else {
       files.push({ rel, size: statSync(full).size });
       if (/\.pdf$/i.test(entry.name)) problems.push(`PDF in dist: ${rel}`);
+      else if (!ALLOWED.some((re) => re.test(rel))) problems.push(`unexpected file in dist: ${rel}`);
     }
   }
 };

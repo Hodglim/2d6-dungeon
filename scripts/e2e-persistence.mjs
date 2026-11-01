@@ -1,4 +1,4 @@
-// Usage: node scripts/e2e-persistence.mjs
+// Usage: node scripts/e2e-persistence.mjs   (BROWSER=webkit or chromium to override the default, firefox)
 // Saving checks against `vite preview` of a fresh production build (port 4175), in headless Firefox:
 //   1. entrance + room, reload: both still there, Undo works
 //   2. act, then immediately hide the page (visibilitychange + pagehide) and reload: the last action is kept
@@ -9,7 +9,9 @@
 // The service worker is blocked in every context so it can't interfere. Exits non-zero on any failure.
 import { spawn, spawnSync } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
-import { firefox } from 'playwright';
+import * as pw from 'playwright';
+
+const browserType = pw[process.env.BROWSER ?? 'firefox'];
 
 const PORT = 4175;
 const URL_ = `http://localhost:${PORT}/`;
@@ -33,7 +35,7 @@ preview.removeAllListeners('exit');
 
 let browser;
 try {
-  browser = await firefox.launch();
+  browser = await browserType.launch();
   const newCtx = async (init) => {
     const ctx = await browser.newContext({ viewport: { width: 1180, height: 820 }, serviceWorkers: 'block', acceptDownloads: true });
     await ctx.addInitScript(() => {

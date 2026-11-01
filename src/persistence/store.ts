@@ -71,23 +71,55 @@ export class IdbSaveStore implements SaveStore {
     return p;
   }
 
-  async load(): Promise<unknown | null> {
-    const db = await this.open();
-    return new Promise((resolve, reject) => {
-      const req = db.transaction(STORE, 'readonly').objectStore(STORE).get(KEY);
-      req.onsuccess = () => resolve(req.result ?? null);
-      req.onerror = () => reject(req.error ?? new Error('Could not read the save'));
+  /**
+   * Runs one operation on the cached connection. On any failure (a throwing transaction(), a failed or
+   * aborted transaction) the connection is dropped and closed so the next call opens a fresh one: WebKit
+   * can leave a dead connection cached after the app is suspended, without ever firing `close`.
+   */
+  private async run<T>(op: (db: IDBDatabase, resolve: (v: T) => void, reject: (e: unknown) => void) => void): Promise<T> {
+    const cached = this.open();
+    const db = await cached;
+    const drop = () => {
+      if (this.db === cached) this.db = null;
+      try {
+        db.close();
+      } catch {
+        // already closed
+      }
+    };
+    return new Promise<T>((resolve, reject) => {
+      const fail = (e: unknown) => {
+        drop();
+        reject(e);
+      };
+      try {
+        op(db, resolve, fail);
+      } catch (e) {
+        fail(e);
+      }
     });
   }
 
-  async save(rec: SaveRecord): Promise<void> {
-    const db = await this.open();
-    return new Promise((resolve, reject) => {
+  load(): Promise<unknown | null> {
+    return this.run<unknown | null>((db, resolve, fail) => {
+      const tx = db.transaction(STORE, 'readonly');
+      const req = tx.objectStore(STORE).get(KEY);
+      req.onsuccess = () => resolve(req.result ?? null);
+      req.onerror = () => fail(req.error ?? new Error('Could not read the save'));
+      tx.onerror = () => fail(tx.error ?? new Error('Could not read the save'));
+      tx.onabort = () => fail(tx.error ?? new Error('The read was aborted'));
+    });
+  }
+
+  save(rec: SaveRecord): Promise<void> {
+    return this.run<void>((db, resolve, fail) => {
       const tx = db.transaction(STORE, 'readwrite');
-      tx.objectStore(STORE).put(rec, KEY);
+      const req = tx.objectStore(STORE).put(rec, KEY);
+      req.onerror = () => fail(req.error ?? new Error('Could not write the save'));
       tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error ?? new Error('Could not write the save'));
-      tx.onabort = () => reject(tx.error ?? new Error('The save was aborted'));
+      tx.onerror = () => fail(tx.error ?? new Error('Could not write the save'));
+      tx.onabort = () => fail(tx.error ?? new Error('The save was aborted'));
+      (tx as IDBTransaction & { commit?: () => void }).commit?.();
     });
   }
 
