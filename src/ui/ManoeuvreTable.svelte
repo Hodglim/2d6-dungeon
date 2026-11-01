@@ -16,15 +16,17 @@
     label?: string;
     /** Preview only: tick boxes shown but not usable. */
     disabled?: boolean;
+    /** Header for the last column (Damage for manoeuvres, Modifier for armour). */
+    lastLabel?: string;
   }
-  let { rows, selected, full = false, ontoggle, label = 'Manoeuvres', disabled = false }: Props = $props();
+  let { rows, selected, full = false, ontoggle, label = 'Manoeuvres', disabled = false, lastLabel = 'Damage' }: Props = $props();
   const selectable = $derived(selected !== undefined);
 </script>
 
 <div class="mtable" class:selectable role="group" aria-label={label}>
   <div class="head" aria-hidden="true">
     {#if selectable}<span class="pick"></span>{/if}
-    <span class="name">Name</span><span class="dcell">Red</span><span class="dcell">Blue</span><span class="dmg">Damage</span>
+    <span class="name">Name</span><span class="dcell">Red</span><span class="dcell">Blue</span><span class="dmg">{lastLabel}</span>
   </div>
   {#each rows as m (m.name)}
     {#snippet cells()}
