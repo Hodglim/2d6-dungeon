@@ -27,7 +27,18 @@ export class IdbSaveStore implements SaveStore {
     this.db ??= new Promise((resolve, reject) => {
       const req = indexedDB.open(this.dbName, 1);
       req.onupgradeneeded = () => req.result.createObjectStore(STORE);
-      req.onsuccess = () => resolve(req.result);
+      req.onsuccess = () => {
+        const db = req.result;
+        // If the browser closes the connection (e.g. storage pressure), reopen on the next call.
+        db.onclose = () => {
+          this.db = null;
+        };
+        db.onversionchange = () => {
+          db.close();
+          this.db = null;
+        };
+        resolve(db);
+      };
       req.onerror = () => reject(req.error ?? new Error('Could not open storage'));
       req.onblocked = () => reject(new Error('Storage is blocked by another tab'));
     });

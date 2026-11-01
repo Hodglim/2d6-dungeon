@@ -53,3 +53,24 @@ describe('MemorySaveStore', () => {
     expect(await s.load()).toBe(r);
   });
 });
+
+describe('IdbSaveStore reconnect', () => {
+  it('reopens after the browser closes the connection', async () => {
+    const s = new IdbSaveStore('t-reopen');
+    await s.save(rec(1));
+    const db = await (s as unknown as { db: Promise<IDBDatabase> }).db;
+    db.close(); // fake-indexeddb does not fire onclose for a manual close, so invoke the handler as the browser would
+    db.onclose?.(new Event('close'));
+    await s.save(rec(2));
+    expect(await s.load()).not.toBeNull();
+  });
+
+  it('closes and drops the connection on versionchange', async () => {
+    const s = new IdbSaveStore('t-vc');
+    await s.save(rec(1));
+    const db = await (s as unknown as { db: Promise<IDBDatabase> }).db;
+    db.onversionchange?.(new Event('versionchange') as IDBVersionChangeEvent);
+    await s.save(rec(2));
+    expect(await s.load()).not.toBeNull();
+  });
+});
