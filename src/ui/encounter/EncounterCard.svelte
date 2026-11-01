@@ -8,11 +8,22 @@
   let { card, onend }: Props = $props();
 
   let big = $state(false);
+  let closeBtn = $state<HTMLButtonElement>();
+  let imageBtn = $state<HTMLButtonElement>();
+
+  $effect(() => {
+    if (big) closeBtn?.focus();
+  });
+
+  function close() {
+    big = false;
+    imageBtn?.focus();
+  }
 
   function onKey(e: KeyboardEvent) {
     if (big && e.key === 'Escape') {
       e.preventDefault();
-      big = false;
+      close();
     }
   }
 </script>
@@ -25,14 +36,14 @@
     <button class="end" onclick={onend}>End encounter</button>
   </header>
   <div class="scroll">
-    <button class="image" aria-label="View {card.name} full screen" onclick={() => (big = true)}>
+    <button class="image" bind:this={imageBtn} aria-label="View {card.name} full screen" onclick={() => (big = true)}>
       <img src={card.image} alt={card.name} />
     </button>
   </div>
 </aside>
 
 {#if big}
-  <button class="full" aria-label="Close full screen card" onclick={() => (big = false)}>
+  <button class="full" bind:this={closeBtn} aria-label="Close full screen card" onclick={close}>
     <img src={card.image} alt={card.name} />
   </button>
 {/if}

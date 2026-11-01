@@ -59,6 +59,7 @@
   const saver = new Autosaver(history, store, () => meta);
   const view = historyStore(history);
   // Real dice and ids for the app. Its History listener cancels a draft on any Undo/Redo.
+  type SideTab = 'room' | 'encounter' | 'hero';
   const flow = new PlayFlow(history, Math.random, randomId);
 
   let tool = $state<Tool>('play');
@@ -102,6 +103,7 @@
   let tables = $state.raw<DungeonTables | null>(null);
   let cards = $state.raw<CardPack | null>(null);
   let panelCollapsed = $state(false);
+  let step = $state.raw<Step>(flow.step);
   /** The sidebar shows the step panel, or the Encounter and Hero panels (tabs when both are open). */
   let sidebar = $state<'steps' | 'side'>('steps');
   /** The side panels were showing when a play-flow step took the sidebar: restore them when the flow ends. */
@@ -109,21 +111,40 @@
   let heroOn = $state(false);
   let encOn = $state(false);
   /** Which tab is selected while both are open. */
-  let sideTab = $state<'encounter' | 'hero'>('encounter');
+  let sideTab = $state<SideTab>('encounter');
   /** The creature being faced. Not saved and not in History. */
   let encCard = $state.raw<CreatureCard | null>(null);
   const heroShown = $derived(sidebar === 'side' && heroOn && $view.hero !== null);
   const encShown = $derived(sidebar === 'side' && encOn && cards !== null);
   const sideShown = $derived(heroShown || encShown);
-  const activeTab = $derived(heroShown && encShown ? sideTab : heroShown ? 'hero' : 'encounter');
+  /** While a play-flow step is open, the step panel is a tab too, so Place and Cancel stay one tap away. */
+  const roomTab = $derived(sideShown && step.kind !== 'idle');
+  const tabs = $derived<SideTab[]>([...(roomTab ? ['room' as const] : []), ...(encShown ? ['encounter' as const] : []), ...(heroShown ? ['hero' as const] : [])]);
+  const activeTab = $derived<SideTab>(tabs.includes(sideTab) ? sideTab : (tabs[0] ?? 'encounter'));
+  /** A short self-clearing message beside the toolbar (no card pack loaded). */
+  let toast = $state<string | null>(null);
+  let toastTimer: ReturnType<typeof setTimeout> | undefined;
+  function showToast(text: string) {
+    toast = text;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => (toast = null), 5000);
+  }
 
-  // A removed or replaced card pack takes its encounter with it.
+  // A removed pack takes its encounter with it; a replaced one is looked up again by id.
   $effect(() => {
-    if (encCard && !cards?.cards.some((c) => c.id === encCard!.id)) encCard = null;
+    if (encCard) {
+      const id = encCard.id;
+      const found = cards?.cards.find((c) => c.id === id) ?? null;
+      if (found !== encCard) encCard = found;
+    }
     if (!cards) encOn = false;
   });
+  // No hero, no hero panel.
+  $effect(() => {
+    if ($view.hero === null) heroOn = false;
+  });
   let mapView = $state<ReturnType<typeof MapView>>();
-  let step = $state.raw<Step>(flow.step);
+  let wasIdle = true;
   /** One-line panel message: a tap hint, or what happened on the last commit. */
   let notice = $state<string | null>(null);
   /** The next exit tap starts a gap corridor instead of a room. */
@@ -136,11 +157,16 @@
   flow.subscribe((s) => {
     step = s;
     notice = null;
+    const starting = wasIdle && s.kind !== 'idle';
+    wasIdle = s.kind === 'idle';
     if (s.kind !== 'idle') {
       gapMode = false;
       panelCollapsed = false; // the steps live in the panel
-      if (sidebar === 'side') sideBeforeFlow = true;
-      sidebar = 'steps';
+      if (starting) {
+        // The flow takes the sidebar; the side panels come back (or stay as tabs) afterwards.
+        if (sidebar === 'side') sideBeforeFlow = true;
+        sidebar = 'steps';
+      }
     } else if (sideBeforeFlow) {
       // The flow is over: bring the hero sheet and encounter back if they were open when the flow began.
       sideBeforeFlow = false;
@@ -304,6 +330,11 @@
   /** Swap in a whole new game (fresh history) and write it now, replacing whatever was saved. */
   function replaceGame(next: CampaignMeta, map: DungeonMap, hero: unknown | null = null) {
     meta = next;
+    heroOn = false;
+    encOn = false;
+    encCard = null;
+    sidebar = 'steps';
+    sideBeforeFlow = false;
     selection = null;
     gapMode = false;
     notice = null;
@@ -364,9 +395,7 @@
     if (!started || loadError) return;
     sideBeforeFlow = false;
     if (!cards) {
-      panelCollapsed = false;
-      notice = 'No creature cards loaded. Open the menu and choose Load creature cards…';
-      sidebar = 'steps';
+      showToast('No creature cards loaded. Open the menu and choose Load creature cards…');
     } else if (encShown) {
       encOn = false;
       if (!heroShown) sidebar = 'steps';
@@ -588,6 +617,7 @@
       onhero={onHeroButton}
       onencounter={onEncounterButton}
     />
+    {#if toast}<p class="toast" role="status">{toast}</p>{/if}
     <UpdatePrompt />
     {#if saveFailing}<SaveBanner onexport={exportGame} />{/if}
     {#if showHint && started && !loadError}
@@ -619,15 +649,44 @@
     dragsGhost={step.kind === 'position'}
     ghost={step.kind === 'position' ? step.placement.rect : null}
   />
+  {#snippet stepPanel(collapsed: boolean)}
+    <StepPanel
+      {tool}
+      map={$view.map}
+      {flow}
+      {step}
+      {notice}
+      {gapMode}
+      ongapmode={(on) => {
+        gapMode = on;
+        notice = null;
+      }}
+      oncommit={commit}
+      selection={liveSelection}
+      onexec={exec}
+      onselect={(sel) => (selection = sel)}
+      {collapsed}
+      ontoggle={() => (panelCollapsed = !panelCollapsed)}
+    />
+  {/snippet}
   {#if sideShown}
     <div class="side">
-      {#if heroShown && encShown}
+      {#if tabs.length > 1}
         <div class="tabs" role="tablist" aria-label="Sidebar">
-          <button role="tab" id="side-tab-encounter" aria-selected={sideTab === 'encounter'} onclick={() => (sideTab = 'encounter')}>Encounter</button>
-          <button role="tab" id="side-tab-hero" aria-selected={sideTab === 'hero'} onclick={() => (sideTab = 'hero')}>Hero</button>
+          {#if roomTab}
+            <button role="tab" id="side-tab-room" aria-selected={activeTab === 'room'} onclick={() => (sideTab = 'room')}>Room</button>
+          {/if}
+          {#if encShown}
+            <button role="tab" id="side-tab-encounter" aria-selected={activeTab === 'encounter'} onclick={() => (sideTab = 'encounter')}>Encounter</button>
+          {/if}
+          {#if heroShown}
+            <button role="tab" id="side-tab-hero" aria-selected={activeTab === 'hero'} onclick={() => (sideTab = 'hero')}>Hero</button>
+          {/if}
         </div>
       {/if}
-      {#if activeTab === 'hero'}
+      {#if activeTab === 'room'}
+        {@render stepPanel(false)}
+      {:else if activeTab === 'hero'}
         <HeroPanel
           hero={$view.hero as Hero}
           {history}
@@ -651,24 +710,7 @@
       {/if}
     </div>
   {:else}
-  <StepPanel
-    {tool}
-    map={$view.map}
-    {flow}
-    {step}
-    {notice}
-    {gapMode}
-    ongapmode={(on) => {
-      gapMode = on;
-      notice = null;
-    }}
-    oncommit={commit}
-    selection={liveSelection}
-    onexec={exec}
-    onselect={(sel) => (selection = sel)}
-    collapsed={panelCollapsed}
-    ontoggle={() => (panelCollapsed = !panelCollapsed)}
-  />
+    {@render stepPanel(panelCollapsed)}
   {/if}
 </div>
 
@@ -790,6 +832,18 @@
   }
   .side > :global(aside) {
     flex: 1;
+  }
+  .toast {
+    position: absolute;
+    top: 100%;
+    right: 10px;
+    margin: 6px 0 0;
+    max-width: min(420px, 90vw);
+    padding: 10px 14px;
+    font-size: 16px;
+    background: var(--paper);
+    border: 2px solid var(--ink);
+    border-radius: 6px;
   }
   .tabs {
     display: flex;

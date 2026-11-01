@@ -741,6 +741,29 @@ if (!(await page.isVisible('text=This replaces your current game.'))) problems.p
     if (await p.isVisible('.encounter-card') || !(await p.isVisible('.hero-panel'))) problems.push('End encounter did not leave the hero panel');
     await p.click(`${panel} button[aria-label="Close hero panel"]`);
     if (!(await p.isVisible('.panel[aria-label="Step panel"]'))) problems.push('step panel did not return');
+    // Mid-placement: opening Encounter keeps the step panel reachable as a Room tab.
+    {
+      const at = await p.$eval('canvas', (c) => {
+        const [cx, cy, sc] = (c.dataset.camera ?? '').split(',').map(Number);
+        const r = c.getBoundingClientRect();
+        return { cx, cy, sc, left: r.left, top: r.top, h: r.height };
+      });
+      // The row of entrance squares sits just above the bottom of the canvas.
+      await p.mouse.click(at.left + 120, at.top + at.h - 30);
+      await p.waitForTimeout(200);
+      if ((await p.getAttribute('aside.panel .body', 'data-step')) === 'idle') problems.push('entrance tap did not start a flow step');
+      await p.click('header.toolbar button.encounter');
+      await p.waitForSelector('#side-tab-room');
+      if (await p.isVisible('aside.panel .body')) problems.push('step panel visible while the Encounter tab is selected');
+      await p.click('#side-tab-room');
+      await p.waitForSelector('aside.panel .body[data-step]');
+      await wshot('40-encounter-room-tab.png');
+      await p.click('aside.panel button:text-is("Cancel")');
+      await p.waitForTimeout(300);
+      if (await p.isVisible('#side-tab-room')) problems.push('Room tab still showing after the flow ended');
+      if (!(await p.isVisible('.encounter-picker'))) problems.push('encounter panel not left open after the flow ended');
+      await p.click('.encounter-picker button[aria-label="Close encounter search"]');
+    }
     // Not saved.
     await p.waitForTimeout(1200);
     if ((await readSaved()).includes('Tall Pennywort')) problems.push('encounter was saved');
