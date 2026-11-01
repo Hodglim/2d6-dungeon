@@ -13,7 +13,7 @@
   import { PlayFlow, type Step } from '../interaction/playflow';
   import { setBeforeReload } from '../pwa/register';
   import { Autosaver } from '../persistence/autosave';
-  import { cardsKind, chooseFile, loadStored, removeFile, tablesKind } from '../persistence/extras';
+  import { cardsKind, chooseFile, loadStored, readStored, removeFile, tablesKind } from '../persistence/extras';
   import { exportCampaignFile, readImportText } from '../persistence/files';
   import { campaignFrom, metaFrom, type CampaignMeta } from '../persistence/record';
   import { shareOrDownload } from '../persistence/share';
@@ -124,6 +124,7 @@
   /** A short self-clearing message beside the toolbar (no card pack loaded). */
   let toast = $state<string | null>(null);
   let toastTimer: ReturnType<typeof setTimeout> | undefined;
+  const NO_TABLES_TOAST = 'Load your table file first — open the menu and choose Load table file…';
   function showToast(text: string) {
     toast = text;
     clearTimeout(toastTimer);
@@ -217,10 +218,18 @@
   onMount(() => {
     let alive = true;
     const unsubscribe = saver.subscribe((s) => (saveFailing = s.failing));
+    // A typed field only commits on blur, so blur it first or the text is lost when the app is closed.
+    const blurActive = () => (document.activeElement as HTMLElement | null)?.blur?.();
     const onHide = () => {
-      if (document.visibilityState === 'hidden') void saver.flush();
+      if (document.visibilityState === 'hidden') {
+        blurActive();
+        void saver.flush();
+      }
     };
-    const onPageHide = () => void saver.flush();
+    const onPageHide = () => {
+      blurActive();
+      void saver.flush();
+    };
     document.addEventListener('visibilitychange', onHide);
     window.addEventListener('pagehide', onPageHide);
 
@@ -273,13 +282,18 @@
   /** Set once the user has chosen or removed a file, so a slower start-up load can't overwrite it. */
   let tablesTouched = false;
   let cardsTouched = false;
+  /** A stored card pack exists but could not be read at start-up (Encounter says so instead of "none loaded"). */
+  let cardsUnreadable = false;
 
   /** Loads the stored table file and card pack. Any failure means carrying on without them. */
   async function loadExtras(isAlive: () => boolean) {
     const t = await loadStored(store, tablesKind);
     if (isAlive() && !tablesTouched && t) tables = t;
-    const c = await loadStored(store, cardsKind);
-    if (isAlive() && !cardsTouched && c) cards = c;
+    const c = await readStored(store, cardsKind);
+    if (isAlive() && !cardsTouched) {
+      if (c.value) cards = c.value;
+      cardsUnreadable = c.unreadable;
+    }
   }
 
   function pickExtra(input: HTMLInputElement | undefined) {
@@ -302,6 +316,7 @@
     if (cardsInput) cardsInput.value = '';
     if (!file) return;
     cardsTouched = true;
+    cardsUnreadable = false;
     const r = await chooseFile(store, cardsKind, file, cards);
     cards = r.value;
     if (!r.ok) importError = r.error;
@@ -316,6 +331,7 @@
 
   async function removeCards() {
     cardsTouched = true;
+    cardsUnreadable = false;
     const r = await removeFile(store, cardsKind, cards);
     cards = r.value;
     if (!r.ok) importError = r.error;
@@ -329,6 +345,7 @@
 
   /** Swap in a whole new game (fresh history) and write it now, replacing whatever was saved. */
   function replaceGame(next: CampaignMeta, map: DungeonMap, hero: unknown | null = null) {
+    (document.activeElement as HTMLElement | null)?.blur?.(); // commit a half-typed field into the old game first
     meta = next;
     heroOn = false;
     encOn = false;
@@ -376,6 +393,10 @@
   /** The toolbar's Hero button: create one, or show or hide the sheet. */
   function onHeroButton() {
     if (!started || loadError) return;
+    if ($view.hero === null && !tables) {
+      showToast(NO_TABLES_TOAST);
+      return;
+    }
     sideBeforeFlow = false;
     if ($view.hero === null) {
       wizardMode = 'add-hero';
@@ -393,10 +414,12 @@
   /** The toolbar's Encounter button: explain how to get a card pack, or show or hide the encounter. */
   function onEncounterButton() {
     if (!started || loadError) return;
-    sideBeforeFlow = false;
     if (!cards) {
-      showToast('No creature cards loaded. Open the menu and choose Load creature cards…');
-    } else if (encShown) {
+      showToast(cardsUnreadable ? "Couldn't read your stored creature cards — try loading them again" : 'No creature cards loaded. Open the menu and choose Load creature cards…');
+      return;
+    }
+    sideBeforeFlow = false;
+    if (encShown) {
       encOn = false;
       if (!heroShown) sidebar = 'steps';
     } else {

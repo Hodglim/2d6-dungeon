@@ -4,9 +4,132 @@ The app ships no rulebook tables. You load a table file made from your own books
 
 The file is limited to 2,000,000 bytes. Extra tables you add under `tables` are kept and ignored.
 
-A complete, valid example with three levels is in the repo at `tests/fixtures/dungeon-tables.fixture.json`; copy it and replace the made-up values with your own.
+Load the file from the menu: Menu → Load table file… (and Load creature cards… for a card pack). The app keeps it on your device. It is never included in map exports.
 
-The app will load the file from its menu ("Load table file..."), planned for a later release, and keep it on your device. It is never included in map exports.
+A short, complete, valid example (copy it and replace the made-up values with your own):
+
+```json
+{
+  "format": 1,
+  "systemId": "dungeon",
+  "name": "Practice tables (made up)",
+  "tables": {
+    "starting": {
+      "level": 1,
+      "xp": 0,
+      "shift": 2,
+      "discipline": 3,
+      "precision": 4,
+      "hp": 11,
+      "rations": 2,
+      "potions": [
+        {
+          "name": "Draught of Mild Cheer",
+          "effect": "Restores a few made-up hit points."
+        }
+      ],
+      "kit": [
+        "Practice Lantern"
+      ]
+    },
+    "startingArmour": [
+      {
+        "name": "Sackcloth Vest",
+        "dice": [
+          3
+        ],
+        "modifier": "+0"
+      }
+    ],
+    "startingScrolls": [
+      {
+        "name": "Scroll of Mild Glow",
+        "effect": "A faint light appears.",
+        "orbit": "Sun",
+        "dispelDoubles": "1-2",
+        "effectModifier": "+1"
+      }
+    ],
+    "weapons": [
+      {
+        "name": "Practice Sword",
+        "manoeuvres": [
+          {
+            "level": 1,
+            "name": "Wobbly Poke",
+            "dice": [
+              1,
+              4
+            ],
+            "damage": "1"
+          },
+          {
+            "level": 1,
+            "name": "Gentle Swipe",
+            "dice": [
+              2,
+              6
+            ],
+            "damage": "2"
+          }
+        ]
+      }
+    ],
+    "levels": [
+      {
+        "level": 1,
+        "title": "Wanderer",
+        "manoeuvres": 2,
+        "maxManoeuvreLevel": 1,
+        "xpToLevelUp": 10,
+        "shift": 2,
+        "discipline": 3,
+        "precision": 4,
+        "hpBaseline": 11
+      },
+      {
+        "level": 2,
+        "title": "Explorer",
+        "manoeuvres": 3,
+        "maxManoeuvreLevel": 2,
+        "xpToLevelUp": null,
+        "shift": 3,
+        "discipline": 3,
+        "precision": 5,
+        "hpBaseline": 14
+      }
+    ],
+    "gods": [
+      "Old Mossbeard"
+    ],
+    "conditions": {
+      "bloodied": {
+        "label": "Scraped Up",
+        "boxes": 3
+      },
+      "soaked": {
+        "label": "Dripping",
+        "boxes": 2
+      },
+      "fever": {
+        "label": "Sniffles",
+        "effect": "Made-up penalty to checks."
+      },
+      "pneumonia": {
+        "label": "Grand Sniffles",
+        "effect": "Bigger made-up penalty."
+      }
+    },
+    "favourBoxes": 4,
+    "limits": {
+      "potions": 3,
+      "scrolls": 2,
+      "largeItems": 2,
+      "armour": 1
+    }
+  }
+}
+```
 
 ## Rules that apply across tables
 

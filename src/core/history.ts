@@ -159,6 +159,17 @@ export class History {
     return true;
   }
 
+  /** Undo the newest step and forget it: it is not put on the redo list. For taps that cancel each other out. */
+  dropLast(): boolean {
+    const entry = this.past.pop();
+    if (!entry) return false;
+    this.current = entry.map;
+    this.currentHero = entry.hero;
+    this.lastMerge = null;
+    this.emit();
+    return true;
+  }
+
   redo(): boolean {
     const entry = this.future.pop();
     if (!entry) return false;

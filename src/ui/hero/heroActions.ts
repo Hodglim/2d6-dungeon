@@ -40,7 +40,7 @@ export function commitHero(history: History, next: Hero, opts: { label?: string;
   const base = merging ? ((history.heroBeforeLast as Hero | null) ?? now) : now;
   // A run of taps that nets out to nothing leaves no step behind.
   if (merging && JSON.stringify(next) === JSON.stringify(base)) {
-    history.undo();
+    history.dropLast();
     return { ok: true };
   }
   return history.execute(setHero(next, opts.label ?? heroEdit(base, next)), { mergeKey: opts.mergeKey });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import fixture from '../fixtures/dungeon-tables.fixture.json';
-import { cardsKind, chooseFile, loadStored, removeFile, tablesKind } from '../../src/persistence/extras';
+import { cardsKind, chooseFile, loadStored, readStored, removeFile, tablesKind } from '../../src/persistence/extras';
 import { MemorySaveStore, TABLES_KEY, CARDS_KEY } from '../../src/persistence/store';
 
 const file = (text: string) => ({ size: new TextEncoder().encode(text).length, text: async () => text });
@@ -25,6 +25,16 @@ class Failing extends MemorySaveStore {
     return super.removeExtra(k);
   }
 }
+
+describe('readStored', () => {
+  it('reports absent as readable, and unreadable or damaged as unreadable', async () => {
+    expect(await readStored(new MemorySaveStore(), cardsKind)).toEqual({ value: null, unreadable: false });
+    expect(await readStored(new Failing({ load: true }), cardsKind)).toEqual({ value: null, unreadable: true });
+    const s = new MemorySaveStore();
+    await s.saveExtra(cardsKind.key, { nonsense: true });
+    expect(await readStored(s, cardsKind)).toEqual({ value: null, unreadable: true });
+  });
+});
 
 describe('loadStored', () => {
   it('returns null for nothing, damage, or a throwing store; never throws', async () => {

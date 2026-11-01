@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { addRoom } from '../../src/core/commands';
 import { History } from '../../src/core/history';
-import { createHero, type Hero } from '../../src/systems/dungeon/hero';
+import { createHero, heroProblem, type Hero } from '../../src/systems/dungeon/hero';
 import type { DungeonTables } from '../../src/systems/dungeon/tables';
 import { addItem, addXp, adjustCoin, adjustHp, commitHero, removeItem } from '../../src/ui/hero/heroActions';
 import { emptyMap, room } from '../core/fixtures';
@@ -51,6 +51,18 @@ describe('heroActions', () => {
     commitHero(history, adjustHp(history.hero as Hero, 1), { mergeKey: 'hp' });
     expect((history.hero as Hero).hp).toBe(11);
     expect(history.undoLabel).toBe('Add room');
+    expect(history.canRedo).toBe(false);
+    expect(history.undo()).toBe(true);
+    expect(history.map.rooms).toHaveLength(0);
+  });
+  it('typed edits of name, weapon, level, title, baseline and XP are accepted by heroProblem', () => {
+    const h = hero();
+    const next = { ...h, name: '', weapon: 'Anything at all', level: 1, title: 'Seasoned Snoozer', hpBaseline: 0, xp: -3 };
+    expect(heroProblem(next)).toBeNull();
+    const history = new History(emptyMap(), 20, h, () => 0);
+    commitHero(history, { ...h, level: 7 });
+    expect((history.hero as Hero).level).toBe(7);
+    expect(history.undoLabel).toBe('Edit hero');
   });
   it('rejects a hero that cannot be cloned (a leaked proxy)', () => {
     const history = new History(emptyMap(), 20, hero(), () => 0);

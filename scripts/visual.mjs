@@ -658,6 +658,26 @@ if (!(await page.isVisible('text=This replaces your current game.'))) problems.p
   if (await p.isVisible(`${panel} [role=alert]`)) problems.push('warning shown within the manoeuvre limit');
   await wshot('34-hero-stats.png');
   await smallHero('stats tab');
+  // Identity fields are editable by hand: one commit each, no automatic stat changes.
+  {
+    const shiftSel = `${panel} label:has(.cap:text-is("shift")) input`;
+    const shiftBefore = await p.inputValue(shiftSel);
+    await p.fill(`${panel} [aria-label="Hero title"]`, 'Hand-typed Title');
+    await p.press(`${panel} [aria-label="Hero title"]`, 'Tab');
+    if (!(await undoText()).includes('Edit hero')) problems.push(`typed title label: ${await undoText()}`);
+    await p.fill(`${panel} [aria-label="HP baseline"]`, '21');
+    await p.press(`${panel} [aria-label="HP baseline"]`, 'Tab');
+    await p.fill(`${panel} [aria-label="Hero level"]`, '0');
+    await p.press(`${panel} [aria-label="Hero level"]`, 'Tab');
+    if ((await val('Hero level')) !== '3') problems.push('level 0 was accepted');
+    if (await p.isVisible(`${panel} .error`)) problems.push('level 0 showed an error');
+    if ((await val('HP baseline')) !== '21') problems.push('typed HP baseline lost');
+    if ((await p.inputValue(shiftSel)) !== shiftBefore) problems.push('editing the sheet changed a stat');
+    await p.fill(`${panel} [aria-label="Hero title"]`, 'Seasoned Snoozer');
+    await p.press(`${panel} [aria-label="Hero title"]`, 'Tab');
+    await p.fill(`${panel} [aria-label="HP baseline"]`, '17');
+    await p.press(`${panel} [aria-label="HP baseline"]`, 'Tab');
+  }
 
   await p.click(`${panel} #hero-tab-potions`);
   await p.click(`${panel} button[aria-label="Scraped Up box 2"]`);
@@ -799,6 +819,21 @@ if (!(await page.isVisible('text=This replaces your current game.'))) problems.p
   await p.waitForSelector('.hero-panel');
   if (!(await p.isVisible('.hero-panel >> text=Load your table file to choose manoeuvres'))) problems.push('no-tables manoeuvre hint missing');
 
+  // Typed text, then the app is backgrounded without any blur: the text is kept.
+  await p.click('.hero-panel #hero-tab-story');
+  await p.fill('.hero-panel textarea', 'typed, then the app was backgrounded');
+  await p.evaluate(() => {
+    Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  await p.waitForTimeout(1200);
+  await p.reload({ waitUntil: 'load' });
+  await p.waitForTimeout(1000);
+  await p.click('header.toolbar button.hero');
+  await p.waitForSelector('.hero-panel');
+  await p.click('.hero-panel #hero-tab-story');
+  if ((await p.inputValue('.hero-panel textarea')) !== 'typed, then the app was backgrounded') problems.push('typed narrative lost when the app was backgrounded');
+
   // Typed text with no blur, then another edit, then a tab switch: both survive.
   await p.click('.hero-panel #hero-tab-story');
   await p.fill('.hero-panel textarea', 'typed before an HP tap');
@@ -823,6 +858,12 @@ if (!(await page.isVisible('text=This replaces your current game.'))) problems.p
   if (!(await p.isVisible('.panel[aria-label="Step panel"]'))) problems.push('step panel missing after the hero went away on the Story tab');
   if (await p.isVisible('.hero-panel')) problems.push('hero panel still showing with no hero');
   if (errors.length !== errorsBefore) problems.push('page error when the hero went away: ' + errors.slice(errorsBefore).join(' | '));
+
+  // No hero and no table file: Hero explains what to do instead of opening a dead-end wizard.
+  await p.click('header.toolbar button.hero');
+  await p.waitForTimeout(300);
+  if (!(await p.isVisible('.toast:has-text("Load your table file first")'))) problems.push('Hero with no table file: toast missing');
+  if (await p.isVisible('[aria-labelledby=wizard-title]')) problems.push('Hero with no table file opened the wizard');
   await ctx.close();
 }
 

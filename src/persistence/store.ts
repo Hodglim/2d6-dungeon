@@ -157,7 +157,7 @@ export class IdbSaveStore implements SaveStore {
       req.onerror = () => fail(req.error ?? new Error('Could not read the stored file'));
       tx.onerror = () => fail(tx.error ?? new Error('Could not read the stored file'));
       tx.onabort = () => fail(tx.error ?? new Error('The read was aborted'));
-    });
+    }, this.extraWriteTimeoutMs);
   }
 
   saveExtra(key: string, value: unknown): Promise<void> {

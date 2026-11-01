@@ -84,6 +84,23 @@ describe('History', () => {
   });
 });
 
+describe('History.dropLast', () => {
+  it('undoes the newest step without leaving a redo, and emits', () => {
+    const h = new History(emptyMap());
+    h.execute(addRoom(room('a', 1, 1, 2, 2)));
+    h.execute(addRoom(room('b', 6, 6, 2, 2)));
+    const fn = vi.fn();
+    h.subscribe(fn);
+    expect(h.dropLast()).toBe(true);
+    expect(h.map.rooms).toHaveLength(1);
+    expect(h.canRedo).toBe(false);
+    expect(fn).toHaveBeenCalledTimes(1);
+    expect(h.canMerge('x')).toBe(false);
+    h.dropLast();
+    expect(h.dropLast()).toBe(false);
+  });
+});
+
 describe('History snapshots', () => {
   it('labels undo and redo with the action', () => {
     const h = new History(emptyMap());

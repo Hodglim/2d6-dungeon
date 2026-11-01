@@ -167,7 +167,7 @@ function cardBoxes({ w, h, px }) {
 // nearest heading before it.
 const levelCache = new Map();
 function levelOf(page) {
-  if (page < 1) return NaN;
+  if (page < first) return NaN;
   if (!levelCache.has(page)) {
     const own = Number(/LEVEL\s+(\d+)\s*[-–—]\s*CREATURE CARDS/i.exec(pageText(page))?.[1]);
     levelCache.set(page, Number.isFinite(own) ? own : levelOf(page - 1));

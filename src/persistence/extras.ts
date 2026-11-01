@@ -33,16 +33,21 @@ export const cardsKind: ExtraKind<CardPack> = {
   },
 };
 
-/** Reads and validates the stored copy; null when absent, damaged or unreadable. Never throws. */
-export async function loadStored<T>(store: SaveStore, kind: ExtraKind<T>): Promise<T | null> {
+/** Reads and validates the stored copy. `unreadable` is true when something is stored but could not be read or is damaged. Never throws. */
+export async function readStored<T>(store: SaveStore, kind: ExtraKind<T>): Promise<{ value: T | null; unreadable: boolean }> {
   try {
     const raw = await store.loadExtra(kind.key);
-    if (raw === null) return null;
+    if (raw === null) return { value: null, unreadable: false };
     const r = kind.validate(raw);
-    return r.ok ? r.value : null;
+    return r.ok ? { value: r.value, unreadable: false } : { value: null, unreadable: true };
   } catch {
-    return null;
+    return { value: null, unreadable: true };
   }
+}
+
+/** Reads and validates the stored copy; null when absent, damaged or unreadable. Never throws. */
+export async function loadStored<T>(store: SaveStore, kind: ExtraKind<T>): Promise<T | null> {
+  return (await readStored(store, kind)).value;
 }
 
 /** What is really stored now; `current` when the store can't be read. */

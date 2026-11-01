@@ -1,6 +1,7 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import fixture from '../fixtures/dungeon-tables.fixture.json';
-import { MAX_TABLE_FILE_BYTES, parseTableFile } from '../../src/systems/dungeon/tables';
+import { MAX_TABLE_FILE_BYTES, parseTableFile, validateTableFile } from '../../src/systems/dungeon/tables';
 
 const text = JSON.stringify(fixture);
 const parse = (o: unknown) => {
@@ -101,5 +102,14 @@ describe('parseTableFile', () => {
   it('refuses format 0 and 1.5', () => {
     bad((o) => { o.format = 0; });
     bad((o) => { o.format = 1.5; });
+  });
+});
+
+describe('docs/table-file-format.md', () => {
+  it('the inline example is a valid table file', () => {
+    const doc = readFileSync('docs/table-file-format.md', 'utf8');
+    const block = /complete, valid example[^`]*```json\n([\s\S]*?)\n```/.exec(doc)?.[1];
+    expect(block).toBeTruthy();
+    expect(validateTableFile(JSON.parse(block!)).ok).toBe(true);
   });
 });

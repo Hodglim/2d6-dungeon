@@ -29,6 +29,23 @@
     }
     if (n !== hero[key]) onedit({ ...hero, [key]: n });
   }
+  type TextKey = 'name' | 'weapon' | 'title';
+  type WholeKey = 'level' | 'hpBaseline' | 'xp';
+  /** Free text: one commit per change, no mergeKey. */
+  function setText(e: Event, key: TextKey) {
+    const v = (e.currentTarget as HTMLInputElement).value;
+    if (v !== hero[key]) onedit({ ...hero, [key]: v });
+  }
+  /** A whole number at or above `min`; anything else snaps back. Level changes no other stat. */
+  function setWhole(e: Event, key: WholeKey, min: number) {
+    const el = e.currentTarget as HTMLInputElement;
+    const n = Number(el.value.trim());
+    if (el.value.trim() === '' || !Number.isInteger(n) || n < min) {
+      el.value = String(hero[key]);
+      return;
+    }
+    if (n !== hero[key]) onedit({ ...hero, [key]: n });
+  }
   function setRunes(e: Event) {
     const v = (e.currentTarget as HTMLInputElement).value;
     if (v !== hero.appliedRunes) onedit({ ...hero, appliedRunes: v });
@@ -78,8 +95,16 @@
 
 <div class="page">
   <section>
-    <h3>{hero.name}</h3>
-    <p>{hero.weapon} · Level {hero.level} {hero.title}</p>
+    <div class="row ident">
+      <label class="grow"><span class="cap">Name</span><input type="text" aria-label="Hero name" value={hero.name} onchange={(e) => setText(e, 'name')} /></label>
+      <label class="grow"><span class="cap">Weapon</span><input type="text" aria-label="Hero weapon" value={hero.weapon} onchange={(e) => setText(e, 'weapon')} /></label>
+    </div>
+    <div class="row ident">
+      <label><span class="cap">Level</span><input class="num" type="text" inputmode="numeric" aria-label="Hero level" value={hero.level} onchange={(e) => setWhole(e, 'level', 1)} /></label>
+      <label class="grow"><span class="cap">Title</span><input type="text" aria-label="Hero title" value={hero.title} onchange={(e) => setText(e, 'title')} /></label>
+      <label><span class="cap">HP baseline</span><input class="num" type="text" inputmode="numeric" aria-label="HP baseline" value={hero.hpBaseline} onchange={(e) => setWhole(e, 'hpBaseline', 0)} /></label>
+      <label><span class="cap">XP</span><input class="num" type="text" inputmode="numeric" aria-label="XP total" value={hero.xp} onchange={(e) => setWhole(e, 'xp', 0)} /></label>
+    </div>
     <div class="row stats">
       {#each stats as s (s)}
         <label>
