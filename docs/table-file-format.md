@@ -117,7 +117,45 @@ Where to find them: Core Rules, p. 39, the sheet.
 
 ## Creature cards
 
-To be completed in Task 9.
+A creature card pack is a separate JSON file, loaded from the menu next to the table file. It is stored on the device, never exported, and never published. The app ships none; you make your own from your own Tables Codex PDF.
+
+### Pack format
+
+```json
+{
+  "format": 1,
+  "systemId": "dungeon",
+  "name": "Creature cards",
+  "cards": [
+    { "id": "p2-1", "name": "Example Creature", "level": 1, "image": "data:image/jpeg;base64,..." }
+  ]
+}
+```
+
+`format` must be 1 and `systemId` must be `"dungeon"`. Each card has a unique `id`, a `name`, a dungeon `level`, and an `image` as a `data:image/jpeg;base64,...` (or webp/png) URL. The file may be up to 60 MB.
+
+### Making a pack from your PDF
+
+You need `pdftoppm` and `pdftotext` (poppler-utils) and ImageMagick (`magick` or `convert`) installed. Then:
+
+```
+node scripts/make-creature-pack.mjs path/to/codex.pdf [--first N --last N] [--index-page N] [--names names.json] [--out local-data/creature-cards.json]
+```
+
+(`npm run creature-pack -- path/to/codex.pdf` does the same.)
+
+- It finds the "Creature Index" page (or use `--index-page`), reads the index's names and page numbers, and processes the pages listed (or `--first` to `--last`).
+- Each page is rendered, and the four cards are cut out by finding the white gutters between them. Nearly blank areas are skipped.
+- The level comes from each page's "LEVEL n - CREATURE CARDS" heading.
+- The index gives a page but not a position, so the names on a page are assigned in alphabetical order to reading order: top-left, top-right, bottom-left, bottom-right. If a page's card count differs from its index entries, its cards are named "Page P card K" and a warning is printed.
+- The script prints one line per page, for example `page 102: TL=..., TR=..., BL=..., BR=...`. Check these against the book.
+- To fix a wrong assignment without changing code, write a JSON file mapping `"page:slot"` to the right name, where slot is 1-4 (reading order) or TL, TR, BL, BR, and re-run with `--names`:
+
+```json
+{ "102:2": "Right Name", "103:BL": "Another Name" }
+```
+
+The output is written to `local-data/creature-cards.json` by default, which is git-ignored. The script prints the card count and total size.
 
 ## If the app refuses your file
 

@@ -37,6 +37,10 @@ Open the URL in Safari, then Share, then Add to Home Screen. The app then opens 
 - Two tabs on one device share one save, and the last change wins.
 - If saving ever fails, a red bar appears with an Export button so you can keep a copy.
 
+## Your rulebook data
+
+The app ships no rulebook content. To use the Hero sheet and creature cards, you load your own table file and creature card pack from the menu. Both stay on your device, are kept apart from the game save, and are never exported or published. The formats, and how to make a card pack from your own PDF, are in [docs/table-file-format.md](docs/table-file-format.md). Making a pack needs `pdftoppm` and `pdftotext` (poppler) and ImageMagick installed.
+
 ## Testing
 
 ```
