@@ -159,16 +159,19 @@
       started = true;
       return;
     }
-    const decision = decideStartup(out.raw);
+    let decision: ReturnType<typeof decideStartup>;
+    try {
+      decision = decideStartup(out.raw);
+      if (decision.kind === 'restore') history.restore(decision.history);
+    } catch (err) {
+      decision = { kind: 'error', error: `The saved game is damaged: ${err instanceof Error ? err.message : String(err)}` };
+    }
     if (decision.kind === 'error') {
       loadError = { kind: 'damaged', error: decision.error, raw: out.raw };
       started = true;
       return; // the autosaver stays paused and never started: the record is not touched
     }
-    if (decision.kind === 'restore') {
-      meta = decision.meta;
-      history.restore(decision.history);
-    }
+    if (decision.kind === 'restore') meta = decision.meta;
     saver.start();
     saver.resume();
     started = true;
