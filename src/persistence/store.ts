@@ -21,15 +21,28 @@ async function requestPersist(): Promise<boolean> {
 export class IdbSaveStore implements SaveStore {
   private db: Promise<IDBDatabase> | null = null;
 
-  constructor(private readonly dbName = '2d6-map-maker') {}
+  constructor(
+    private readonly dbName = '2d6-map-maker',
+    private readonly openTimeoutMs = 5000,
+  ) {}
 
   private open(): Promise<IDBDatabase> {
     if (this.db) return this.db;
     const p: Promise<IDBDatabase> = new Promise((resolve, reject) => {
+      let timedOut = false;
+      const timer = setTimeout(() => {
+        timedOut = true;
+        reject(new Error('Storage did not respond'));
+      }, this.openTimeoutMs);
       const req = indexedDB.open(this.dbName, 1);
       req.onupgradeneeded = () => req.result.createObjectStore(STORE);
       req.onsuccess = () => {
         const db = req.result;
+        clearTimeout(timer);
+        if (timedOut) {
+          db.close(); // arrived too late: nobody is waiting for it, so don't leak the connection
+          return;
+        }
         // If the browser closes the connection (e.g. storage pressure), reopen on the next call.
         // Only reset if this connection is still the cached one.
         db.onclose = () => {
@@ -41,8 +54,14 @@ export class IdbSaveStore implements SaveStore {
         };
         resolve(db);
       };
-      req.onerror = () => reject(req.error ?? new Error('Could not open storage'));
-      req.onblocked = () => reject(new Error('Storage is blocked by another tab'));
+      req.onerror = () => {
+        clearTimeout(timer);
+        reject(req.error ?? new Error('Could not open storage'));
+      };
+      req.onblocked = () => {
+        clearTimeout(timer);
+        reject(new Error('Storage is blocked by another tab'));
+      };
     });
     this.db = p;
     // Do not cache a failed open.

@@ -91,3 +91,37 @@ describe('IdbSaveStore stale handlers', () => {
     expect(internal.db).toBe(fresh);
   });
 });
+
+describe('IdbSaveStore with an open that never answers', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  function stubHungOpen() {
+    const reqs: { onsuccess?: () => void; result?: unknown }[] = [];
+    const open = vi.fn(() => {
+      const req: { onsuccess?: () => void; result?: unknown } = {};
+      reqs.push(req);
+      return req;
+    });
+    vi.stubGlobal('indexedDB', { open });
+    return { open, reqs };
+  }
+
+  it('load and save reject after the timeout, and the next call opens afresh', async () => {
+    const { open } = stubHungOpen();
+    const s = new IdbSaveStore('t-hung', 20);
+    await expect(s.load()).rejects.toThrow('Storage did not respond');
+    expect(open).toHaveBeenCalledTimes(1);
+    await expect(s.save(rec(1))).rejects.toThrow('Storage did not respond');
+    expect(open).toHaveBeenCalledTimes(2); // not the dead cached promise
+  });
+
+  it('closes a connection that arrives after the timeout', async () => {
+    const { reqs } = stubHungOpen();
+    const s = new IdbSaveStore('t-late', 10);
+    await expect(s.load()).rejects.toThrow('Storage did not respond');
+    const close = vi.fn();
+    reqs[0]!.result = { close };
+    reqs[0]!.onsuccess?.();
+    expect(close).toHaveBeenCalled();
+  });
+});
