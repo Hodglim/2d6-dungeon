@@ -1,4 +1,5 @@
 import type { GameSystem } from '../../core/system';
+import { heroProblem } from './hero';
 
 export const dungeonSystem: GameSystem = {
   id: 'dungeon',
@@ -18,5 +19,5 @@ export const dungeonSystem: GameSystem = {
   defaultMapSize: { width: 25, height: 25 },
   roomDieRange: { min: 1, max: 6 },
   maxExits: 3,
-  heroProblem: () => null, // Task 4 supplies the real check
+  heroProblem,
 };
