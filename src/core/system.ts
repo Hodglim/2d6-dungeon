@@ -21,4 +21,6 @@ export interface GameSystem {
   /** Inclusive range for each room dimension (one die each). */
   roomDieRange: { min: number; max: number };
   maxExits: number;
+  /** Describes what is wrong with a loaded hero, or null if it is valid. Called only for non-null heroes. */
+  heroProblem?: (hero: unknown) => string | null;
 }

@@ -2,7 +2,7 @@ import { randomId, type IdFn } from './ids';
 import type { GameSystem } from './system';
 import type { Campaign, DungeonMap } from './types';
 
-export const CURRENT_SCHEMA_VERSION = 1;
+export const CURRENT_SCHEMA_VERSION = 2;
 /** Maps are at most this many squares on each side. */
 export const MAX_MAP_SIZE = 100;
 

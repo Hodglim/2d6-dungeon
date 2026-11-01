@@ -187,7 +187,7 @@
     }
     let decision: ReturnType<typeof decideStartup>;
     try {
-      decision = decideStartup(out.raw);
+      decision = decideStartup(out.raw, dungeonSystem.heroProblem);
       if (decision.kind === 'restore') history.restore(decision.history);
     } catch (err) {
       decision = { kind: 'error', error: `The saved game is damaged: ${err instanceof Error ? err.message : String(err)}` };
@@ -210,7 +210,7 @@
   }
 
   /** Swap in a whole new game (fresh history) and write it now, replacing whatever was saved. */
-  function replaceGame(next: CampaignMeta, map: DungeonMap) {
+  function replaceGame(next: CampaignMeta, map: DungeonMap, hero: unknown | null = null) {
     meta = next;
     selection = null;
     gapMode = false;
@@ -219,7 +219,7 @@
     importError = null;
     saver.start();
     saver.resume();
-    history.reset(map);
+    history.reset(map, hero);
     void saver.flush();
   }
 
@@ -244,7 +244,7 @@
 
   function exportGame() {
     // Build the File synchronously so shareOrDownload runs inside the click's user gesture.
-    const { name, text } = exportCampaignFile(campaignFrom(meta, history.map));
+    const { name, text } = exportCampaignFile(campaignFrom(meta, history.map, history.hero));
     shareOrDownload(new File([text], name, { type: 'application/json' }));
   }
 
@@ -276,14 +276,14 @@
       importError = "That file couldn't be read.";
       return;
     }
-    const res = readImportText(text, file.size);
+    const res = readImportText(text, file.size, dungeonSystem.heroProblem);
     if (!res.ok) {
       importError = res.error;
       return;
     }
     const campaign = res.campaign;
     const map = activeMap(campaign);
-    const run = () => replaceGame(metaFrom(campaign), map);
+    const run = () => replaceGame(metaFrom(campaign), map, campaign.hero);
     // From the load-error dialog there's no current game to lose, but the stored record is overwritten.
     if (loadError) askOverwriteSaved(run);
     else askReplace('Import game', run);

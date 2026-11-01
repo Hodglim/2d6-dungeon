@@ -1,4 +1,4 @@
-import { parseCampaign, serializeCampaign, type ParseResult } from '../core/serialize';
+import { parseCampaign, serializeCampaign, type HeroProblem, type ParseResult } from '../core/serialize';
 import type { Campaign } from '../core/types';
 
 export const MAX_IMPORT_BYTES = 20_000_000;
@@ -19,7 +19,7 @@ export function exportCampaignFile(c: Campaign): { name: string; text: string } 
 }
 
 /** Size guard first, then the full parseCampaign validation. */
-export function readImportText(text: string, byteLength: number): ParseResult {
+export function readImportText(text: string, byteLength: number, heroProblem?: HeroProblem): ParseResult {
   if (byteLength > MAX_IMPORT_BYTES) return { ok: false, error: 'This file is too large to be a map file.' };
-  return parseCampaign(text);
+  return parseCampaign(text, heroProblem);
 }
