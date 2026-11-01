@@ -24,29 +24,32 @@ export class IdbSaveStore implements SaveStore {
   constructor(private readonly dbName = '2d6-map-maker') {}
 
   private open(): Promise<IDBDatabase> {
-    this.db ??= new Promise((resolve, reject) => {
+    if (this.db) return this.db;
+    const p: Promise<IDBDatabase> = new Promise((resolve, reject) => {
       const req = indexedDB.open(this.dbName, 1);
       req.onupgradeneeded = () => req.result.createObjectStore(STORE);
       req.onsuccess = () => {
         const db = req.result;
         // If the browser closes the connection (e.g. storage pressure), reopen on the next call.
+        // Only reset if this connection is still the cached one.
         db.onclose = () => {
-          this.db = null;
+          if (this.db === p) this.db = null;
         };
         db.onversionchange = () => {
           db.close();
-          this.db = null;
+          if (this.db === p) this.db = null;
         };
         resolve(db);
       };
       req.onerror = () => reject(req.error ?? new Error('Could not open storage'));
       req.onblocked = () => reject(new Error('Storage is blocked by another tab'));
     });
+    this.db = p;
     // Do not cache a failed open.
-    this.db.catch(() => {
-      this.db = null;
+    p.catch(() => {
+      if (this.db === p) this.db = null;
     });
-    return this.db;
+    return p;
   }
 
   async load(): Promise<unknown | null> {

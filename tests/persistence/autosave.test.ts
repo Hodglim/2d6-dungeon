@@ -119,4 +119,59 @@ describe('Autosaver', () => {
     await vi.advanceTimersByTimeAsync(3000);
     expect(save).toHaveBeenCalledTimes(0);
   });
+
+  it('flush retries a failed save without a new change', async () => {
+    const { store, save, act, auto } = setup();
+    const seen: AutosaveStatus[] = [];
+    auto.subscribe((s) => seen.push(s));
+    store.failNext = new Error('boom');
+    act();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(seen.at(-1)!.failing).toBe(true);
+    await auto.flush();
+    expect(save).toHaveBeenCalledTimes(2);
+    expect(seen.at(-1)!.failing).toBe(false);
+    expect(store.saved).not.toBeNull();
+  });
+
+  it('retries on a timer after a failure with no new change', async () => {
+    const { store, save, act, auto } = setup();
+    const seen: AutosaveStatus[] = [];
+    auto.subscribe((s) => seen.push(s));
+    store.failNext = new Error('boom');
+    act();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(save).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(save).toHaveBeenCalledTimes(2);
+    expect(seen.at(-1)!.failing).toBe(false);
+  });
+
+  it('a store that always fails gets a bounded number of calls', async () => {
+    const { store, act, auto } = setup();
+    const calls = vi.fn();
+    store.save = async () => {
+      calls();
+      throw new Error('down');
+    };
+    act();
+    await vi.advanceTimersByTimeAsync(1000);
+    await auto.flush();
+    await auto.flush();
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(calls.mock.calls.length).toBeGreaterThanOrEqual(3);
+    expect(calls.mock.calls.length).toBeLessThan(15);
+  });
+
+  it('pause cancels a pending retry', async () => {
+    const { store, save, act, auto } = setup();
+    store.failNext = new Error('boom');
+    act();
+    await vi.advanceTimersByTimeAsync(1000);
+    auto.pause();
+    await vi.advanceTimersByTimeAsync(60_000);
+    await auto.flush();
+    expect(save).toHaveBeenCalledTimes(1);
+  });
 });

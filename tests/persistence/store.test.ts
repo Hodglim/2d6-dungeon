@@ -1,4 +1,5 @@
 import 'fake-indexeddb/auto';
+import { vi } from 'vitest';
 import { History } from '../../src/core/history';
 import { addRoom } from '../../src/core/commands';
 import { IdbSaveStore, MemorySaveStore } from '../../src/persistence/store';
@@ -69,8 +70,24 @@ describe('IdbSaveStore reconnect', () => {
     const s = new IdbSaveStore('t-vc');
     await s.save(rec(1));
     const db = await (s as unknown as { db: Promise<IDBDatabase> }).db;
+    const close = vi.spyOn(db, 'close');
     db.onversionchange?.(new Event('versionchange') as IDBVersionChangeEvent);
+    expect(close).toHaveBeenCalled();
     await s.save(rec(2));
     expect(await s.load()).not.toBeNull();
+  });
+});
+
+describe('IdbSaveStore stale handlers', () => {
+  it('a stale connection closing does not drop a newer cached one', async () => {
+    const s = new IdbSaveStore('t-stale');
+    await s.save(rec(1));
+    const internal = s as unknown as { db: Promise<IDBDatabase> | null };
+    const old = await internal.db!;
+    old.onclose?.(new Event('close')); // legit reset
+    await s.save(rec(1));
+    const fresh = internal.db;
+    old.onclose?.(new Event('close')); // stale fire
+    expect(internal.db).toBe(fresh);
   });
 });

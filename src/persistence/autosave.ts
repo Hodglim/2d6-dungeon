@@ -27,6 +27,8 @@ export class Autosaver {
   private dirty = false;
   private paused = false;
   private disposed = false;
+  private retryPending = false;
+  private failures = 0;
   private persistRequested = false;
   private running: Promise<void> | null = null;
   private status: AutosaveStatus = { failing: false, lastError: null, lastSavedAt: null };
@@ -51,12 +53,15 @@ export class Autosaver {
   /** Writes immediately if a save is pending, and resolves once nothing is in flight. */
   async flush(): Promise<void> {
     this.cancelTimer();
+    if (this.retryPending) this.dirty = true;
     await this.drain();
   }
 
+  /** Dropping pending work (and retries) is intended: pause is used when the history is about to be replaced (the load-error dialog). */
   pause(): void {
     this.paused = true;
     this.dirty = false;
+    this.retryPending = false;
     this.cancelTimer();
   }
 
@@ -69,6 +74,7 @@ export class Autosaver {
     this.unsubscribe?.();
     this.unsubscribe = null;
     this.dirty = false;
+    this.retryPending = false;
     this.cancelTimer();
     this.listeners.clear();
   }
@@ -81,11 +87,16 @@ export class Autosaver {
   private schedule(): void {
     if (this.paused || this.disposed) return;
     this.dirty = true;
+    this.arm(this.delayMs);
+  }
+
+  private arm(ms: number): void {
     this.cancelTimer();
     this.timer = this.setTimer(() => {
       this.timer = null;
+      if (this.retryPending) this.dirty = true;
       void this.drain();
-    }, this.delayMs);
+    }, ms);
   }
 
   private cancelTimer(): void {
@@ -107,12 +118,19 @@ export class Autosaver {
       this.dirty = false;
       try {
         await this.store.save(encodeSave(this.meta(), this.history.exportState()));
+        this.retryPending = false;
+        this.failures = 0;
         this.set({ failing: false, lastError: null, lastSavedAt: new Date().toISOString() });
         if (!this.persistRequested) {
           this.persistRequested = true;
           void this.store.requestPersist().catch(() => false);
         }
       } catch (err) {
+        if (this.paused || this.disposed) return;
+        // Retry later (flush or backoff timer); never re-dirty inside this loop, or a persistent failure would spin.
+        this.retryPending = true;
+        this.failures++;
+        if (this.timer === null) this.arm(Math.min(this.delayMs * 2 ** (this.failures - 1), 30_000));
         this.set({ ...this.status, failing: true, lastError: err instanceof Error ? err.message : String(err) });
       }
     }
