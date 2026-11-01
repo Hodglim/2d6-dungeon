@@ -13,7 +13,7 @@ const CARD_WIDTH = 700;
 const QUALITY = 80;
 const WHITE = 245; // grey level at or above this counts as paper
 const MIN_BLANK_FRACTION = 0.01; // a row/column with less ink than this is a gutter line
-const MIN_GAP_FRACTION = 0.008; // a gutter must be at least this fraction of the page
+const MIN_GAP_FRACTION = 0.004; // a gutter must be at least this fraction of the page (some books leave only a few px)
 const MIN_CARD_FRACTION = 0.15; // a band narrower than this fraction of the page is not a card
 
 const args = process.argv.slice(2);
@@ -162,13 +162,26 @@ function cardBoxes({ w, h, px }) {
   return boxes;
 }
 
+// --- level headings ---
+// The heading may appear only on the first page of each level, so a page without one takes the level of the
+// nearest heading before it.
+const levelCache = new Map();
+function levelOf(page) {
+  if (page < 1) return NaN;
+  if (!levelCache.has(page)) {
+    const own = Number(/LEVEL\s+(\d+)\s*[-–—]\s*CREATURE CARDS/i.exec(pageText(page))?.[1]);
+    levelCache.set(page, Number.isFinite(own) ? own : levelOf(page - 1));
+  }
+  return levelCache.get(page);
+}
+
 // --- render, split, encode ---
 const tmp = mkdtempSync(join(tmpdir(), 'creature-pack-'));
 const cards = [];
 const summary = [];
 try {
   for (let page = first; page <= last; page++) {
-    const level = Number(/LEVEL\s+(\d+)\s*[-–—]\s*CREATURE CARDS/i.exec(pageText(page))?.[1]);
+    const level = levelOf(page);
     const base = join(tmp, `p${page}`);
     execFileSync('pdftoppm', ['-r', String(DPI), '-png', '-f', String(page), '-l', String(page), '-singlefile', pdf, base]);
     const png = `${base}.png`;
@@ -176,7 +189,7 @@ try {
     const names = namesByPage.get(page) ?? [];
     const matched = names.length === boxes.length;
     if (!matched) console.warn(`warning: page ${page} has ${boxes.length} card(s) but the index lists ${names.length}; naming them "Page ${page} card K".`);
-    if (!Number.isFinite(level)) console.warn(`warning: page ${page} has no "LEVEL n - CREATURE CARDS" heading; using level 0.`);
+    if (!Number.isFinite(level)) console.warn(`warning: page ${page} has no "LEVEL n - CREATURE CARDS" heading on it or before it; using level 0.`);
     const labels = [];
     boxes.forEach((b, i) => {
       const slot = SLOT_NAMES[i] ?? `S${i + 1}`;
