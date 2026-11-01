@@ -1188,6 +1188,100 @@ for (const reduced of [false, true]) {
   await ctx.close();
 }
 
+// 14. Roll later: skip a room's roll, then roll for it from the Select inspector.
+{
+  const ctx = await browser.newContext({ viewport: { width: 1180, height: 820 }, deviceScaleFactor: 2, hasTouch: true, reducedMotion: 'reduce' });
+  await ctx.addInitScript(() => localStorage.setItem('2d6.installHintDismissed', '1'));
+  const p = await ctx.newPage();
+  p.on('pageerror', (e) => errors.push(e.message));
+  await p.goto(url, { waitUntil: 'load' });
+  await p.waitForTimeout(800);
+  const tag = 'roll later';
+  const tap = async (x, y) => {
+    const at = await p.$eval('canvas', (c, [wx, wy]) => {
+      const [cx, cy, sc] = (c.dataset.camera ?? '').split(',').map(Number);
+      const r = c.getBoundingClientRect();
+      return { x: r.left + (wx - cx) * sc, y: r.top + (wy - cy) * sc };
+    }, [x, y]);
+    await p.mouse.click(at.x, at.y);
+    await p.waitForTimeout(150);
+  };
+  const btn = (name) => p.click(`aside.panel button:text-is("${name}")`);
+  const tool = (name) => p.click(`header.toolbar button.tool:text-is("${name}")`);
+  const dice = async (...v) => {
+    const ins = await p.$$('aside.panel form.dice input');
+    for (let i = 0; i < v.length; i++) await ins[i].fill(v[i]);
+  };
+  const undo = async () => (await p.textContent('header.toolbar button.history'))?.replace(/\s+/g, ' ').trim() ?? '';
+  const doorNow = async (x, y) => {
+    await tool('Door');
+    await tap(x, y);
+    const pressed = await p.$$eval('aside.panel [data-editor=door] button[aria-pressed=true]', (els) => els.map((e) => e.textContent?.trim()));
+    await tool('Select');
+    return pressed.join('+');
+  };
+  await p.setInputFiles('input[data-extra="tables"]', { name: 'tables.json', mimeType: 'application/json', buffer: Buffer.from(readFileSync('tests/fixtures/dungeon-tables.fixture.json')) });
+  await p.waitForTimeout(500);
+  await tap(12.5, 25.5);
+  await dice('3', '4');
+  await btn('Use these');
+  await btn('Place');
+  await btn('Done');
+  await btn('Done');
+  await p.waitForTimeout(1500);
+  await tap(12.5, 20);
+  await dice('3', '4');
+  await btn('Use these');
+  await btn('Place');
+  await dice('4');
+  await btn('Use this');
+  await dice('3');
+  await btn('Place for me');
+  await btn('Done');
+  await btn('Skip'); // skip the roll
+  await btn('Skip'); // and leave the room unlabelled
+  await p.waitForTimeout(1500);
+  const level = (await p.textContent('[data-testid=level-indicator]'))?.trim();
+  if (level !== 'Level 1 · Test Halls') problems.push(`${tag}: level indicator is "${level}"`);
+  await tool('Select');
+  const roomAt = [12.5, 18.5];
+  const entry = [12.5, 20.5];
+  const exitE = [14, 17.5];
+  const exitN = [12.5, 16];
+  const before = [await doorNow(...entry), await doorNow(...exitE), await doorNow(...exitN)];
+  await tap(...roomAt);
+  if (!(await p.isVisible('aside.panel button:text-is("Roll for this room")'))) problems.push(`${tag}: no "Roll for this room" button`);
+  await shot('48a-roll-later-button.png', p);
+  await btn('Roll for this room');
+  await dice('3', '4');
+  await btn('Use these');
+  const result = (await p.textContent('[data-testid=room-result]'))?.replace(/\s+/g, ' ').trim() ?? '';
+  console.log(`${tag}: "${result}"`);
+  if (!result.includes('Practice Room 34') || !/Wooden/i.test(result) || !/locked/.test(result)) problems.push(`${tag}: bad result "${result}"`);
+  await btn('Apply');
+  await p.waitForTimeout(500);
+  if (!(await undo()).includes('Roll room 2')) problems.push(`${tag}: undo label "${await undo()}"`);
+  const after = [await doorNow(...entry), await doorNow(...exitE), await doorNow(...exitN)];
+  console.log(`${tag}: doors before ${before.join(' | ')}; after ${after.join(' | ')}`);
+  if (after[0] !== before[0]) problems.push(`${tag}: entry door changed (${before[0]} -> ${after[0]})`);
+  for (const i of [1, 2]) if (!after[i].includes('Wooden door')) problems.push(`${tag}: exit ${i} is "${after[i]}", expected Wooden door`);
+  await tap(...roomAt);
+  const insp = (await p.innerText('aside.panel [data-editor="room"]')).replace(/\s+/g, ' ').trim();
+  console.log(`${tag}: inspector "${insp}"`);
+  if (!insp.includes('Nothing but invented dust (34).')) problems.push(`${tag}: inspector missing the encounter text`);
+  const typeValue = await p.inputValue('aside.panel [data-editor="room"] input[type="text"]');
+  if (typeValue !== 'Practice Room 34') problems.push(`${tag}: room type "${typeValue}"`);
+  if (await p.isVisible('aside.panel button:text-is("Roll for this room")')) problems.push(`${tag}: roll button still shown after rolling`);
+  await checkPanelOn(p, tag);
+  await shot('48-roll-later.png', p);
+  // One undo takes the whole roll back.
+  await p.click('header.toolbar button.history');
+  await p.waitForTimeout(300);
+  if (!(await p.isVisible('aside.panel button:text-is("Roll for this room")'))) problems.push(`${tag}: undo did not remove the roll`);
+  if ((await doorNow(...exitE)) !== before[1]) problems.push(`${tag}: undo did not restore the exit type`);
+  await ctx.close();
+}
+
 await browser.close();
 if (errors.length) problems.push('page errors:\n' + errors.join('\n'));
 if (problems.length) {

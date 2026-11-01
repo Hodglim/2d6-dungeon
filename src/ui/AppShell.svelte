@@ -26,6 +26,7 @@
   import { dungeonSystem } from '../systems/dungeon';
   import type { CardPack, CreatureCard } from '../systems/dungeon/cards';
   import type { Hero } from '../systems/dungeon/hero';
+  import { levelLabel } from './levelLabel';
   import type { DungeonTables } from '../systems/dungeon/tables';
   import { classicTheme } from '../systems/dungeon/classic';
   import { drawOverlay, overlayFor, selectionOverlay } from './overlay';
@@ -687,6 +688,8 @@
         notice = null;
       }}
       oncommit={commit}
+      {tables}
+      levelText={levelLabel(tables, $view.map.level)}
       selection={liveSelection}
       onexec={exec}
       onselect={(sel) => (selection = sel)}
