@@ -1,3 +1,4 @@
+import { addRoom, setHero } from '../../src/core/commands';
 import { History } from '../../src/core/history';
 import { sequentialIds } from '../../src/core/ids';
 import { openExits } from '../../src/core/query';
@@ -575,7 +576,7 @@ describe('PlayFlow follows whole-state replacement', () => {
       expect(flow.step.kind).toBe('exitCount');
       const next = emptyMap(12, 12);
       if (replace === 'reset') history.reset(next);
-      else history.restore({ current: next, past: [], future: [] });
+      else history.restore({ current: next, hero: null, past: [], future: [] });
       expect(flow.step.kind).toBe('idle');
       expect(flow.draftMap).toBe(next);
       expect(history.map).toBe(next);
@@ -583,5 +584,19 @@ describe('PlayFlow follows whole-state replacement', () => {
       flow.startEntrance({ x: 4, y: 12 });
       expect(flow.step.kind).toBe('size');
     }
+  });
+});
+
+describe('PlayFlow ignores hero-only changes (Review Focus 1)', () => {
+  it('a hero execute leaves the draft open; a map execute cancels it', () => {
+    const { history, flow } = withEntrance();
+    flow.startFromExit(northExit(history.map).id);
+    flow.enterSize('3', '4');
+    flow.place();
+    expect(flow.step.kind).toBe('exitCount');
+    history.execute(setHero({ hp: 5 }, 'Create hero'));
+    expect(flow.step.kind).toBe('exitCount');
+    history.execute(addRoom(room('zz', 0, 0, 1, 1)));
+    expect(flow.step.kind).toBe('idle');
   });
 });

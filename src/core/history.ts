@@ -1,19 +1,30 @@
-import type { Command } from './commands';
+import type { Command, HeroCommand } from './commands';
 import { checkInvariants } from './invariants';
 import type { DungeonMap } from './types';
 
 export type ExecResult = { ok: true } | { ok: false; reason: string };
 export type Listener = (map: DungeonMap) => void;
 
+/** Everything one undo step covers: the map and an opaque hero (the system gives it a type). */
+export interface GameState {
+  map: DungeonMap;
+  hero: unknown | null;
+}
+
+/** Quick repeated edits with the same merge key inside this window share one undo step. */
+export const MERGE_WINDOW_MS = 1500;
+
 /** A map state on the timeline, with the label of the action that separates it from the current state. */
 export interface HistoryEntry {
   label: string;
   map: DungeonMap;
+  hero: unknown | null;
 }
 
 /** Plain-data snapshot of a History, for saving alongside the campaign. */
 export interface HistoryState {
   current: DungeonMap;
+  hero: unknown | null;
   past: HistoryEntry[];
   future: HistoryEntry[];
 }
@@ -29,37 +40,55 @@ export class History {
   private past: HistoryEntry[] = [];
   private future: HistoryEntry[] = [];
   private listeners = new Set<Listener>();
+  private currentHero: unknown | null;
+  /** Key and time of the previous execute, while nothing else has happened since. */
+  private lastMerge: { key: string; at: number } | null = null;
 
   constructor(
     private current: DungeonMap,
     private readonly cap = HISTORY_CAP,
-  ) {}
+    hero: unknown | null = null,
+    private readonly now: () => number = Date.now,
+  ) {
+    this.currentHero = hero;
+  }
 
   /** Restores an exported timeline, keeping only the newest `cap` past entries.
    * Trusts its input: callers must validate a loaded state (structure and checkInvariants
    * for every snapshot) before calling this. */
   static fromState(state: HistoryState, cap = HISTORY_CAP): History {
-    const h = new History(state.current, cap);
-    h.past = state.past.slice(-cap);
-    h.future = state.future.slice(-cap);
+    const h = new History(state.current, cap, state.hero ?? null);
+    h.past = state.past.slice(-cap).map(norm);
+    h.future = state.future.slice(-cap).map(norm);
     return h;
   }
 
   exportState(): HistoryState {
-    return { current: this.current, past: [...this.past], future: [...this.future] };
+    return { current: this.current, hero: this.currentHero, past: [...this.past], future: [...this.future] };
   }
 
   /** Replaces current/past/future in place (past/future trimmed to the cap) and emits once,
    * so existing subscribers keep working. Trusts its input like fromState. */
   restore(state: HistoryState): void {
     this.current = state.current;
-    this.past = state.past.slice(-this.cap);
-    this.future = state.future.slice(-this.cap);
+    this.currentHero = state.hero ?? null;
+    this.past = state.past.slice(-this.cap).map(norm);
+    this.future = state.future.slice(-this.cap).map(norm);
+    this.lastMerge = null;
     this.emit();
   }
 
   get map(): DungeonMap {
     return this.current;
+  }
+
+  get hero(): unknown | null {
+    return this.currentHero;
+  }
+
+  /** The hero as it was before the newest undo step (for building merged labels like "HP -3"). */
+  get heroBeforeLast(): unknown | null {
+    return this.past[this.past.length - 1]?.hero ?? null;
   }
 
   get canUndo(): boolean {
@@ -80,18 +109,36 @@ export class History {
     return this.future[this.future.length - 1]?.label ?? null;
   }
 
-  execute(cmd: Command): ExecResult {
-    const next = cmd.apply(this.current);
-    if (next === this.current) return { ok: true };
-    const problem = checkInvariants(next);
-    if (problem) {
-      console.warn(`Rejected "${cmd.label}": ${problem}`);
-      return { ok: false, reason: problem };
+  execute(cmd: Command | HeroCommand, opts: { mergeKey?: string } = {}): ExecResult {
+    let map = this.current;
+    let hero = this.currentHero;
+    if ('applyHero' in cmd) {
+      hero = cmd.applyHero(hero);
+    } else {
+      map = cmd.apply(map);
     }
-    this.past.push({ label: cmd.label, map: this.current });
-    if (this.past.length > this.cap) this.past.shift();
+    if (map === this.current && hero === this.currentHero) return { ok: true };
+    if (map !== this.current) {
+      const problem = checkInvariants(map);
+      if (problem) {
+        console.warn(`Rejected "${cmd.label}": ${problem}`);
+        return { ok: false, reason: problem };
+      }
+    }
+    const at = this.now();
+    const key = opts.mergeKey;
+    const top = this.past[this.past.length - 1];
+    const merge = key !== undefined && top !== undefined && this.lastMerge?.key === key && at - this.lastMerge.at < MERGE_WINDOW_MS;
+    if (merge) {
+      top.label = cmd.label;
+    } else {
+      this.past.push({ label: cmd.label, map: this.current, hero: this.currentHero });
+      if (this.past.length > this.cap) this.past.shift();
+    }
+    this.lastMerge = key === undefined ? null : { key, at };
     this.future = [];
-    this.current = next;
+    this.current = map;
+    this.currentHero = hero;
     this.emit();
     return { ok: true };
   }
@@ -99,8 +146,10 @@ export class History {
   undo(): boolean {
     const entry = this.past.pop();
     if (!entry) return false;
-    this.future.push({ label: entry.label, map: this.current });
+    this.future.push({ label: entry.label, map: this.current, hero: this.currentHero });
     this.current = entry.map;
+    this.currentHero = entry.hero;
+    this.lastMerge = null;
     this.emit();
     return true;
   }
@@ -108,17 +157,21 @@ export class History {
   redo(): boolean {
     const entry = this.future.pop();
     if (!entry) return false;
-    this.past.push({ label: entry.label, map: this.current });
+    this.past.push({ label: entry.label, map: this.current, hero: this.currentHero });
     this.current = entry.map;
+    this.currentHero = entry.hero;
+    this.lastMerge = null;
     this.emit();
     return true;
   }
 
-  /** Replace the map entirely (e.g. on import) and clear history. */
-  reset(map: DungeonMap): void {
+  /** Replace the map and hero entirely (e.g. on import) and clear history. */
+  reset(map: DungeonMap, hero: unknown | null = null): void {
     this.current = map;
+    this.currentHero = hero;
     this.past = [];
     this.future = [];
+    this.lastMerge = null;
     this.emit();
   }
 
@@ -136,4 +189,9 @@ export class History {
       }
     }
   }
+}
+
+/** A saved entry without a hero reads as no hero. */
+function norm(e: HistoryEntry): HistoryEntry {
+  return e.hero === undefined ? { ...e, hero: null } : e;
 }

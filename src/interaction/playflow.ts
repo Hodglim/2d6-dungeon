@@ -107,7 +107,10 @@ export class PlayFlow {
     private readonly newId: IdFn,
   ) {
     this.base = history.map;
-    this.unsubscribe = history.subscribe(() => {
+    let seen = history.map;
+    this.unsubscribe = history.subscribe((map) => {
+      if (map === seen) return; // a hero-only change leaves the draft alone
+      seen = map;
       if (this.committing) return;
       this.walk = null;
       this.reset(null);
