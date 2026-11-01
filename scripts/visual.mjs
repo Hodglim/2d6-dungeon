@@ -676,6 +676,76 @@ if (!(await page.isVisible('text=This replaces your current game.'))) problems.p
   await p.click(`${panel} button[aria-label="Close hero panel"]`);
   if (!(await p.isVisible('.panel[aria-label="Step panel"]'))) problems.push('closing the hero panel did not restore the step panel');
 
+  // Encounter: a made-up 3-card pack with canvas-drawn placeholder images.
+  {
+    const imgs = await p.evaluate(() =>
+      [['#c96', 'A'], ['#6a9', 'B'], ['#69c', 'C']].map(([bg, ch]) => {
+        const c = document.createElement('canvas');
+        c.width = 300;
+        c.height = 420;
+        const g = c.getContext('2d');
+        g.fillStyle = bg;
+        g.fillRect(0, 0, 300, 420);
+        g.strokeStyle = '#222';
+        g.lineWidth = 8;
+        g.strokeRect(8, 8, 284, 404);
+        g.fillStyle = '#222';
+        g.font = '160px sans-serif';
+        g.textAlign = 'center';
+        g.fillText(ch, 150, 260);
+        return c.toDataURL('image/png');
+      }),
+    );
+    const pack = { format: 1, systemId: 'dungeon', name: 'Made-up cards', cards: [
+      { id: 'g1', name: 'Mossy Gribbler', level: 1, image: imgs[0] },
+      { id: 'g2', name: 'Cellar Hum', level: 2, image: imgs[1] },
+      { id: 'g3', name: 'Tall Pennywort', level: 2, image: imgs[2] },
+    ] };
+    await pick('cards', 'cards3.json', Buffer.from(JSON.stringify(pack)));
+    await p.click('header.toolbar button.encounter');
+    await p.waitForSelector('.encounter-picker');
+    if ((await p.$$eval('.encounter-picker .pick', (e) => e.length)) !== 3) problems.push('picker did not list 3 cards');
+    const opts = await p.$$eval('.encounter-picker select option', (e) => e.map((o) => o.textContent.trim()));
+    if (opts.join('|') !== 'All|Level 1|Level 2') problems.push('level filter options: ' + opts.join('|'));
+    await p.selectOption('.encounter-picker select', '2');
+    if ((await p.$$eval('.encounter-picker .pick', (e) => e.length)) !== 2) problems.push('level filter did not narrow');
+    await p.fill('.encounter-picker input[type=search]', 'penny');
+    if ((await p.$$eval('.encounter-picker .pick', (e) => e.length)) !== 1) problems.push('name search did not narrow');
+    const histBefore = await undoText();
+    await p.click('.encounter-picker .pick');
+    await p.waitForSelector('.encounter-card img[alt="Tall Pennywort"]');
+    if (await p.isVisible('.panel[aria-label="Step panel"]')) problems.push('step panel showing beside the encounter card');
+    const fit = await p.$eval('.encounter-card img', (e) => e.getBoundingClientRect().width <= e.closest('.encounter-card').getBoundingClientRect().width);
+    if (!fit) problems.push('card image wider than the panel');
+    if ((await undoText()) !== histBefore) problems.push('picking a card changed History');
+    await wshot('38-encounter.png');
+    // Hero open too: tabs, Encounter first.
+    await p.click('header.toolbar button.hero');
+    await p.waitForSelector('.hero-panel');
+    if (!(await p.isVisible('#side-tab-encounter')) || !(await p.isVisible('#side-tab-hero'))) problems.push('tabs missing with both open');
+    await p.click('#side-tab-encounter');
+    if (!(await p.isVisible('.encounter-card'))) problems.push('Encounter tab did not show the card');
+    await p.click('#side-tab-hero');
+    if (!(await p.isVisible('.hero-panel')) || (await p.isVisible('.encounter-card'))) problems.push('Hero tab did not switch');
+    await wshot('39-encounter-hero-tabs.png');
+    await p.click('#side-tab-encounter');
+    // Full screen closes on tap and on Escape.
+    await p.click('.encounter-card .image');
+    if (!(await p.isVisible('.full img'))) problems.push('full-screen card missing');
+    await p.click('.full');
+    if (await p.isVisible('.full')) problems.push('full-screen card did not close on tap');
+    await p.click('.encounter-card .image');
+    await p.keyboard.press('Escape');
+    if (await p.isVisible('.full')) problems.push('full-screen card did not close on Escape');
+    await p.click('.encounter-card button:text-is("End encounter")');
+    if (await p.isVisible('.encounter-card') || !(await p.isVisible('.hero-panel'))) problems.push('End encounter did not leave the hero panel');
+    await p.click(`${panel} button[aria-label="Close hero panel"]`);
+    if (!(await p.isVisible('.panel[aria-label="Step panel"]'))) problems.push('step panel did not return');
+    // Not saved.
+    await p.waitForTimeout(1200);
+    if ((await readSaved()).includes('Tall Pennywort')) problems.push('encounter was saved');
+  }
+
   await p.reload({ waitUntil: 'load' });
   await p.waitForTimeout(1000);
   const afterReload = await statusOf('tables');

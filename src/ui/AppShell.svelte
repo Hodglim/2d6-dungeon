@@ -24,7 +24,7 @@
   import type { Pick } from '../render/hit';
   import { DEFAULT_TOGGLES, type DisplayToggles } from '../render/renderer';
   import { dungeonSystem } from '../systems/dungeon';
-  import type { CardPack } from '../systems/dungeon/cards';
+  import type { CardPack, CreatureCard } from '../systems/dungeon/cards';
   import type { Hero } from '../systems/dungeon/hero';
   import type { DungeonTables } from '../systems/dungeon/tables';
   import { classicTheme } from '../systems/dungeon/classic';
@@ -39,6 +39,8 @@
   import ReplaceGameDialog from './ReplaceGameDialog.svelte';
   import SaveBanner from './SaveBanner.svelte';
   import HeroPanel from './hero/HeroPanel.svelte';
+  import EncounterCard from './encounter/EncounterCard.svelte';
+  import EncounterPicker from './encounter/EncounterPicker.svelte';
   import StepPanel from './StepPanel.svelte';
   import { resolveSelection, routeEditorTap, routePlayTap, type Selection } from './tapRouting';
   import Toolbar from './Toolbar.svelte';
@@ -100,11 +102,26 @@
   let tables = $state.raw<DungeonTables | null>(null);
   let cards = $state.raw<CardPack | null>(null);
   let panelCollapsed = $state(false);
-  /** Which panel fills the right-hand sidebar (Task 8 adds 'encounter'). */
-  let sidebar = $state<'steps' | 'hero'>('steps');
-  /** The hero panel was open when a play-flow step took the sidebar: restore it when the flow ends. */
-  let heroBeforeFlow = false;
-  const heroShown = $derived(sidebar === 'hero' && $view.hero !== null);
+  /** The sidebar shows the step panel, or the Encounter and Hero panels (tabs when both are open). */
+  let sidebar = $state<'steps' | 'side'>('steps');
+  /** The side panels were showing when a play-flow step took the sidebar: restore them when the flow ends. */
+  let sideBeforeFlow = false;
+  let heroOn = $state(false);
+  let encOn = $state(false);
+  /** Which tab is selected while both are open. */
+  let sideTab = $state<'encounter' | 'hero'>('encounter');
+  /** The creature being faced. Not saved and not in History. */
+  let encCard = $state.raw<CreatureCard | null>(null);
+  const heroShown = $derived(sidebar === 'side' && heroOn && $view.hero !== null);
+  const encShown = $derived(sidebar === 'side' && encOn && cards !== null);
+  const sideShown = $derived(heroShown || encShown);
+  const activeTab = $derived(heroShown && encShown ? sideTab : heroShown ? 'hero' : 'encounter');
+
+  // A removed or replaced card pack takes its encounter with it.
+  $effect(() => {
+    if (encCard && !cards?.cards.some((c) => c.id === encCard!.id)) encCard = null;
+    if (!cards) encOn = false;
+  });
   let mapView = $state<ReturnType<typeof MapView>>();
   let step = $state.raw<Step>(flow.step);
   /** One-line panel message: a tap hint, or what happened on the last commit. */
@@ -122,12 +139,12 @@
     if (s.kind !== 'idle') {
       gapMode = false;
       panelCollapsed = false; // the steps live in the panel
-      if (sidebar === 'hero') heroBeforeFlow = true;
+      if (sidebar === 'side') sideBeforeFlow = true;
       sidebar = 'steps';
-    } else if (heroBeforeFlow) {
-      // The flow is over: bring the hero sheet back if it was open when the flow began.
-      heroBeforeFlow = false;
-      sidebar = 'hero';
+    } else if (sideBeforeFlow) {
+      // The flow is over: bring the hero sheet and encounter back if they were open when the flow began.
+      sideBeforeFlow = false;
+      sidebar = 'side';
     }
   });
 
@@ -319,20 +336,51 @@
     newMapOpen = false;
     if (v.hero) {
       history.execute(setHero(v.hero, 'Create hero'));
-      sidebar = 'hero';
+      heroOn = true;
+      sideTab = 'hero';
+      sidebar = 'side';
     }
   }
 
   /** The toolbar's Hero button: create one, or show or hide the sheet. */
   function onHeroButton() {
     if (!started || loadError) return;
-    heroBeforeFlow = false;
+    sideBeforeFlow = false;
     if ($view.hero === null) {
       wizardMode = 'add-hero';
       newMapOpen = true;
+    } else if (heroShown) {
+      heroOn = false;
+      if (!encShown) sidebar = 'steps';
     } else {
-      sidebar = heroShown ? 'steps' : 'hero';
+      heroOn = true;
+      sideTab = 'hero';
+      sidebar = 'side';
     }
+  }
+
+  /** The toolbar's Encounter button: explain how to get a card pack, or show or hide the encounter. */
+  function onEncounterButton() {
+    if (!started || loadError) return;
+    sideBeforeFlow = false;
+    if (!cards) {
+      panelCollapsed = false;
+      notice = 'No creature cards loaded. Open the menu and choose Load creature cards…';
+      sidebar = 'steps';
+    } else if (encShown) {
+      encOn = false;
+      if (!heroShown) sidebar = 'steps';
+    } else {
+      encOn = true;
+      sideTab = 'encounter';
+      sidebar = 'side';
+    }
+  }
+
+  function endEncounter() {
+    encCard = null;
+    encOn = false;
+    if (!heroShown) sidebar = 'steps';
   }
 
   function loadDemo() {
@@ -523,7 +571,7 @@
 
 <svelte:window onkeydown={onKey} />
 
-<div class="shell" class:collapsed={panelCollapsed && !heroShown} class:wide={heroShown}>
+<div class="shell" class:collapsed={panelCollapsed && !sideShown} class:wide={sideShown}>
   <div class="top">
     <Toolbar
       view={$view}
@@ -531,12 +579,14 @@
       coverage={cover}
       {menuOpen}
       heroOpen={heroShown}
+      encounterOpen={encShown}
       disabled={!started || !!loadError}
       ontool={selectTool}
       onundo={() => history.undo()}
       onredo={() => history.redo()}
       onmenu={() => started && !loadError && (menuOpen = !menuOpen)}
       onhero={onHeroButton}
+      onencounter={onEncounterButton}
     />
     <UpdatePrompt />
     {#if saveFailing}<SaveBanner onexport={exportGame} />{/if}
@@ -569,8 +619,37 @@
     dragsGhost={step.kind === 'position'}
     ghost={step.kind === 'position' ? step.placement.rect : null}
   />
-  {#if heroShown}
-    <HeroPanel hero={$view.hero as Hero} {history} {tables} onclose={() => (sidebar = 'steps')} />
+  {#if sideShown}
+    <div class="side">
+      {#if heroShown && encShown}
+        <div class="tabs" role="tablist" aria-label="Sidebar">
+          <button role="tab" id="side-tab-encounter" aria-selected={sideTab === 'encounter'} onclick={() => (sideTab = 'encounter')}>Encounter</button>
+          <button role="tab" id="side-tab-hero" aria-selected={sideTab === 'hero'} onclick={() => (sideTab = 'hero')}>Hero</button>
+        </div>
+      {/if}
+      {#if activeTab === 'hero'}
+        <HeroPanel
+          hero={$view.hero as Hero}
+          {history}
+          {tables}
+          onclose={() => {
+            heroOn = false;
+            if (!encShown) sidebar = 'steps';
+          }}
+        />
+      {:else if cards && encCard}
+        <EncounterCard card={encCard} onend={endEncounter} />
+      {:else if cards}
+        <EncounterPicker
+          pack={cards}
+          onpick={(c) => (encCard = c)}
+          onclose={() => {
+            encOn = false;
+            if (!heroShown) sidebar = 'steps';
+          }}
+        />
+      {/if}
+    </div>
   {:else}
   <StepPanel
     {tool}
@@ -698,8 +777,40 @@
     grid-area: map;
   }
   .shell > :global(.panel),
-  .shell > :global(.hero-panel) {
+  .shell > .side {
     grid-area: panel;
+  }
+  .side {
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--paper);
+  }
+  .side > :global(aside) {
+    flex: 1;
+  }
+  .tabs {
+    display: flex;
+    border-left: 2px solid var(--ink);
+    border-bottom: 2px solid var(--ink);
+  }
+  .tabs button {
+    flex: 1;
+    min-height: 48px;
+    font: inherit;
+    font-size: 17px;
+    color: var(--ink);
+    background: var(--paper-dim);
+    border: 0;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  .tabs button[aria-selected='true'] {
+    color: var(--paper);
+    background: var(--ink);
+    font-weight: 600;
   }
   @media (max-width: 699.98px) {
     .shell,
@@ -715,7 +826,7 @@
     .shell > :global(.panel) {
       max-height: 40dvh;
     }
-    .shell > :global(.hero-panel) {
+    .shell > .side {
       max-height: 60dvh;
     }
   }
