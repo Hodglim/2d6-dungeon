@@ -25,10 +25,15 @@ export function buildId(): string {
   return __BUILD_ID__;
 }
 
-/** Tells the waiting worker to take over; the page reloads on controllerchange (see reloadOnControllerChange). */
+/** Tells the waiting worker to take over; the page reloads on controllerchange (see reloadOnControllerChange).
+ *  If another tab already activated it (or it was superseded), no controllerchange will come, so reload directly. */
 export function applyUpdate(): void {
   reloadRequested = true;
-  waiting?.postMessage({ type: 'SKIP_WAITING' });
+  if (waiting && (waiting.state === 'installed' || waiting.state === 'installing')) {
+    waiting.postMessage({ type: 'SKIP_WAITING' });
+  } else {
+    flushThenReload();
+  }
 }
 
 let reloadRequested = false;
@@ -40,14 +45,18 @@ export function setBeforeReload(fn: () => Promise<void>): void {
 
 /** Reloads exactly once when a new worker takes control, but only after the user asked (the prompt click).
  *  A first-install claim, or another tab's update, never reloads this page by itself. */
+let reloading = false;
+function flushThenReload(): void {
+  if (reloading) return;
+  reloading = true;
+  void Promise.race([beforeReload().catch(() => {}), new Promise((r) => setTimeout(r, 2000))]).then(() =>
+    location.reload(),
+  );
+}
+
 function reloadOnControllerChange(): void {
-  let reloading = false;
   navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (!reloadRequested || reloading) return;
-    reloading = true;
-    void Promise.race([beforeReload().catch(() => {}), new Promise((r) => setTimeout(r, 2000))]).then(() =>
-      location.reload(),
-    );
+    if (reloadRequested) flushThenReload();
   });
 }
 
