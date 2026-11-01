@@ -60,4 +60,46 @@ describe('parseTableFile', () => {
     const r = parse(o);
     expect(r.ok && (r.tables.tables as Record<string, unknown>).extra).toEqual({ a: 1 });
   });
+  const bad = (mutate: (o: any) => void, place?: RegExp) => {
+    const o = clone(); mutate(o);
+    const e = err(parse(o));
+    expect(e).toMatch(/^The table file is damaged: /);
+    if (place) expect(e).toMatch(place);
+  };
+  it('requires null xpToLevelUp on the last level only, strictly increasing', () => {
+    bad((o) => { o.tables.levels[2].xpToLevelUp = 50; }, /Levels\[2\] xpToLevelUp/);
+    bad((o) => { o.tables.levels[0].xpToLevelUp = null; }, /Levels\[0\] xpToLevelUp/);
+    bad((o) => { o.tables.levels[1].xpToLevelUp = 10; }, /Levels\[1\] xpToLevelUp/);
+    bad((o) => { o.tables.levels[0].xpToLevelUp = 1.5; }, /Levels\[0\] xpToLevelUp/);
+  });
+  it('requires consecutive levels from 1 and a matching starting level', () => {
+    bad((o) => { o.tables.levels[0].level = 2; });
+    bad((o) => { o.tables.levels[2].level = 4; }, /Levels\[2\] level/);
+    bad((o) => { o.tables.starting.level = 9; }, /Starting Values level/);
+  });
+  it('requires positive levels', () => {
+    bad((o) => { o.tables.levels[1].maxManoeuvreLevel = 0; }, /maxManoeuvreLevel/);
+    bad((o) => { o.tables.starting.level = 0; });
+    bad((o) => { o.tables.weapons[0].manoeuvres[0].level = 0; }, /Weapons\[0\] manoeuvre 1 level/);
+  });
+  it('requires non-empty lists but allows empty kit and potions', () => {
+    for (const k of ['weapons', 'startingArmour', 'startingScrolls', 'gods']) bad((o) => { o.tables[k] = []; });
+    const o = clone(); o.tables.starting.kit = []; o.tables.starting.potions = [];
+    expect(parse(o).ok).toBe(true);
+  });
+  it('names the place of a problem', () => {
+    bad((o) => { o.tables.weapons[1].manoeuvres[2].dice = [1, 9]; }, /Weapons\[1\] manoeuvre 3 dice/);
+  });
+  it('refuses odd values', () => {
+    bad((o) => { o.tables.limits.potions = -1; }, /Limits potions/);
+    bad((o) => { o.tables.favourBoxes = 2.5; }, /Favour Boxes/);
+    bad((o) => { o.tables.gods[0] = 5; }, /Gods\[0\]/);
+    bad((o) => { o.tables.weapons[0].name = 5; });
+    bad((o) => { o.tables.limits = null; });
+    bad((o) => { o.tables.conditions = null; });
+  });
+  it('refuses format 0 and 1.5', () => {
+    bad((o) => { o.format = 0; });
+    bad((o) => { o.format = 1.5; });
+  });
 });

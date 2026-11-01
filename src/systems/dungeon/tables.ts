@@ -56,37 +56,80 @@ const NOT_A_TABLE_FILE = "This isn't a 2D6 Dungeon table file";
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const isStr = (v: unknown): v is string => typeof v === 'string';
 const isInt = (v: unknown): v is number => Number.isInteger(v);
-const isCount = (v: unknown): v is number => isInt(v) && (v as number) >= 0;
-const strs = (v: unknown): boolean => Array.isArray(v) && v.every(isStr);
-const list = (v: unknown, ok: (x: Record<string, unknown>) => boolean): boolean =>
-  Array.isArray(v) && v.every((x) => isObj(x) && ok(x));
-const diceOk = (v: unknown, min: number, max: number): boolean =>
-  Array.isArray(v) && v.length >= min && v.length <= max && v.every((d) => isInt(d) && d >= 1 && d <= 6);
-const hasStrs = (o: Record<string, unknown>, keys: string[]): boolean => keys.every((k) => isStr(o[k]));
-const hasCounts = (o: Record<string, unknown>, keys: string[]): boolean => keys.every((k) => isCount(o[k]));
+const isCount = (v: unknown): v is number => isInt(v) && v >= 0;
+const isPositive = (v: unknown): v is number => isInt(v) && v >= 1;
 
-/** Each required table: display name for the "missing" message, and its shape check. */
-const TABLES: [string, string, (v: unknown) => boolean][] = [
-  ['starting', 'Starting Values', (v) =>
-    isObj(v) && hasCounts(v, ['level', 'xp', 'shift', 'discipline', 'precision', 'hp', 'rations']) &&
-    list(v.potions, (p) => hasStrs(p, ['name', 'effect'])) && strs(v.kit)],
+/** A check returns null when fine, or a place such as "Weapons[1] manoeuvre 3 dice". */
+type Check = (v: unknown) => string | null;
+
+const field = (o: Record<string, unknown>, at: string, keys: string[], ok: (v: unknown) => boolean): string | null => {
+  for (const k of keys) if (!ok(o[k])) return `${at} ${k}`;
+  return null;
+};
+const strsAt = (name: string, v: unknown): string | null =>
+  !Array.isArray(v) ? name : v.findIndex((x) => !isStr(x)) >= 0 ? `${name}[${v.findIndex((x) => !isStr(x))}]` : null;
+const rows = (name: string, v: unknown, nonEmpty: boolean, each: (r: Record<string, unknown>, at: string) => string | null): string | null => {
+  if (!Array.isArray(v)) return name;
+  if (nonEmpty && v.length === 0) return `${name} has no entries`;
+  for (let i = 0; i < v.length; i++) {
+    const at = `${name}[${i}]`;
+    if (!isObj(v[i])) return at;
+    const p = each(v[i] as Record<string, unknown>, at);
+    if (p) return p;
+  }
+  return null;
+};
+const diceAt = (at: string, v: unknown, min: number, max: number): string | null =>
+  Array.isArray(v) && v.length >= min && v.length <= max && v.every((d) => isInt(d) && d >= 1 && d <= 6) ? null : `${at} dice`;
+
+/** Each required table: its key, display name for messages, and its shape check. */
+const TABLES: [string, string, Check][] = [
+  ['starting', 'Starting Values', (v) => {
+    if (!isObj(v)) return 'Starting Values';
+    const p = field(v, 'Starting Values', ['level', 'xp', 'shift', 'discipline', 'precision', 'hp', 'rations'], isCount);
+    if (p) return p;
+    if (!isPositive(v.level)) return 'Starting Values level';
+    return rows('Starting Values potions', v.potions, false, (r, at) => field(r, at, ['name', 'effect'], isStr)) ?? strsAt('Starting Values kit', v.kit);
+  }],
   ['startingArmour', 'Starting Armour', (v) =>
-    list(v, (a) => isStr(a.name) && isStr(a.modifier) && diceOk(a.dice, 1, 2))],
+    rows('Starting Armour', v, true, (a, at) => field(a, at, ['name', 'modifier'], isStr) ?? diceAt(at, a.dice, 1, 2))],
   ['startingScrolls', 'Starting Scrolls', (v) =>
-    list(v, (s) => hasStrs(s, ['name', 'effect', 'orbit', 'dispelDoubles', 'effectModifier']))],
+    rows('Starting Scrolls', v, true, (s, at) => field(s, at, ['name', 'effect', 'orbit', 'dispelDoubles', 'effectModifier'], isStr))],
   ['weapons', 'Weapons', (v) =>
-    list(v, (w) => isStr(w.name) && list(w.manoeuvres, (m) =>
-      isCount(m.level) && isStr(m.name) && isStr(m.damage) && diceOk(m.dice, 2, 2)))],
+    rows('Weapons', v, true, (w, at) => field(w, at, ['name'], isStr) ??
+      rows(`${at} manoeuvres`, w.manoeuvres, false, (m, _a) => {
+        const idx = (w.manoeuvres as unknown[]).indexOf(m) + 1;
+        const mat = `${at} manoeuvre ${idx}`;
+        return field(m, mat, ['name', 'damage'], isStr) ?? field(m, mat, ['level'], isPositive) ?? diceAt(mat, m.dice, 2, 2);
+      }))],
   ['levels', 'Levels', (v) =>
-    list(v, (l) => isStr(l.title) && hasCounts(l, ['level', 'manoeuvres', 'maxManoeuvreLevel', 'shift', 'discipline', 'precision', 'hpBaseline']) &&
-      (l.xpToLevelUp === null || isCount(l.xpToLevelUp)))],
-  ['gods', 'Gods', strs],
-  ['conditions', 'Conditions', (v) =>
-    isObj(v) &&
-    ['bloodied', 'soaked'].every((k) => isObj(v[k]) && isStr(v[k].label) && isCount(v[k].boxes)) &&
-    ['fever', 'pneumonia'].every((k) => isObj(v[k]) && hasStrs(v[k], ['label', 'effect']))],
-  ['favourBoxes', 'Favour Boxes', isCount],
-  ['limits', 'Limits', (v) => isObj(v) && hasCounts(v, ['potions', 'scrolls', 'largeItems', 'armour'])],
+    rows('Levels', v, true, (l, at) => {
+      const p = field(l, at, ['title'], isStr) ?? field(l, at, ['level', 'maxManoeuvreLevel'], isPositive) ??
+        field(l, at, ['manoeuvres', 'shift', 'discipline', 'precision', 'hpBaseline'], isCount);
+      if (p) return p;
+      const last = at === `Levels[${(v as unknown[]).length - 1}]`;
+      if (last) return l.xpToLevelUp === null ? null : `${at} xpToLevelUp (must be null on the last level)`;
+      return isCount(l.xpToLevelUp) ? null : `${at} xpToLevelUp (must be a whole number)`;
+    })],
+  ['gods', 'Gods', (v) => (Array.isArray(v) && v.length === 0 ? 'Gods has no entries' : strsAt('Gods', v))],
+  ['conditions', 'Conditions', (v) => {
+    if (!isObj(v)) return 'Conditions';
+    for (const k of ['bloodied', 'soaked']) {
+      const c = v[k];
+      if (!isObj(c)) return `Conditions ${k}`;
+      const p = field(c, `Conditions ${k}`, ['label'], isStr) ?? field(c, `Conditions ${k}`, ['boxes'], isCount);
+      if (p) return p;
+    }
+    for (const k of ['fever', 'pneumonia']) {
+      const c = v[k];
+      if (!isObj(c)) return `Conditions ${k}`;
+      const p = field(c, `Conditions ${k}`, ['label', 'effect'], isStr);
+      if (p) return p;
+    }
+    return null;
+  }],
+  ['favourBoxes', 'Favour Boxes', (v) => (isCount(v) ? null : 'Favour Boxes')],
+  ['limits', 'Limits', (v) => (isObj(v) ? field(v, 'Limits', ['potions', 'scrolls', 'largeItems', 'armour'], isCount) : 'Limits')],
 ];
 
 const damaged = (detail: string): TablesParse => ({ ok: false, error: `The table file is damaged: ${detail}` });
@@ -100,27 +143,34 @@ export function parseTableFile(text: string, byteLength: number): TablesParse {
   } catch {
     return { ok: false, error: NOT_A_TABLE_FILE };
   }
-  if (!isObj(data) || data.systemId !== 'dungeon' || !isInt(data.format)) return { ok: false, error: NOT_A_TABLE_FILE };
+  if (!isObj(data) || data.systemId !== 'dungeon' || typeof data.format !== 'number') return { ok: false, error: NOT_A_TABLE_FILE };
+  if (!isInt(data.format)) return damaged('format');
   if (data.format > TABLE_FILE_FORMAT) return { ok: false, error: 'Made by a newer version of the app' };
-  if (data.format !== TABLE_FILE_FORMAT) return damaged('unknown format');
-  if (!isStr(data.name)) return damaged('missing name');
+  if (data.format !== TABLE_FILE_FORMAT) return damaged('format');
+  if (!isStr(data.name)) return damaged('name');
   if (!isObj(data.tables)) return { ok: false, error: 'The table file is missing Tables' };
   const t = data.tables;
   for (const [key, label] of TABLES) {
     if (t[key] === undefined) return { ok: false, error: `The table file is missing ${label}` };
   }
-  for (const [key, label, ok] of TABLES) {
-    if (!ok(t[key])) return damaged(`${label} is not in the expected shape`);
+  for (const [key, , check] of TABLES) {
+    const problem = check(t[key]);
+    if (problem) return damaged(problem);
   }
   const levels = t.levels as LevelRow[];
-  if (levels.length === 0) return damaged('Levels has no rows');
-  for (let i = 1; i < levels.length; i++) {
-    if (levels[i]!.level <= levels[i - 1]!.level) return damaged('Levels are not sorted by level');
+  for (let i = 0; i < levels.length; i++) {
+    if (levels[i]!.level !== i + 1) return damaged(`Levels[${i}] level (levels must run 1, 2, 3 ... in order)`);
+    if (i > 0 && (levels[i - 1]!.xpToLevelUp as number) >= (levels[i]!.xpToLevelUp ?? Infinity) && i < levels.length - 1) {
+      return damaged(`Levels[${i}] xpToLevelUp (must be higher than the level before)`);
+    }
   }
+  const starting = t.starting as DungeonTables['tables']['starting'];
+  if (!levels.some((l) => l.level === starting.level)) return damaged('Starting Values level (no matching row in Levels)');
   const need = levels[0]!.manoeuvres;
-  for (const w of t.weapons as DungeonTables['tables']['weapons']) {
-    if (w.manoeuvres.filter((m) => m.level === 1).length < need) {
-      return damaged(`${w.name} has fewer than ${need} level 1 manoeuvres`);
+  const weapons = t.weapons as DungeonTables['tables']['weapons'];
+  for (let i = 0; i < weapons.length; i++) {
+    if (weapons[i]!.manoeuvres.filter((m) => m.level === 1).length < need) {
+      return damaged(`Weapons[${i}] has fewer than ${need} level 1 manoeuvres`);
     }
   }
   return { ok: true, tables: data as unknown as DungeonTables };
