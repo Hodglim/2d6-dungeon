@@ -657,6 +657,43 @@ if (!(await page.isVisible('text=This replaces your current game.'))) problems.p
   await p.click(`${panel} button[aria-label="Add Cheerful Flourish"]`);
   if (await p.isVisible(`${panel} [role=alert]`)) problems.push('warning shown within the manoeuvre limit');
   await wshot('34-hero-stats.png');
+  // Dice are pip faces labelled for assistive tech; the columns line up across rows.
+  {
+    const labels = await p.$$eval(`${panel} .drow [role=img]`, (els) => els.map((e) => e.getAttribute('aria-label')));
+    if (!labels.length || labels.some((l) => !/^(red|blue) [1-6]$/.test(l ?? ''))) problems.push(`die labels: ${JSON.stringify(labels)}`);
+    const pips = await p.$$eval(`${panel} .drow [role=img]`, (els) => els.every((e) => e.querySelectorAll('circle').length === Number(e.getAttribute('aria-label').split(' ')[1])));
+    if (!pips) problems.push('pip count does not match die label');
+    const xs = await p.$$eval(`${panel} ul .drow`, (rows) => rows.filter((r) => r.querySelector('.mod')).map((r) => Math.round(r.querySelector('.mod').getBoundingClientRect().x)));
+    if (new Set(xs).size > 2) problems.push(`damage column not aligned: ${xs}`);
+    await p.screenshot({ path: join(outDir, '41-dice-pips.png') });
+    // All six faces, red and blue, rendered in the app's own component styles.
+    await p.evaluate(() => {
+      const donor = document.querySelector('.hero-panel .drow [role=img]');
+      const box = document.createElement('div');
+      box.id = 'all-faces';
+      box.style.cssText = 'position:fixed;left:20px;top:20px;z-index:99999;background:#fff;padding:16px;display:grid;gap:10px';
+      for (const colour of ['red', 'blue']) {
+        const line = document.createElement('div');
+        line.style.cssText = 'display:flex;gap:14px';
+        box.append(line);
+        for (let n = 1; n <= 6; n++) {
+          const d = donor.cloneNode(true);
+          d.className = donor.className.replace(/\b(red|blue)\b/, colour);
+          d.setAttribute('aria-label', `${colour} ${n}`);
+          const pos = { 1: [[15, 15]], 2: [[22, 8], [8, 22]], 3: [[22, 8], [15, 15], [8, 22]], 4: [[8, 8], [22, 8], [8, 22], [22, 22]], 5: [[8, 8], [22, 8], [15, 15], [8, 22], [22, 22]], 6: [[8, 8], [22, 8], [8, 15], [22, 15], [8, 22], [22, 22]] }[n];
+          const svg = d.querySelector('svg');
+          const tmpl = svg.querySelector('circle');
+          svg.replaceChildren(...pos.map(([x, y]) => { const c = tmpl.cloneNode(); c.setAttribute('cx', x); c.setAttribute('cy', y); return c; }));
+          d.style.transform = 'scale(2)';
+          d.style.margin = '18px';
+          line.append(d);
+        }
+      }
+      document.body.append(box);
+    });
+    await p.screenshot({ path: join(outDir, '42-die-faces.png'), clip: { x: 0, y: 0, width: 640, height: 220 } });
+    await p.evaluate(() => document.getElementById('all-faces')?.remove());
+  }
   await smallHero('stats tab');
   // Identity fields are editable by hand: one commit each, no automatic stat changes.
   {

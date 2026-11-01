@@ -1,7 +1,7 @@
 <script lang="ts">
   import { listLimit, overLimit, type Hero, type ListKey } from '../../systems/dungeon/hero';
   import type { DungeonTables } from '../../systems/dungeon/tables';
-  import DicePair from '../DicePair.svelte';
+  import DieFace from '../DieFace.svelte';
 
   interface Props {
     hero: Hero;
@@ -127,11 +127,13 @@
 
   <section>
     <h3 class:over={overLimit(hero, 'manoeuvres')}>Manoeuvres {hero.manoeuvres.length} / {listLimit(hero, 'manoeuvres')}</h3>
+<div class="drow dhead" aria-hidden="true"><span class="grow">Name</span><span class="dcell">Red</span><span class="dcell">Blue</span><span class="mod">Damage</span><span></span></div>
     <ul>
       {#each hero.manoeuvres as m, i (i)}
-        <li>
+        <li class="drow">
           <span class="grow">{m.name}</span>
-          <DicePair dice={m.dice} />
+          <span class="dcell">{#if m.dice[0]}<DieFace value={m.dice[0]} colour="red" />{/if}</span>
+          <span class="dcell">{#if m.dice[1]}<DieFace value={m.dice[1]} colour="blue" />{/if}</span>
           <span class="mod">{m.modifier}</span>
           <button aria-label="Remove {m.name}" onclick={() => removeRow('manoeuvres', i)}>Remove</button>
         </li>
@@ -143,9 +145,10 @@
       <p class="cap">Choose from {hero.weapon} (up to level {row?.maxManoeuvreLevel ?? hero.level})</p>
       <ul>
         {#each offered as m (m.name)}
-          <li>
+          <li class="drow">
             <span class="grow">{m.name}</span>
-            <DicePair dice={m.dice} />
+            <span class="dcell">{#if m.dice[0]}<DieFace value={m.dice[0]} colour="red" />{/if}</span>
+            <span class="dcell">{#if m.dice[1]}<DieFace value={m.dice[1]} colour="blue" />{/if}</span>
             <span class="mod">{m.damage}</span>
             <button aria-label="Add {m.name}" onclick={() => addOffered(m)}>Add</button>
           </li>
@@ -157,11 +160,13 @@
 
   <section>
     <h3 class:over={overLimit(hero, 'armour')}>Armour {hero.armour.length} / {listLimit(hero, 'armour')}</h3>
+<div class="drow dhead" aria-hidden="true"><span class="grow">Name</span><span class="dcell">Red</span><span class="dcell">Blue</span><span class="mod">Modifier</span><span></span></div>
     <ul>
       {#each hero.armour as a, i (i)}
-        <li>
+        <li class="drow">
           <span class="grow">{a.name}</span>
-          <DicePair dice={a.dice} />
+          <span class="dcell">{#if a.dice[0]}<DieFace value={a.dice[0]} colour="red" />{/if}</span>
+          <span class="dcell">{#if a.dice[1]}<DieFace value={a.dice[1]} colour="blue" />{/if}</span>
           <span class="mod">{a.modifier}</span>
           <button aria-label="Remove {a.name}" onclick={() => removeRow('armour', i)}>Remove</button>
         </li>
@@ -189,3 +194,36 @@
     </form>
   </section>
 </div>
+
+<style>
+  .drow,
+  .page :global(li.drow) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 40px 40px 76px 96px;
+    align-items: center;
+    column-gap: 8px;
+  }
+  .dhead {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--muted);
+    margin-bottom: 2px;
+  }
+  .dcell {
+    display: flex;
+    justify-content: center;
+    min-height: 36px;
+    align-items: center;
+  }
+  .dhead .dcell {
+    min-height: 0;
+  }
+  .drow .grow {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .drow button {
+    min-height: 44px;
+    min-width: 44px;
+  }
+</style>
