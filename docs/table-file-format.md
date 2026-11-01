@@ -139,12 +139,13 @@ A creature card pack is a separate JSON file, loaded from the menu next to the t
 You need `pdftoppm` and `pdftotext` (poppler-utils) and ImageMagick (`magick` or `convert`) installed. Then:
 
 ```
-node scripts/make-creature-pack.mjs path/to/codex.pdf [--first N --last N] [--index-page N] [--names names.json] [--out local-data/creature-cards.json]
+node scripts/make-creature-pack.mjs path/to/codex.pdf [--first N --last N] [--index-page N] [--offset N] [--names names.json] [--out local-data/creature-cards.json]
 ```
 
 (`npm run creature-pack -- path/to/codex.pdf` does the same.)
 
 - It finds the "Creature Index" page (or use `--index-page`), reads the index's names and page numbers, and processes the pages listed (or `--first` to `--last`).
+- `--offset N` (default 0) is added to the index's page numbers, for books whose printed page numbers differ from the PDF's page numbers. Check the first page in the summary to confirm the cards on it are the right ones. If the printed numbers already match the PDF pages, leave it at 0.
 - Each page is rendered, and the four cards are cut out by finding the white gutters between them. Nearly blank areas are skipped.
 - The level comes from each page's "LEVEL n - CREATURE CARDS" heading.
 - The index gives a page but not a position, so the names on a page are assigned in alphabetical order to reading order: top-left, top-right, bottom-left, bottom-right. If a page's card count differs from its index entries, its cards are named "Page P card K" and a warning is printed.

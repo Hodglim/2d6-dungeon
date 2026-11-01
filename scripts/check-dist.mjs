@@ -3,6 +3,7 @@
 // nothing from the private folders (rulebook PDFs, local data, reference, planning notes). Exits 1 on any problem.
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
+import { cardNames, containsName, tableNames } from './dist-guard.mjs';
 
 const DIST = 'dist';
 const FORBIDDEN_DIRS = ['pdf', 'local-data', 'reference', '.superpowers'];
@@ -43,19 +44,18 @@ const readJson = (path) => {
     return null;
   }
 };
-const names = (list) => (Array.isArray(list) ? list.map((x) => x?.name).filter((n) => typeof n === 'string' && n.length >= 3) : []);
 const tables = readJson('local-data/dungeon-tables.json');
 const pack = readJson('local-data/creature-cards.json');
 const secrets = [
-  ...(tables ? [...names(tables.weapons), ...names(tables.startingArmour), ...names(tables.startingScrolls)].map((n) => ({ n, from: 'dungeon-tables.json' })) : []),
-  ...(pack ? names(pack.cards).map((n) => ({ n, from: 'creature-cards.json' })) : []),
+  ...(tables ? tableNames(tables).map((n) => ({ n, from: 'dungeon-tables.json' })) : []),
+  ...(pack ? cardNames(pack).map((n) => ({ n, from: 'creature-cards.json' })) : []),
 ];
-const IMAGE_RE = /data:image\/jpeg;base64,[A-Za-z0-9+/=]*/g;
+const IMAGE_RE = /data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/=]*/g;
 for (const f of files) {
   if (!/\.(js|css|html|webmanifest)$/.test(f.rel)) continue;
   const text = readFileSync(join(DIST, f.rel), 'utf8');
-  for (const m of text.matchAll(IMAGE_RE)) if (m[0].length > MAX_IMAGE_CHUNK) problems.push(`embedded JPEG data (${(m[0].length / 1024).toFixed(0)} kB) in dist/${f.rel}`);
-  for (const s of secrets) if (text.includes(s.n)) problems.push(`rulebook name from local-data/${s.from} found in dist/${f.rel}: "${s.n}"`);
+  for (const m of text.matchAll(IMAGE_RE)) if (m[0].length > MAX_IMAGE_CHUNK) problems.push(`embedded image data (${(m[0].length / 1024).toFixed(0)} kB) in dist/${f.rel}`);
+  for (const s of secrets) if (containsName(text, s.n)) problems.push(`rulebook name from local-data/${s.from} found in dist/${f.rel}: "${s.n}"`);
 }
 
 if (problems.length) {

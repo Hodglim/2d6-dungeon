@@ -1,4 +1,4 @@
-// Usage: node scripts/make-creature-pack.mjs <codex.pdf> [--first N --last N] [--index-page N]
+// Usage: node scripts/make-creature-pack.mjs <codex.pdf> [--first N --last N] [--index-page N] [--offset N]
 //          [--names names.json] [--out local-data/creature-cards.json]
 // Builds a creature card pack from your own Tables Codex PDF. Needs pdftoppm and pdftotext (poppler) and
 // ImageMagick (magick or convert). Contains no rulebook content; see docs/table-file-format.md.
@@ -7,7 +7,7 @@ import { mkdtempSync, readFileSync, readdirSync, rmSync, mkdirSync, writeFileSyn
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
-const USAGE = `Usage: node scripts/make-creature-pack.mjs <codex.pdf> [--first N --last N] [--index-page N] [--names names.json] [--out local-data/creature-cards.json]`;
+const USAGE = `Usage: node scripts/make-creature-pack.mjs <codex.pdf> [--first N --last N] [--index-page N] [--offset N] [--names names.json] [--out local-data/creature-cards.json]`;
 const DPI = 170;
 const CARD_WIDTH = 700;
 const QUALITY = 80;
@@ -19,10 +19,18 @@ const MIN_CARD_FRACTION = 0.15; // a band narrower than this fraction of the pag
 const args = process.argv.slice(2);
 const opt = {};
 const positional = [];
+const KNOWN = ['first', 'last', 'index-page', 'names', 'out', 'offset', 'help'];
 for (let i = 0; i < args.length; i++) {
-  if (args[i].startsWith('--')) opt[args[i].slice(2)] = args[++i];
-  else positional.push(args[i]);
+  if (args[i].startsWith('--')) {
+    const key = args[i].slice(2);
+    if (!KNOWN.includes(key)) (console.error(`Unknown option ${args[i]}`), console.error(USAGE), process.exit(1));
+    opt[key] = key === 'help' ? '' : args[++i];
+  } else positional.push(args[i]);
 }
+for (const k of ['first', 'last', 'offset', 'index-page']) {
+  if (opt[k] !== undefined && !/^-?\d+$/.test(opt[k])) (console.error(`--${k} needs a whole number, got "${opt[k]}"`), process.exit(1));
+}
+const offset = opt.offset ? Number(opt.offset) : 0;
 const fail = (msg) => {
   console.error(msg);
   process.exit(1);
@@ -32,7 +40,7 @@ const pdf = positional[0];
 const outFile = opt.out ?? 'local-data/creature-cards.json';
 
 const has = (cmd) => spawnSync(cmd, ['-v'], { stdio: 'ignore' }).error === undefined || spawnSync(cmd, ['--version'], { stdio: 'ignore' }).error === undefined;
-for (const tool of ['pdftoppm', 'pdftotext']) {
+for (const tool of ['pdftoppm', 'pdftotext', 'pdfinfo']) {
   if (!has(tool)) fail(`${tool} was not found. Install poppler (poppler-utils) and try again.`);
 }
 const magick = ['magick', 'convert'].find(has);
@@ -66,7 +74,8 @@ if (!indexPage) fail('Could not find the "Creature Index" page. Pass --index-pag
 /** Parse "Name   Page   Name   Page" lines into [{name, page}]. */
 function parseIndex(t) {
   const out = [];
-  for (const line of t.split('\n')) {
+  for (const raw of t.split('\n')) {
+    const line = raw.replace(/\s*\.{3,}\s*/g, '   ');
     if (/^\s*Creature\s+Page/i.test(line)) continue;
     for (const tok of line.trim().split(/\s{2,}/)) {
       const m = /^(.*\S)\s+(\d{1,4})$/.exec(tok);
@@ -75,7 +84,7 @@ function parseIndex(t) {
     // pairs split as separate tokens: "Name", "102"
     const toks = line.trim().split(/\s{2,}/);
     for (let i = 0; i + 1 < toks.length; i++) {
-      if (!/^\d{1,4}$/.test(toks[i]) && /^\d{1,4}$/.test(toks[i + 1]) && /^[^\d]/.test(toks[i])) out.push({ name: toks[i].trim(), page: Number(toks[i + 1]) });
+      if (!/^\d{1,4}$/.test(toks[i]) && /^\d{1,4}$/.test(toks[i + 1]) && /\S/.test(toks[i])) out.push({ name: toks[i].trim(), page: Number(toks[i + 1]) });
     }
   }
   // de-duplicate (the two passes can both match "Name 102")
@@ -88,17 +97,20 @@ for (let p = indexPage + 1; p <= pageCount; p++) {
   if (more.length < 2 || /LEVEL\s+\d+/i.test(pageText(p))) break;
   entries = entries.concat(more);
 }
-if (!entries.length) fail(`No creature entries found on page ${indexPage}.`);
+if (!entries.length) {
+  console.error(pageText(indexPage).split('\n').filter((l) => l.trim()).slice(0, 8).join('\n'));
+  fail(`No creature entries found on page ${indexPage} (first lines above). Try --index-page N.`);
+}
 
 const namesByPage = new Map();
 for (const e of entries) {
-  if (!namesByPage.has(e.page)) namesByPage.set(e.page, []);
-  namesByPage.get(e.page).push(e.name);
+  if (!namesByPage.has(e.page + offset)) namesByPage.set(e.page + offset, []);
+  namesByPage.get(e.page + offset).push(e.name);
 }
 for (const list of namesByPage.values()) list.sort((a, b) => a.localeCompare(b));
 const pages = [...namesByPage.keys()].sort((a, b) => a - b);
 const first = opt.first ? Number(opt.first) : pages[0];
-const last = opt.last ? Number(opt.last) : pages[pages.length - 1];
+const last = Math.min(pageCount, opt.last ? Number(opt.last) : pages[pages.length - 1]);
 
 // --- image helpers ---
 const SLOT_NAMES = ['TL', 'TR', 'BL', 'BR'];
