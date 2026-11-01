@@ -1,24 +1,34 @@
 <script lang="ts">
   interface Props {
+    /** damaged: a record exists but isn't valid. unreadable: storage itself couldn't be read (or hung). */
+    kind: 'damaged' | 'unreadable';
     error: string;
     /** Shown when an import was refused; the dialog stays open. */
     importError: string | null;
-    canExport: boolean;
     onexport: () => void;
+    onretry: () => void;
     onimport: () => void;
     onnew: () => void;
   }
-  let { error, importError, canExport, onexport, onimport, onnew }: Props = $props();
+  let { kind, error, importError, onexport, onretry, onimport, onnew }: Props = $props();
 </script>
 
 <div class="scrim">
   <div class="dialog" role="alertdialog" aria-modal="true" aria-labelledby="load-error-title">
-    <h2 id="load-error-title">Your saved game couldn't be loaded</h2>
+    <h2 id="load-error-title">{kind === 'damaged' ? "Your saved game couldn't be loaded" : "Your saved game couldn't be read from storage"}</h2>
     <p>{error}</p>
-    <p>Your saved game hasn't been changed. Export it first if you want to keep a copy.</p>
+    {#if kind === 'damaged'}
+      <p>Your saved game hasn't been changed. Export it first if you want to keep a copy.</p>
+    {:else}
+      <p>Your saved game hasn't been changed. Try again, or start over (which replaces whatever is saved).</p>
+    {/if}
     {#if importError}<p class="error" role="alert">{importError}</p>{/if}
     <div class="actions">
-      <button type="button" onclick={onexport} disabled={!canExport}>Export damaged save</button>
+      {#if kind === 'damaged'}
+        <button type="button" onclick={onexport}>Export damaged save</button>
+      {:else}
+        <button type="button" onclick={onretry}>Try again</button>
+      {/if}
       <button type="button" onclick={onimport}>Import a file…</button>
       <button type="button" class="primary" onclick={onnew}>Start new game</button>
     </div>

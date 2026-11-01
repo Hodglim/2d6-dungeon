@@ -6,13 +6,15 @@
     tool: Tool;
     coverage: number;
     menuOpen: boolean;
+    /** Start-up hasn't finished: nothing on the toolbar may act yet. */
+    disabled?: boolean;
     ontool: (tool: Tool) => void;
     onundo: () => void;
     onredo: () => void;
     onmenu: () => void;
   }
 
-  let { view, tool, coverage, menuOpen, ontool, onundo, onredo, onmenu }: Props = $props();
+  let { view, tool, coverage, menuOpen, disabled = false, ontool, onundo, onredo, onmenu }: Props = $props();
 
   const tools: { id: Tool; label: string }[] = [
     { id: 'play', label: 'Play' },
@@ -24,18 +26,18 @@
 </script>
 
 <header class="toolbar">
-  <button class="icon" aria-label="Menu" aria-expanded={menuOpen} onclick={onmenu}>☰</button>
+  <button class="icon" aria-label="Menu" aria-expanded={menuOpen} {disabled} onclick={onmenu}>☰</button>
   <div class="group">
-    <button class="history" disabled={!view.canUndo} onclick={onundo} title={view.undoLabel ? `Undo ${view.undoLabel}` : 'Nothing to undo'}>
+    <button class="history" disabled={disabled || !view.canUndo} onclick={onundo} title={view.undoLabel ? `Undo ${view.undoLabel}` : 'Nothing to undo'}>
       <span aria-hidden="true">↶</span> <span class="label">Undo{view.undoLabel ? ` ${view.undoLabel}` : ''}</span>
     </button>
-    <button class="history" disabled={!view.canRedo} onclick={onredo} title={view.redoLabel ? `Redo ${view.redoLabel}` : 'Nothing to redo'}>
+    <button class="history" disabled={disabled || !view.canRedo} onclick={onredo} title={view.redoLabel ? `Redo ${view.redoLabel}` : 'Nothing to redo'}>
       <span class="label">Redo{view.redoLabel ? ` ${view.redoLabel}` : ''}</span> <span aria-hidden="true">↷</span>
     </button>
   </div>
   <div class="group tools" role="group" aria-label="Tools">
     {#each tools as t (t.id)}
-      <button class="tool" aria-pressed={tool === t.id} onclick={() => ontool(t.id)}>{t.label}</button>
+      <button class="tool" aria-pressed={tool === t.id} {disabled} onclick={() => ontool(t.id)}>{t.label}</button>
     {/each}
   </div>
   <div class="coverage" title="Map coverage" aria-label="Map coverage {Math.round(coverage * 100)}%">

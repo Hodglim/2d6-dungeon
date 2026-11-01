@@ -15,7 +15,7 @@
   import { exportCampaignFile, readImportText } from '../persistence/files';
   import { campaignFrom, metaFrom, type CampaignMeta } from '../persistence/record';
   import { shareOrDownload } from '../persistence/share';
-  import { decideStartup } from '../persistence/startup';
+  import { decideStartup, loadWithTimeout } from '../persistence/startup';
   import { IdbSaveStore } from '../persistence/store';
   import type { Point } from '../render/camera';
   import type { Pick } from '../render/hit';
@@ -55,12 +55,12 @@
   let menuOpen = $state(false);
   let newMapOpen = $state(false);
   /** A "this replaces your game" confirmation waiting for an answer. */
-  let pendingReplace = $state<{ title: string; run: () => void } | null>(null);
+  let pendingReplace = $state<{ title: string; message?: string; onexport?: () => void; run: () => void } | null>(null);
   let saveFailing = $state(false);
   /** False until the saved game has been loaded and checked: nothing may change the game before then. */
   let started = $state(false);
   /** Set when the saved record can't be loaded: it stays untouched until the user picks Import or Start new game. */
-  let loadError = $state<{ error: string; raw: unknown | null } | null>(null);
+  let loadError = $state<{ kind: 'damaged'; error: string; raw: unknown } | { kind: 'unreadable'; error: string } | null>(null);
   let importError = $state<string | null>(null);
   let fileInput: HTMLInputElement | undefined;
   let panelCollapsed = $state(false);
@@ -135,10 +135,7 @@
     window.addEventListener('pagehide', onPageHide);
 
     saver.pause(); // nothing is saved until the start-up check has run
-    store.load().then(
-      (raw) => alive && begin(raw, null),
-      (err: unknown) => alive && begin(null, `The saved game couldn't be read: ${err instanceof Error ? err.message : String(err)}`),
-    );
+    void startUp(() => alive);
 
     return () => {
       alive = false;
@@ -150,10 +147,21 @@
     };
   });
 
-  function begin(raw: unknown | null, readFailure: string | null) {
-    const decision = readFailure ? { kind: 'error' as const, error: readFailure } : decideStartup(raw);
+  /** Loads the record (with a timeout) and decides. Also used by Try again. */
+  async function startUp(isAlive: () => boolean = () => true) {
+    started = false;
+    loadError = null;
+    const out = await loadWithTimeout(() => store.load());
+    if (!isAlive()) return;
+    if (out.kind === 'unreadable') {
+      // Storage didn't answer: not a damaged record. The autosaver stays off; nothing is overwritten.
+      loadError = { kind: 'unreadable', error: out.error };
+      started = true;
+      return;
+    }
+    const decision = decideStartup(out.raw);
     if (decision.kind === 'error') {
-      loadError = { error: decision.error, raw: readFailure ? null : raw };
+      loadError = { kind: 'damaged', error: decision.error, raw: out.raw };
       started = true;
       return; // the autosaver stays paused and never started: the record is not touched
     }
@@ -164,6 +172,12 @@
     saver.start();
     saver.resume();
     started = true;
+  }
+
+  /** From the load-error dialog: replacing the game overwrites the stored record, so confirm first. */
+  function askOverwriteSaved(run: () => void) {
+    const damaged = loadError?.kind === 'damaged';
+    pendingReplace = { title: 'Replace saved game', message: 'This replaces your saved game.', onexport: damaged ? exportDamaged : undefined, run };
   }
 
   /** Swap in a whole new game (fresh history) and write it now, replacing whatever was saved. */
@@ -206,9 +220,13 @@
   }
 
   function exportDamaged() {
-    if (!loadError || loadError.raw === null) return;
-    const day = new Date().toISOString().slice(0, 10);
-    shareOrDownload(new File([JSON.stringify(loadError.raw)], `2d6-damaged-save-${day}.json`, { type: 'application/json' }));
+    if (loadError?.kind !== 'damaged') return;
+    try {
+      const day = new Date().toISOString().slice(0, 10);
+      shareOrDownload(new File([JSON.stringify(loadError.raw)], `2d6-damaged-save-${day}.json`, { type: 'application/json' }));
+    } catch (err) {
+      importError = `The damaged save couldn't be exported: ${err instanceof Error ? err.message : String(err)}`;
+    }
   }
 
   function pickImport() {
@@ -235,8 +253,8 @@
     const campaign = res.campaign;
     const map = activeMap(campaign);
     const run = () => replaceGame(metaFrom(campaign), map);
-    // No current game to lose while the load-error dialog is up, so no confirmation there.
-    if (loadError) run();
+    // From the load-error dialog there's no current game to lose, but the stored record is overwritten.
+    if (loadError) askOverwriteSaved(run);
     else askReplace('Import game', run);
   }
 
@@ -379,6 +397,7 @@
       {tool}
       coverage={cover}
       {menuOpen}
+      disabled={!started || !!loadError}
       ontool={selectTool}
       onundo={() => history.undo()}
       onredo={() => history.redo()}
@@ -428,30 +447,19 @@
   <NewMapDialog oncreate={createNewMap} oncancel={() => (newMapOpen = false)} />
 {/if}
 
-{#if pendingReplace}
-  <ReplaceGameDialog
-    title={pendingReplace.title}
-    onexport={exportGame}
-    onreplace={() => {
-      const run = pendingReplace?.run;
-      pendingReplace = null;
-      run?.();
-    }}
-    oncancel={() => (pendingReplace = null)}
-  />
-{/if}
-
 {#if loadError}
   <LoadErrorDialog
+    kind={loadError.kind}
     error={loadError.error}
     {importError}
-    canExport={loadError.raw !== null}
     onexport={exportDamaged}
+    onretry={() => void startUp()}
     onimport={pickImport}
-    onnew={() => {
-      const c = createCampaign(dungeonSystem, 'My dungeon', { width: 25, height: 25 });
-      replaceGame(metaFrom(c), activeMap(c));
-    }}
+    onnew={() =>
+      askOverwriteSaved(() => {
+        const c = createCampaign(dungeonSystem, 'My dungeon', { width: 25, height: 25 });
+        replaceGame(metaFrom(c), activeMap(c));
+      })}
   />
 {:else if importError}
   <div class="scrim">
@@ -463,6 +471,26 @@
       </div>
     </div>
   </div>
+{/if}
+
+{#if !started}
+  <div class="scrim">
+    <p class="loading" role="status">Loading your game…</p>
+  </div>
+{/if}
+
+{#if pendingReplace}
+  <ReplaceGameDialog
+    title={pendingReplace.title}
+    message={pendingReplace.message}
+    onexport={pendingReplace.onexport ?? (pendingReplace.message ? undefined : exportGame)}
+    onreplace={() => {
+      const run = pendingReplace?.run;
+      pendingReplace = null;
+      run?.();
+    }}
+    oncancel={() => (pendingReplace = null)}
+  />
 {/if}
 
 <style>
@@ -532,6 +560,14 @@
     place-items: center;
     padding: 16px;
     background: rgba(20, 16, 10, 0.45);
+  }
+  .loading {
+    margin: 0;
+    padding: 16px 24px;
+    font-size: 20px;
+    background: var(--paper);
+    border: 2px solid var(--ink);
+    border-radius: 8px;
   }
   .confirm {
     width: min(460px, 100%);

@@ -1,12 +1,13 @@
 <script lang="ts">
   interface Props {
     title: string;
-    /** Runs the export and keeps this dialog open. */
-    onexport: () => void;
+    message?: string;
+    /** Runs the export and keeps this dialog open. Omit it to hide the Export first button. */
+    onexport?: () => void;
     onreplace: () => void;
     oncancel: () => void;
   }
-  let { title, onexport, onreplace, oncancel }: Props = $props();
+  let { title, message = 'This replaces your current game.', onexport, onreplace, oncancel }: Props = $props();
 </script>
 
 <svelte:window onkeydown={(e) => e.key === 'Escape' && oncancel()} />
@@ -14,10 +15,10 @@
 <div class="scrim">
   <div class="dialog" role="alertdialog" aria-modal="true" aria-labelledby="replace-title">
     <h2 id="replace-title">{title}</h2>
-    <p>This replaces your current game.</p>
+    <p>{message}</p>
     <div class="actions">
       <button type="button" onclick={oncancel}>Cancel</button>
-      <button type="button" onclick={onexport}>Export first</button>
+      {#if onexport}<button type="button" onclick={onexport}>Export first</button>{/if}
       <button type="button" class="primary" onclick={onreplace}>Replace</button>
     </div>
   </div>

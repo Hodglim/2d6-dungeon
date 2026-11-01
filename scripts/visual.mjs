@@ -338,6 +338,56 @@ await page.waitForTimeout(200);
 await shot('10-new-map-confirm.png');
 if (!(await page.isVisible('text=This replaces your current game.'))) problems.push('new game confirmation not shown');
 
+// 9. A corrupt autosave record (fresh browser context): blocking dialog; Start new game asks first; Cancel leaves it all alone.
+{
+  const ctx = await browser.newContext({ viewport: { width: 1180, height: 820 }, deviceScaleFactor: 2, hasTouch: true });
+  const p2 = await ctx.newPage();
+  p2.on('pageerror', (e) => errors.push(e.message));
+  await p2.goto(url, { waitUntil: 'load' });
+  await p2.waitForTimeout(800); // the app opens (and creates) the database
+  const readRecord = () =>
+    p2.evaluate(
+      () =>
+        new Promise((resolve, reject) => {
+          const r = indexedDB.open('2d6-map-maker', 1);
+          r.onsuccess = () => {
+            const g = r.result.transaction('saves').objectStore('saves').get('current');
+            g.onsuccess = () => resolve(JSON.stringify(g.result ?? null));
+            g.onerror = () => reject(g.error);
+          };
+          r.onerror = () => reject(r.error);
+        }),
+    );
+  await p2.evaluate(
+    () =>
+      new Promise((resolve, reject) => {
+        const r = indexedDB.open('2d6-map-maker', 1);
+        r.onsuccess = () => {
+          const tx = r.result.transaction('saves', 'readwrite');
+          tx.objectStore('saves').put({ format: 1, broken: true }, 'current');
+          tx.oncomplete = () => resolve(null);
+          tx.onerror = () => reject(tx.error);
+        };
+        r.onerror = () => reject(r.error);
+      }),
+  );
+  const corrupt = await readRecord();
+  await p2.reload({ waitUntil: 'load' });
+  await p2.waitForTimeout(800);
+  if (!(await p2.isVisible("text=Your saved game couldn't be loaded"))) problems.push('corrupt record: load-error dialog not shown');
+  await p2.screenshot({ path: join(outDir, '21-load-error.png') });
+  await p2.click('button:text-is("Start new game")');
+  await p2.waitForTimeout(200);
+  if (!(await p2.isVisible('text=This replaces your saved game.'))) problems.push('Start new game did not ask for confirmation');
+  if (!(await p2.isVisible('button:text-is("Export first")'))) problems.push('damaged-record confirmation lacks Export first');
+  await p2.screenshot({ path: join(outDir, '22-load-error-confirm.png') });
+  await p2.click('[role=alertdialog] button:text-is("Cancel")');
+  await p2.waitForTimeout(1500);
+  if (!(await p2.isVisible("text=Your saved game couldn't be loaded"))) problems.push('Cancel did not leave the load-error dialog in place');
+  if ((await readRecord()) !== corrupt) problems.push('the damaged record changed without the user choosing');
+  await ctx.close();
+}
+
 await browser.close();
 if (errors.length) problems.push('page errors:\n' + errors.join('\n'));
 if (problems.length) {
