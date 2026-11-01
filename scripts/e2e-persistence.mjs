@@ -114,7 +114,7 @@ try {
     await panelButton(page, 'Place for me');
     await panelButton(page, 'Done');
     await stepIs(page, 'label', 'room exits');
-    await page.fill('aside.panel input[type="text"]', 'Guard Room');
+    await page.fill('aside.panel input[type="text"]', 'Lamp Room');
     await panelButton(page, 'Done');
     await stepIs(page, 'idle', 'room label');
     await page.waitForTimeout(2500);

@@ -207,7 +207,7 @@ await typeDice('2');
 await panelButton('Place for me'); // the other one clockwise from the typed D6
 await panelButton('Done');
 await stepIs('label', 'placing room 2 exits');
-await page.fill('aside.panel input[type="text"]', 'Guard Room');
+await page.fill('aside.panel input[type="text"]', 'Lamp Room');
 await panelButton('Done');
 await stepIs('idle', 'labelling room 2');
 await page.waitForTimeout(2500); // token walks into room 2
@@ -309,7 +309,7 @@ for (const want of ['Room 2', 'Size 6×5', 'Class normal', 'Exits 2']) {
   if (!inspector.toLowerCase().includes(want.toLowerCase())) problems.push(`inspector is missing "${want}"`);
 }
 const typeValue = await page.inputValue('aside.panel [data-editor="room"] input[type="text"]');
-if (typeValue !== 'Guard Room') problems.push(`inspector room type is "${typeValue}"`);
+if (typeValue !== 'Lamp Room') problems.push(`inspector room type is "${typeValue}"`);
 const roomButtons = await page.$$eval('aside.panel button', (els) => els.map((el) => el.textContent?.trim() ?? ''));
 const forbidden = roomButtons.filter((t) => /move|resize|delete|remove/i.test(t));
 if (forbidden.length) problems.push(`inspector has room-changing buttons: ${forbidden.join(', ')}`);

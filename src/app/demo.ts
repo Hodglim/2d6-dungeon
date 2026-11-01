@@ -53,9 +53,9 @@ function retype(h: History, edge: Edge, patch: Partial<{ type: string; secret: b
 export function demoMap(): DungeonMap {
   const h = new History(createMap(dungeonSystem, { width: 20, height: 16, seed: 42, title: 'Demo' }));
   h.execute(placeEntrance(h.map, dungeonSystem, { x: 9, y: 16 }, randomId));
-  // Room 1: Guard Room above the entrance, with three exits (each gets an exit square).
+  // Room 1: Lamp Room above the entrance, with three exits (each gets an exit square).
   // Later rooms attach beyond an exit square, at its far door.
-  room(h, { x: 9, y: 16, side: 'N' }, 6, 3, 2, 'Guard Room', [
+  room(h, { x: 9, y: 16, side: 'N' }, 6, 3, 2, 'Lamp Room', [
     { x: 8, y: 13, side: 'N' },
     { x: 7, y: 14, side: 'W' },
     { x: 13, y: 15, side: 'W' },

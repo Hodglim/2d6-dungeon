@@ -132,9 +132,9 @@ describe('PlayFlow room path', () => {
     flow.place();
     flow.enterExitCount('1');
     expect(expectKind(flow, 'label')).toMatchObject({ chosen: [] });
-    expect(flow.finish({ type: 'Guard Room', unique: false, narrative: '' }).ok).toBe(true);
+    expect(flow.finish({ type: 'Lamp Room', unique: false, narrative: '' }).ok).toBe(true);
     const r2 = history.map.rooms.find((r) => r.number === 2)!;
-    expect(r2.label.type).toBe('Guard Room');
+    expect(r2.label.type).toBe('Lamp Room');
     expect(history.undoLabel).toBe('Add Room 2');
   });
 
