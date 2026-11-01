@@ -194,7 +194,7 @@ These would make it a failure even if it technically worked:
   - the save and load round-trip, with history and labels intact (using an in-memory
     IndexedDB stand-in such as `fake-indexeddb`, or an injected storage adapter)
   - validation that rejects a damaged snapshot anywhere in the history
-  - the size measurement for a 200-step history
+  - the size measurement for a 20-step history
   - the export file name
   - import refusal cases
   - `History.restore` (or its equivalent) emitting once and leaving undo/redo working
