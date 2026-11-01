@@ -1,5 +1,5 @@
 import { addRoom } from '../../src/core/commands';
-import { History, type HistoryState } from '../../src/core/history';
+import { HISTORY_CAP, History, type HistoryState } from '../../src/core/history';
 import type { DungeonMap } from '../../src/core/types';
 import { emptyMap, room } from './fixtures';
 
@@ -167,5 +167,42 @@ describe('History snapshots', () => {
     expect(h.canUndo).toBe(false);
     expect(h.canRedo).toBe(false);
     expect(h.exportState().past).toHaveLength(0);
+  });
+
+  describe('restore', () => {
+    function three() {
+      const a = new History(emptyMap());
+      a.execute(addRoom(room('a', 0, 0, 1, 1)));
+      a.execute(addRoom(room('b', 2, 0, 1, 1)));
+      a.execute(addRoom(room('c', 4, 0, 1, 1)));
+      return a;
+    }
+
+    it('replaces the timeline in place and emits once', () => {
+      const a = three();
+      const b = new History(emptyMap());
+      const listener = vi.fn();
+      b.subscribe(listener);
+      b.restore(a.exportState());
+      expect(listener).toHaveBeenCalledTimes(1);
+      expect(b.map).toEqual(a.map);
+      expect(b.undoLabel).toBe(a.undoLabel);
+      expect(b.undo()).toBe(true);
+      expect(b.undo()).toBe(true);
+      expect(b.map.rooms.map((r) => r.id)).toEqual(['a']);
+      expect(b.redo()).toBe(true);
+      expect(b.map.rooms.map((r) => r.id)).toEqual(['a', 'b']);
+    });
+
+    it('keeps the newest 20 past entries; the cap is 20', () => {
+      expect(HISTORY_CAP).toBe(20);
+      const m = emptyMap();
+      const past = Array.from({ length: 30 }, (_, i) => ({ label: `L${i}`, map: m }));
+      const b = new History(emptyMap());
+      b.restore({ current: m, past, future: [] });
+      expect(b.exportState().past).toHaveLength(20);
+      expect(b.undoLabel).toBe('L29');
+      expect(b.exportState().past[0]!.label).toBe('L10');
+    });
   });
 });

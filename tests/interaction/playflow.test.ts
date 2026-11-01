@@ -552,3 +552,15 @@ describe('PlayFlow snapping to valid positions', () => {
     expect(expectKind(flow, 'position').placement.ok).toBe(true);
   });
 });
+
+describe('PlayFlow.dispose', () => {
+  it('stops reacting to History changes', () => {
+    const { history, flow } = withEntrance();
+    flow.startFromExit(northExit(history.map).id);
+    flow.enterSize('3', '4');
+    const before = flow.step;
+    flow.dispose();
+    history.undo();
+    expect(flow.step).toBe(before);
+  });
+});

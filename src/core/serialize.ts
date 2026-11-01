@@ -1,5 +1,6 @@
 import { CURRENT_SCHEMA_VERSION, MAX_MAP_SIZE } from './campaign';
 import { checkInvariants } from './invariants';
+import { HISTORY_CAP, type HistoryState } from './history';
 import type { Campaign } from './types';
 
 /** migrations[n] upgrades a raw campaign object from schema version n to n + 1. */
@@ -48,27 +49,35 @@ function tokenOk(t: unknown): boolean {
   return t === null || (isObj(t) && isCell(t) && Array.isArray(t.trail) && t.trail.every(isCell));
 }
 
+/** Shape check for one map; null means OK. Does not run checkInvariants. */
+export function mapProblem(m: unknown): string | null {
+  if (!isObj(m)) return 'a map is not an object';
+  for (const k of ['id', 'title', 'hero', 'level', 'themeId', 'defaultDoorType']) {
+    if (!isStr(m[k])) return `map missing ${k}`;
+  }
+  if (!isNum(m.seed)) return 'map missing seed';
+  for (const k of ['width', 'height']) {
+    if (!isNum(m[k])) return `map missing ${k}`;
+    if (!isInt(m[k]) || (m[k] as number) < 1 || (m[k] as number) > MAX_MAP_SIZE) return 'a map has an invalid size';
+  }
+  for (const k of ['rooms', 'doors', 'features']) if (!Array.isArray(m[k])) return `map missing ${k}`;
+  if (!(m.rooms as unknown[]).every(roomOk)) return 'a room is malformed';
+  if (!(m.doors as unknown[]).every(doorOk)) return 'a door is malformed';
+  if (!(m.features as unknown[]).every(featureOk)) return 'a feature is malformed';
+  if (!tokenOk(m.token)) return 'the token is malformed';
+  return null;
+}
+
 function shapeProblem(raw: Record<string, unknown>): string | null {
   for (const k of ['id', 'name', 'systemId', 'activeMapId']) if (!isStr(raw[k])) return `missing ${k}`;
   if (!Array.isArray(raw.maps) || raw.maps.length === 0) return 'no maps';
   const seenIds = new Set<string>();
   for (const m of raw.maps) {
-    if (!isObj(m)) return 'a map is not an object';
-    for (const k of ['id', 'title', 'hero', 'level', 'themeId', 'defaultDoorType']) {
-      if (!isStr(m[k])) return `map missing ${k}`;
-    }
-    if (!isNum(m.seed)) return 'map missing seed';
-    for (const k of ['width', 'height']) {
-      if (!isNum(m[k])) return `map missing ${k}`;
-      if (!isInt(m[k]) || (m[k] as number) < 1 || (m[k] as number) > MAX_MAP_SIZE) return 'a map has an invalid size';
-    }
-    for (const k of ['rooms', 'doors', 'features']) if (!Array.isArray(m[k])) return `map missing ${k}`;
-    if (!(m.rooms as unknown[]).every(roomOk)) return 'a room is malformed';
-    if (!(m.doors as unknown[]).every(doorOk)) return 'a door is malformed';
-    if (!(m.features as unknown[]).every(featureOk)) return 'a feature is malformed';
-    if (!tokenOk(m.token)) return 'the token is malformed';
-    if (seenIds.has(m.id as string)) return 'two maps share an id';
-    seenIds.add(m.id as string);
+    const problem = mapProblem(m);
+    if (problem) return problem;
+    const id = (m as Record<string, unknown>).id as string;
+    if (seenIds.has(id)) return 'two maps share an id';
+    seenIds.add(id);
   }
   if (!seenIds.has(raw.activeMapId as string)) return 'active map not found';
   return null;
@@ -110,4 +119,30 @@ export function parseCampaign(
     if (broken) return { ok: false, error: `The map file is damaged: ${broken}.` };
   }
   return { ok: true, campaign };
+}
+
+export type HistoryParse = { ok: true; state: HistoryState } | { ok: false; error: string };
+
+function snapshotProblem(map: unknown): string | null {
+  return mapProblem(map) ?? checkInvariants(map as Campaign['maps'][number]);
+}
+
+/** Validates a loaded History snapshot: shape and invariants of every map, string labels, lengths within the cap. */
+export function parseHistoryState(raw: unknown): HistoryParse {
+  const fail = (why: string): HistoryParse => ({ ok: false, error: `The saved history is damaged: ${why}.` });
+  if (!isObj(raw)) return fail('it is not an object');
+  const bad = snapshotProblem(raw.current);
+  if (bad) return fail(`current map: ${bad}`);
+  for (const key of ['past', 'future'] as const) {
+    const list = raw[key];
+    if (!Array.isArray(list)) return fail(`${key} is missing`);
+    if (list.length > HISTORY_CAP) return fail(`${key} is too long`);
+    for (let i = 0; i < list.length; i++) {
+      const e: unknown = list[i];
+      if (!isObj(e) || !isStr(e.label)) return fail(`${key}[${i}] has no label`);
+      const problem = snapshotProblem(e.map);
+      if (problem) return fail(`${key}[${i}]: ${problem}`);
+    }
+  }
+  return { ok: true, state: raw as unknown as HistoryState };
 }
