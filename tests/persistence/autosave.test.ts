@@ -7,7 +7,7 @@ import 'fake-indexeddb/auto';
 import { IdbSaveStore, MemorySaveStore } from '../../src/persistence/store';
 import { emptyMap, room } from '../core/fixtures';
 
-const meta = { id: 'c1', name: 'Camp', systemId: 'dungeon', hero: null };
+const meta = { id: 'c1', name: 'Camp', systemId: 'dungeon', hero: null, earlierLevels: [] };
 
 function setup() {
   const history = new History(emptyMap(30, 30));

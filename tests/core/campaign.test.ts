@@ -9,7 +9,7 @@ describe('createMap', () => {
       id: 'm-1',
       title: '',
       hero: '',
-      level: '',
+      level: 1,
       width: 25,
       height: 25,
       themeId: 'classic',

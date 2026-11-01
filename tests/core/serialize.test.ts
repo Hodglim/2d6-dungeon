@@ -52,8 +52,8 @@ describe('serialize / parse', () => {
   });
 
   it('version coupling: bump the save format and the schema version together', () => {
-    expect(CURRENT_SCHEMA_VERSION).toBe(2);
-    expect(SAVE_FORMAT).toBe(2);
+    expect(CURRENT_SCHEMA_VERSION).toBe(3);
+    expect(SAVE_FORMAT).toBe(3);
   });
 
   it('validates a non-null hero with heroProblem, and requires the hero key', () => {
@@ -118,6 +118,24 @@ describe('serialize / parse', () => {
 });
 
 describe('mapProblem', () => {
+  it('requires a whole-number level from 1 to 10', () => {
+    const m = sample().maps[0]!;
+    expect(m.level).toBe(1);
+    expect(mapProblem({ ...m, level: '1' })).not.toBeNull();
+    expect(mapProblem({ ...m, level: 0 })).not.toBeNull();
+    expect(mapProblem({ ...m, level: 11 })).not.toBeNull();
+    expect(mapProblem({ ...m, level: 1.5 })).not.toBeNull();
+    expect(mapProblem({ ...m, level: 10 })).toBeNull();
+  });
+  it('validates room contents when present', () => {
+    const m = sample().maps[0]!;
+    const r = room('rc', 2, 2, 3, 3, 'room', 1);
+    const good = { table: 'rooms', roll: '3', type: 'Hall', description: 'd', encounter: '', door: 'wooden', locked: false };
+    expect(mapProblem({ ...m, rooms: [{ ...r, contents: good }] })).toBeNull();
+    expect(mapProblem({ ...m, rooms: [{ ...r, contents: { ...good, table: 'huge' } }] })).not.toBeNull();
+    expect(mapProblem({ ...m, rooms: [{ ...r, contents: { ...good, locked: 'no' } }] })).not.toBeNull();
+    expect(mapProblem({ ...m, rooms: [{ ...r, contents: { ...good, type: 4 } }] })).not.toBeNull();
+  });
   it('accepts a valid map and describes a broken one', () => {
     expect(mapProblem(sample().maps[0])).toBeNull();
     const { rooms: _rooms, ...noRooms } = sample().maps[0]!;

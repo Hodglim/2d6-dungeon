@@ -80,7 +80,8 @@ export interface DungeonMap {
   id: string;
   title: string;
   hero: string;
-  level: string;
+  /** Dungeon level, a whole number from 1 to 10. */
+  level: number;
   width: number;
   height: number;
   themeId: string;
