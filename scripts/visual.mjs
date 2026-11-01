@@ -477,7 +477,14 @@ if (!(await page.isVisible('text=This replaces your current game.'))) problems.p
     await p.keyboard.press('Escape');
     return t;
   };
-  const fixture = readFileSync('tests/fixtures/dungeon-tables.fixture.json');
+  const fixtureRaw = readFileSync('tests/fixtures/dungeon-tables.fixture.json');
+  // In-test copy only: a single-die armour with a long modifier, wider than any manoeuvre damage.
+  const fixtureObj = JSON.parse(fixtureRaw.toString());
+  JSON.stringify(fixtureObj, (k, v) => {
+    if (v && v.name === 'Padded Tablecloth') Object.assign(v, { dice: [2], modifier: '-1 Damage' });
+    return v;
+  });
+  const fixture = Buffer.from(JSON.stringify(fixtureObj));
   const fixtureName = JSON.parse(fixture.toString()).name;
   const pick = async (which, name, buffer) => {
     await p.setInputFiles(`input[data-extra="${which}"]`, { name, mimeType: 'application/json', buffer });
@@ -547,8 +554,8 @@ if (!(await page.isVisible('text=This replaces your current game.'))) problems.p
       const over = [...d.querySelectorAll('.sheet *')].filter((e) => e.getBoundingClientRect().right > dr.right + 1).length;
       return { xs, tables: d.querySelectorAll('.sheet .mtable').length, over, vs: body.scrollHeight > body.clientHeight + 1, hs: body.scrollWidth > body.clientWidth + 1, tiles: d.querySelectorAll('.tile').length };
     });
-    if (r.tables !== 2 || r.tiles !== 4) problems.push(`wizard ${where}: expected 2 tables and 4 tiles, got ${r.tables}/${r.tiles}`);
-    // Weapon and armour tables are separate grids, so compare offsets relative to the first row of each.
+    if (r.tables !== 1 || r.tiles !== 4) problems.push(`wizard ${where}: expected 1 shared grid and 4 tiles, got ${r.tables}/${r.tiles}`);
+    if (r.xs.length < 3) problems.push(`wizard ${where}: expected manoeuvre and armour rows in one grid`);
     if (r.xs.length < 2 || r.xs.some((x) => x.join() !== r.xs[0].join())) problems.push(`wizard ${where}: columns misaligned ${JSON.stringify(r.xs)}`);
     if (r.over || r.hs) problems.push(`wizard ${where}: overflow (${r.over} elements, hscroll ${r.hs})`);
     if (where.includes('1180') && r.vs) problems.push(`wizard ${where}: body scrolls vertically`);

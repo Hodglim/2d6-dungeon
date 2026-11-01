@@ -165,9 +165,11 @@
           <div class="cols">
             <section class="left">
               <h4>Weapon — {review.weapon}</h4>
-              <ManoeuvreTable label="Manoeuvres" rows={review.manoeuvres.map((m) => ({ name: m.name, dice: m.dice, damage: m.modifier }))} />
-              <h4>Armour</h4>
-              <ManoeuvreTable label="Armour" lastLabel="Modifier" rows={review.armour.map((a) => ({ name: a.name, dice: a.dice, damage: a.modifier }))} />
+              <ManoeuvreTable
+                label="Manoeuvres and armour"
+                rows={review.manoeuvres.map((m) => ({ name: m.name, dice: m.dice, damage: m.modifier }))}
+                extra={{ title: 'Armour', lastLabel: 'Modifier', rows: review.armour.map((a) => ({ name: a.name, dice: a.dice, damage: a.modifier })) }}
+              />
             </section>
             <section class="right">
               <h4>Scroll</h4>
