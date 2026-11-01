@@ -335,8 +335,8 @@ await shot('09-demo.png');
 
 // 8. New map dialog shows the discard confirmation over a map with content.
 await page.click('header.toolbar button[aria-label="Menu"]');
-await page.click('text=New map…');
-await page.click('button:text-is("Create")');
+await page.click('text=New game…');
+await page.click('button:text-is("Start without a hero")');
 await page.waitForTimeout(200);
 await shot('10-new-map-confirm.png');
 if (!(await page.isVisible('text=This replaces your current game.'))) problems.push('new game confirmation not shown');
@@ -498,6 +498,73 @@ if (!(await page.isVisible('text=This replaces your current game.'))) problems.p
   await pick('cards', 'cards.json', Buffer.from(packText));
   const cardsStatus = await statusOf('cards');
   if (!cardsStatus?.includes('Made-up cards')) problems.push(`cards status after load: "${cardsStatus}"`);
+
+  // The creation wizard, with the fixture tables loaded.
+  const readSaved = () =>
+    p.evaluate(
+      () =>
+        new Promise((resolve, reject) => {
+          const r = indexedDB.open('2d6-map-maker', 1);
+          r.onsuccess = () => {
+            const g = r.result.transaction('saves').objectStore('saves').get('current');
+            g.onsuccess = () => resolve(JSON.stringify(g.result ?? null));
+            g.onerror = () => reject(g.error);
+          };
+          r.onerror = () => reject(r.error);
+        }),
+    );
+  const wshot = async (name) => {
+    await p.waitForTimeout(250);
+    await p.screenshot({ path: join(outDir, name) });
+    console.log(`Saved ${join(outDir, name)}`);
+  };
+  const wiz = (t) => p.click(`[role=dialog][aria-labelledby=wizard-title] button:text-is("${t}")`);
+  const wizSmall = async () => {
+    const n = await p.$$eval('[aria-labelledby=wizard-title] button, [aria-labelledby=wizard-title] input', (els) => els.map((e) => e.getBoundingClientRect()).filter((r) => r.width > 0 && (r.width < 44 || r.height < 44)).length);
+    if (n) problems.push(`wizard has ${n} controls under 44px`);
+  };
+  const runWizard = async (name, shots) => {
+    await openMenu();
+    await p.click('[role=menuitem]:text-is("New game…")');
+    await wiz('Next');
+    await p.fill('[aria-labelledby=wizard-title] input[type=text]', name);
+    await wiz('Next');
+    await p.click('.option:has-text("Practice Sword")');
+    if (shots) await wshot('30-wizard-weapon.png');
+    await wizSmall();
+    await wiz('Next');
+    if (await p.isEnabled('.next')) problems.push('wizard Next enabled with no manoeuvres chosen');
+    await p.click('.option:has-text("Wobbly Poke")');
+    await p.click('.option:has-text("Gentle Swipe")');
+    if (shots) await wshot('31-wizard-manoeuvres.png');
+    await wiz('Next');
+    await p.click('.option:has-text("Padded Tablecloth")');
+    await wiz('Next');
+    await p.click('.option:has-text("Scroll of Mild Glow")');
+    await wiz('Next');
+    if (shots) await wshot('32-wizard-review.png');
+    await wiz('Begin');
+    await p.waitForTimeout(300);
+  };
+  await runWizard('Pip Tester', true);
+  if (await p.isVisible('[role=alertdialog] button:text-is("Replace")')) await p.click('[role=alertdialog] button:text-is("Replace")');
+  await p.waitForTimeout(800);
+  if (!(await readSaved()).includes('Pip Tester')) problems.push('wizard hero not in the saved game');
+  if (!(await statusOf('tables'))?.includes(fixtureName)) problems.push('table status lost after New game');
+  if (!(await p.isDisabled('header.toolbar button.history'))) problems.push('Undo should be empty right after Begin');
+  await p.reload({ waitUntil: 'load' });
+  await p.waitForTimeout(1000);
+  if (!(await readSaved()).includes('Pip Tester')) problems.push('wizard hero lost after reload');
+
+  // Cancel mid-wizard leaves the game alone.
+  await openMenu();
+  await p.click('[role=menuitem]:text-is("New game…")');
+  await wiz('Next');
+  await p.fill('[aria-labelledby=wizard-title] input[type=text]', 'Nobody');
+  await wiz('Cancel');
+  await p.waitForTimeout(500);
+  const afterCancel = await readSaved();
+  if (!afterCancel.includes('Pip Tester') || afterCancel.includes('Nobody')) problems.push('Cancel changed the game');
 
   await p.reload({ waitUntil: 'load' });
   await p.waitForTimeout(1000);

@@ -1,0 +1,322 @@
+<script lang="ts">
+  import type { Hero } from '../../systems/dungeon/hero';
+  import { createHero } from '../../systems/dungeon/hero';
+  import type { DungeonTables } from '../../systems/dungeon/tables';
+  import DicePair from '../DicePair.svelte';
+  import {
+    MAX_MAP_SIZE,
+    MIN_MAP_SIZE,
+    emptyDraft,
+    mapSizeProblem,
+    pickableManoeuvres,
+    startingManoeuvreCount,
+    toggleManoeuvre,
+    wizardStepValid,
+    wizardSteps,
+    type WizardMode,
+    type WizardStep,
+  } from './steps';
+
+  interface Props {
+    tables: DungeonTables | null;
+    mode: WizardMode;
+    onbegin: (result: { width: number; height: number; hero: Hero | null }) => void;
+    oncancel: () => void;
+    onloadtables: () => void;
+  }
+
+  let { tables, mode, onbegin, oncancel, onloadtables }: Props = $props();
+
+  const steps = $derived(wizardSteps(mode));
+  let index = $state(0);
+  let draft = $state(emptyDraft());
+
+  const step = $derived<WizardStep>(steps[index]!);
+  const valid = $derived(wizardStepValid(step, draft, tables));
+  const last = $derived(index === steps.length - 1);
+  const sizeError = $derived(mapSizeProblem(draft));
+  const count = $derived(tables ? startingManoeuvreCount(tables) : 0);
+  const pickable = $derived(tables ? pickableManoeuvres(tables, draft.weapon) : []);
+  const TITLES: Record<WizardStep, string> = {
+    game: 'New game',
+    name: 'Name your hero',
+    weapon: 'Choose a weapon',
+    manoeuvres: 'Choose manoeuvres',
+    armour: 'Choose armour',
+    scroll: 'Choose a scroll',
+    review: 'Review',
+  };
+
+  function chooseWeapon(name: string) {
+    if (draft.weapon !== name) draft.manoeuvres = [];
+    draft.weapon = name;
+  }
+
+  function begin(withHero: boolean) {
+    const hero = withHero && tables ? createHero(tables, { ...draft, name: draft.name.trim() }) : null;
+    onbegin({ width: draft.width, height: draft.height, hero });
+  }
+
+  function next() {
+    if (!valid) return;
+    if (last) begin(true);
+    else index += 1;
+  }
+  const back = () => (index > 0 ? (index -= 1) : oncancel());
+
+  const review = $derived.by(() => {
+    if (step !== 'review' || !tables || !valid) return null;
+    return createHero(tables, { ...draft, name: draft.name.trim() });
+  });
+</script>
+
+<svelte:window onkeydown={(e) => e.key === 'Escape' && oncancel()} />
+
+<div class="scrim">
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="wizard-title" data-step={step}>
+    <header>
+      <h2 id="wizard-title">{TITLES[step]}</h2>
+      <p class="progress">Step {index + 1} of {steps.length}</p>
+    </header>
+
+    <div class="body">
+      {#if step === 'game'}
+        <div class="row">
+          <label>Width <input type="number" min={MIN_MAP_SIZE} max={MAX_MAP_SIZE} step="1" inputmode="numeric" bind:value={draft.width} /></label>
+          <label>Height <input type="number" min={MIN_MAP_SIZE} max={MAX_MAP_SIZE} step="1" inputmode="numeric" bind:value={draft.height} /></label>
+        </div>
+        {#if sizeError}<p class="error" role="alert">{sizeError}</p>{/if}
+        {#if !tables}
+          <p class="note">No table file is loaded, so you can't make a hero yet. Load your table file, or start with the map only.</p>
+          <div><button type="button" onclick={onloadtables}>Load table file…</button></div>
+        {/if}
+        <div><button type="button" class="start-bare" disabled={!!sizeError} onclick={() => begin(false)}>Start without a hero</button></div>
+      {:else if step === 'name'}
+        <label>Name <input type="text" bind:value={draft.name} placeholder="Your hero's name" autocomplete="off" /></label>
+        {#if tables}
+          {@const s = tables.tables.starting}
+          <p class="note">Every hero starts the same: Level {s.level}, {s.hp} HP, Shift {s.shift}, Discipline {s.discipline}, Precision {s.precision}.</p>
+        {/if}
+      {:else if step === 'weapon' && tables}
+        <div class="options">
+          {#each tables.tables.weapons as w (w.name)}
+            <button type="button" class="option" aria-pressed={draft.weapon === w.name} onclick={() => chooseWeapon(w.name)}>
+              <strong>{w.name}</strong>
+              <ul>
+                {#each w.manoeuvres.filter((m) => m.level === tables.tables.starting.level) as m (m.name)}
+                  <li><span>{m.name}</span> <DicePair dice={m.dice} /> <span class="dmg">{m.damage}</span></li>
+                {/each}
+              </ul>
+            </button>
+          {/each}
+        </div>
+      {:else if step === 'manoeuvres'}
+        <p class="note">Pick {count} ({draft.manoeuvres.length} chosen).</p>
+        <div class="options">
+          {#each pickable as m (m.name)}
+            <button type="button" class="option" aria-pressed={draft.manoeuvres.includes(m.name)} onclick={() => (draft.manoeuvres = toggleManoeuvre(draft.manoeuvres, m.name, count))}>
+              <strong>{m.name}</strong>
+              <span class="line"><DicePair dice={m.dice} /> <span class="dmg">Damage {m.damage}</span></span>
+            </button>
+          {/each}
+        </div>
+      {:else if step === 'armour' && tables}
+        <div class="options">
+          {#each tables.tables.startingArmour as a (a.name)}
+            <button type="button" class="option" aria-pressed={draft.armour === a.name} onclick={() => (draft.armour = a.name)}>
+              <strong>{a.name}</strong>
+              <span class="line"><DicePair dice={a.dice} /> <span class="dmg">Modifier {a.modifier}</span></span>
+            </button>
+          {/each}
+        </div>
+      {:else if step === 'scroll' && tables}
+        <div class="options">
+          {#each tables.tables.startingScrolls as s (s.name)}
+            <button type="button" class="option" aria-pressed={draft.scroll === s.name} onclick={() => (draft.scroll = s.name)}>
+              <strong>{s.name}</strong>
+              <span class="dmg">{s.effect}</span>
+            </button>
+          {/each}
+        </div>
+      {:else if step === 'review' && review}
+        <div class="sheet">
+          <h3>{review.name} <small>Level {review.level}, {review.title}</small></h3>
+          <p>{review.hp} HP · Shift {review.shift} · Discipline {review.discipline} · Precision {review.precision} · Rations {review.rations}</p>
+          <p><strong>Weapon:</strong> {review.weapon}</p>
+          <ul>
+            {#each review.manoeuvres as m (m.name)}<li>{m.name} <DicePair dice={m.dice} /> {m.modifier}</li>{/each}
+          </ul>
+          <p><strong>Armour:</strong> {review.armour[0]!.name} <DicePair dice={review.armour[0]!.dice} /> {review.armour[0]!.modifier}</p>
+          <p><strong>Scroll:</strong> {review.scrolls[0]!.name}</p>
+          <p><strong>Potions:</strong> {review.potions.map((p) => p.name).join(', ') || 'none'}</p>
+          <p><strong>Kit:</strong> {[...review.smallItems, ...review.largeItems].join(', ') || 'none'}</p>
+        </div>
+      {/if}
+    </div>
+
+    <footer>
+      <button type="button" class="cancel" onclick={oncancel}>Cancel</button>
+      <span class="spacer"></span>
+      <button type="button" class="back" disabled={index === 0} onclick={back}>Back</button>
+      <button type="button" class="primary next" disabled={!valid} onclick={next}>{last ? 'Begin' : 'Next'}</button>
+    </footer>
+  </div>
+</div>
+
+<style>
+  .scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 20;
+    display: grid;
+    place-items: center;
+    padding: 16px;
+    background: rgba(20, 16, 10, 0.45);
+  }
+  .dialog {
+    display: flex;
+    flex-direction: column;
+    width: min(640px, 100%);
+    height: min(560px, 100%);
+    padding: 18px 22px;
+    box-sizing: border-box;
+    background: var(--paper);
+    color: var(--ink);
+    border: 2px solid var(--ink);
+    border-radius: 8px;
+  }
+  header h2 {
+    margin: 0;
+    font-size: 24px;
+  }
+  .progress {
+    margin: 2px 0 10px;
+    font-size: 15px;
+    opacity: 0.75;
+  }
+  .body {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 2px;
+  }
+  footer {
+    display: flex;
+    gap: 10px;
+    padding-top: 12px;
+  }
+  .spacer {
+    flex: 1;
+  }
+  .row {
+    display: flex;
+    gap: 14px;
+  }
+  .row label {
+    flex: 1;
+  }
+  label {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 17px;
+    font-weight: 600;
+  }
+  input {
+    min-height: 48px;
+    padding: 0 12px;
+    font: inherit;
+    font-size: 19px;
+    font-weight: 400;
+    color: var(--ink);
+    background: #fff;
+    border: 2px solid var(--ink);
+    border-radius: 6px;
+    min-width: 0;
+  }
+  .error {
+    margin: 0;
+    color: var(--danger);
+    font-size: 17px;
+  }
+  .note {
+    margin: 0;
+    font-size: 17px;
+  }
+  .options {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .option {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+    text-align: left;
+    padding: 10px 14px;
+    min-height: 56px;
+  }
+  .option[aria-pressed='true'] {
+    background: #f1e3b8;
+    border-width: 4px;
+    padding: 8px 12px;
+  }
+  .option ul,
+  .sheet ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .option li,
+  .sheet li,
+  .line {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .dmg {
+    font-weight: 400;
+    font-size: 16px;
+  }
+  .sheet h3 {
+    margin: 0 0 4px;
+    font-size: 22px;
+  }
+  .sheet h3 small {
+    font-size: 16px;
+    font-weight: 400;
+  }
+  .sheet p {
+    margin: 4px 0;
+    font-size: 17px;
+  }
+  button {
+    min-width: 96px;
+    min-height: 48px;
+    padding: 0 18px;
+    font: inherit;
+    font-size: 18px;
+    color: var(--ink);
+    background: var(--paper);
+    border: 2px solid var(--ink);
+    border-radius: 6px;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  button.primary {
+    color: var(--paper);
+    background: var(--ink);
+  }
+  button:disabled {
+    opacity: 0.45;
+    cursor: default;
+  }
+</style>

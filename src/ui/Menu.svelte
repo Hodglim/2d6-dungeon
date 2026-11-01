@@ -41,7 +41,7 @@
 
 <div class="backdrop" role="presentation" onclick={onclose}></div>
 <div class="menu" role="menu" aria-label="Menu">
-  <button role="menuitem" onclick={act(onnewmap)}>New map…</button>
+  <button role="menuitem" onclick={act(onnewmap)}>New game…</button>
   <button role="menuitem" onclick={act(ondemo)}>Load demo map</button>
   <button role="menuitem" onclick={act(onfit)}>Fit map to screen</button>
   <button role="menuitem" onclick={act(onexport)}>Export game</button>

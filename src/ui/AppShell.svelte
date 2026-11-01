@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { demoMap } from '../app/demo';
   import { createCampaign } from '../core/campaign';
-  import { addFeature, type Command } from '../core/commands';
+  import { addFeature, setHero, type Command } from '../core/commands';
   import { rectContains } from '../core/geometry';
   import { type ExecResult, History } from '../core/history';
   import { randomId } from '../core/ids';
@@ -25,6 +25,7 @@
   import { DEFAULT_TOGGLES, type DisplayToggles } from '../render/renderer';
   import { dungeonSystem } from '../systems/dungeon';
   import type { CardPack } from '../systems/dungeon/cards';
+  import type { Hero } from '../systems/dungeon/hero';
   import type { DungeonTables } from '../systems/dungeon/tables';
   import { classicTheme } from '../systems/dungeon/classic';
   import { drawOverlay, overlayFor, selectionOverlay } from './overlay';
@@ -34,7 +35,7 @@
   import InstallHint from './InstallHint.svelte';
   import LoadErrorDialog from './LoadErrorDialog.svelte';
   import Menu from './Menu.svelte';
-  import NewMapDialog, { type NewMapValues } from './NewMapDialog.svelte';
+  import HeroWizard from './wizard/HeroWizard.svelte';
   import ReplaceGameDialog from './ReplaceGameDialog.svelte';
   import SaveBanner from './SaveBanner.svelte';
   import StepPanel from './StepPanel.svelte';
@@ -61,6 +62,7 @@
   let toggles = $state<DisplayToggles>({ ...DEFAULT_TOGGLES });
   let menuOpen = $state(false);
   let newMapOpen = $state(false);
+  let wizardMode = $state<'new-game' | 'add-hero'>('new-game');
   /** A "this replaces your game" confirmation waiting for an answer. */
   let pendingReplace = $state<{ title: string; message?: string; onexport?: () => void; run: () => void } | null>(null);
   let saveFailing = $state(false);
@@ -290,12 +292,19 @@
     else run();
   }
 
-  function createNewMap(v: NewMapValues) {
+  /** The wizard finished: confirm the replacement first, as New game always has. */
+  function beginNewGame(v: { width: number; height: number; hero: Hero | null }) {
     newMapOpen = false;
     askReplace('New game', () => {
-      const c = createCampaign(dungeonSystem, v.title || 'My dungeon', { width: v.width, height: v.height, level: v.level, title: v.title });
-      replaceGame(metaFrom(c), activeMap(c));
+      const c = createCampaign(dungeonSystem, 'My dungeon', { width: v.width, height: v.height });
+      replaceGame(metaFrom(c), activeMap(c), v.hero);
     });
+  }
+
+  /** Add a hero to the current game (opened from the Hero button in a later task). */
+  function beginAddHero(v: { hero: Hero | null }) {
+    newMapOpen = false;
+    if (v.hero) history.execute(setHero(v.hero, 'Create hero'));
   }
 
   function loadDemo() {
@@ -504,7 +513,10 @@
       <Menu
         bind:toggles
         onclose={() => (menuOpen = false)}
-        onnewmap={() => (newMapOpen = true)}
+        onnewmap={() => {
+          wizardMode = 'new-game';
+          newMapOpen = true;
+        }}
         ondemo={() => askReplace('Load demo map', loadDemo)}
         onfit={() => mapView?.fit()}
         onexport={exportGame}
@@ -548,7 +560,13 @@
 <input bind:this={cardsInput} type="file" accept=".json,application/json" hidden data-extra="cards" onchange={onCardsChosen} />
 
 {#if newMapOpen}
-  <NewMapDialog oncreate={createNewMap} oncancel={() => (newMapOpen = false)} />
+  <HeroWizard
+    {tables}
+    mode={wizardMode}
+    onbegin={wizardMode === 'new-game' ? beginNewGame : beginAddHero}
+    oncancel={() => (newMapOpen = false)}
+    onloadtables={() => pickExtra(tablesInput)}
+  />
 {/if}
 
 {#if loadError}
