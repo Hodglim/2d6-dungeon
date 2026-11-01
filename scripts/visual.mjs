@@ -666,6 +666,26 @@ if (!(await page.isVisible('text=This replaces your current game.'))) problems.p
     const xs = await p.$$eval(`${panel} ul .drow`, (rows) => rows.filter((r) => r.querySelector('.mod')).map((r) => Math.round(r.querySelector('.mod').getBoundingClientRect().x)));
     if (new Set(xs).size > 2) problems.push(`damage column not aligned: ${xs}`);
     await p.screenshot({ path: join(outDir, '41-dice-pips.png') });
+    // Buttons and modifiers never spill or wrap, at this width and at a 420px panel.
+    const fit = async (where) => {
+      const bad = await p.$$eval(`${panel} .drow`, (rows) =>
+        rows.flatMap((r) => [...r.querySelectorAll('button, .mod')].filter((e) => e.scrollWidth > e.clientWidth + 1 || e.getBoundingClientRect().right > r.getBoundingClientRect().right + 1 || e.getBoundingClientRect().height > 60).map((e) => e.textContent.trim())),
+      );
+      if (bad.length) problems.push(`sheet grid ${where}: ${bad.join(', ')} spill or wrap`);
+      const rights = await p.$$eval(`${panel} .dgrid`, (gs) => gs.map((g) => new Set([...g.querySelectorAll('.drow:not(.dhead) .mod')].map((e) => Math.round(e.getBoundingClientRect().x))).size));
+      if (rights.some((n) => n > 1)) problems.push(`sheet grid ${where}: modifier column misaligned ${JSON.stringify(await p.$$eval(`${panel} .dgrid .drow .mod`, (es) => es.map((e) => e.getBoundingClientRect().x)))}`);
+      if (await p.$eval(panel, (e) => e.scrollWidth > e.clientWidth + 1)) problems.push(`sheet grid ${where}: panel scrolls sideways`);
+    };
+    await fit('at 1180');
+    const origW = await p.$eval(panel, (e) => e.getBoundingClientRect().width);
+    await p.$eval(panel, (e) => { e.style.setProperty('width', '420px', 'important'); e.style.setProperty('flex', 'none', 'important'); });
+    await p.waitForTimeout(200);
+    await fit('at 420');
+    await p.$eval(`${panel} .dgrid`, (e) => e.scrollIntoView({ block: 'center' }));
+    await p.screenshot({ path: join(outDir, '41b-dice-pips-narrow.png') });
+    await p.$eval(panel, (e) => { e.style.removeProperty('width'); e.style.removeProperty('flex'); });
+    await p.waitForTimeout(200);
+    void origW;
     // All six faces, red and blue, rendered in the app's own component styles.
     await p.evaluate(() => {
       const donor = document.querySelector('.hero-panel .drow [role=img]');

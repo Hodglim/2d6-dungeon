@@ -127,6 +127,7 @@
 
   <section>
     <h3 class:over={overLimit(hero, 'manoeuvres')}>Manoeuvres {hero.manoeuvres.length} / {listLimit(hero, 'manoeuvres')}</h3>
+    <div class="dgrid">
 <div class="drow dhead" aria-hidden="true"><span class="grow">Name</span><span class="dcell">Red</span><span class="dcell">Blue</span><span class="mod">Damage</span><span></span></div>
     <ul>
       {#each hero.manoeuvres as m, i (i)}
@@ -155,11 +156,13 @@
         {/each}
       </ul>
     {/if}
+    </div>
     {@render adder('manoeuvres', mDraft)}
   </section>
 
   <section>
     <h3 class:over={overLimit(hero, 'armour')}>Armour {hero.armour.length} / {listLimit(hero, 'armour')}</h3>
+    <div class="dgrid">
 <div class="drow dhead" aria-hidden="true"><span class="grow">Name</span><span class="dcell">Red</span><span class="dcell">Blue</span><span class="mod">Modifier</span><span></span></div>
     <ul>
       {#each hero.armour as a, i (i)}
@@ -172,6 +175,7 @@
         </li>
       {/each}
     </ul>
+    </div>
     {@render adder('armour', aDraft)}
   </section>
 
@@ -196,12 +200,25 @@
 </div>
 
 <style>
-  .drow,
-  .page :global(li.drow) {
+  /* One shared grid per section so held and offered rows line up; li rows are subgrids. */
+  .dgrid {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 40px 40px 76px 96px;
-    align-items: center;
+    grid-template-columns: minmax(0, 1fr) 40px 40px max-content max-content;
     column-gap: 8px;
+  }
+  div.dgrid :global(ul) {
+    display: contents;
+  }
+  .dgrid :global(p) {
+    grid-column: 1 / -1;
+  }
+  .drow,
+  .dgrid :global(li.drow) {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: subgrid;
+    align-items: center;
+    margin-bottom: 6px;
   }
   .dhead {
     font-size: 15px;
@@ -222,8 +239,15 @@
     min-width: 0;
     overflow-wrap: anywhere;
   }
+  .drow .mod {
+    min-width: 76px;
+    white-space: nowrap;
+  }
   .drow button {
     min-height: 44px;
-    min-width: 44px;
+    min-width: 96px;
+    padding-inline: 12px;
+    text-align: center;
+    white-space: nowrap;
   }
 </style>
