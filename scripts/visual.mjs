@@ -978,7 +978,7 @@ for (const reduced of [false, true]) {
     const text = (await p.textContent('[data-testid=rolled]'))?.replace(/\s+/g, ' ').trim() ?? '';
     const faces = await p.$$eval('[data-testid=roll-faces] [role=img]', (els) => els.map((e) => e.getAttribute('aria-label')));
     console.log(`${tag}: "${text}" faces ${faces.join(', ')}`);
-    const m = text.match(/Rolled (\d+) × (\d+)/);
+    const m = text.match(/(\d+) × (\d+)/);
     if (!m) problems.push(`${tag}: result text missing: "${text}"`);
     if (faces.length < 2 || faces.length % 2 !== 0) problems.push(`${tag}: expected pairs of die faces, got ${faces.length}`);
     else {

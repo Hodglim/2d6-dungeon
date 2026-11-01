@@ -30,16 +30,23 @@
 <h2>Position</h2>
 <p class="size">
   <span class="rolled" data-testid="rolled">
-    Rolled <strong>{step.size.w} × {step.size.h}</strong>{#if step.size.doubled}&nbsp;(doubled){/if}
+    Rolled
+    {#if pairs.length > 0}
+      <span class="faces" data-testid="roll-faces">
+        {#each pairs as [r], i (i)}{#if i > 0}<span class="plus" aria-hidden="true">+</span>{/if}<DieFace value={r} colour="red" />{/each}
+        <span class="times" aria-hidden="true">×</span>
+        {#each pairs as [, b], i (i)}{#if i > 0}<span class="plus" aria-hidden="true">+</span>{/if}<DieFace value={b} colour="blue" />{/each}
+      </span>
+      {#if pairs.length > 1}
+        = <strong>{step.size.w} × {step.size.h}</strong>
+      {:else}
+        <span class="sr-only">{step.size.w} × {step.size.h}</span>
+      {/if}
+    {:else}
+      <strong>{step.size.w} × {step.size.h}</strong>
+    {/if}
+    {#if step.size.doubled}&nbsp;(doubled){/if}
   </span>
-  {#if pairs.length > 0}
-    <span class="faces" data-testid="roll-faces">
-      {#each pairs as [r, b], i (i)}
-        {#if i > 0}<span class="plus" aria-hidden="true">+</span>{/if}
-        <DieFace value={r} colour="red" /><DieFace value={b} colour="blue" />
-      {/each}
-    </span>
-  {/if}
   <span class="badge {cls}">{cls}</span>
 </p>
 {#if step.size.corridor && step.source.kind !== 'entrance'}
@@ -70,6 +77,18 @@
     gap: 4px;
     vertical-align: middle;
     margin: 0 6px;
+  }
+  .times {
+    font-weight: 700;
+    margin: 0 6px;
+  }
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
   }
   .plus {
     font-weight: 700;
