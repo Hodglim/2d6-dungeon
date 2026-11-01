@@ -705,6 +705,20 @@ if (!(await page.isVisible('text=This replaces your current game.'))) problems.p
   await p.click('header.toolbar button.hero');
   await p.waitForSelector('.hero-panel');
   if (!(await p.isVisible('.hero-panel >> text=Load your table file to choose manoeuvres'))) problems.push('no-tables manoeuvre hint missing');
+
+  // Teardown with typed text: New game without a hero while the Story tab is open must not crash.
+  const errorsBefore = errors.length;
+  await p.click('.hero-panel #hero-tab-story');
+  await p.fill('.hero-panel textarea', 'typed, then the game goes away');
+  await openMenu();
+  await p.click('[role=menuitem]:text-is("New game…")');
+  await wiz('Start without a hero');
+  await p.waitForTimeout(300);
+  if (await p.isVisible('[role=alertdialog] button:text-is("Replace")')) await p.click('[role=alertdialog] button:text-is("Replace")');
+  await p.waitForTimeout(500);
+  if (!(await p.isVisible('.panel[aria-label="Step panel"]'))) problems.push('step panel missing after the hero went away on the Story tab');
+  if (await p.isVisible('.hero-panel')) problems.push('hero panel still showing with no hero');
+  if (errors.length !== errorsBefore) problems.push('page error when the hero went away: ' + errors.slice(errorsBefore).join(' | '));
   await ctx.close();
 }
 

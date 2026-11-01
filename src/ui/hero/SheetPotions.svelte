@@ -81,12 +81,6 @@
       <button aria-pressed={hero.pneumonia} onclick={() => onedit({ ...hero, pneumonia: !hero.pneumonia })}>{c.pneumonia.label}</button>
       <span class="effect">{c.pneumonia.effect}</span>
     </div>
-    <div class="cond">
-      <span class="cap">Legend level</span>
-      <button aria-label="Legend level down" disabled={hero.legendLevel === 0} onclick={() => onedit({ ...hero, legendLevel: hero.legendLevel - 1 })}>−</button>
-      <strong class="total">{hero.legendLevel}</strong>
-      <button aria-label="Legend level up" onclick={() => onedit({ ...hero, legendLevel: hero.legendLevel + 1 })}>+</button>
-    </div>
   </section>
 
   <section>

@@ -6,7 +6,7 @@
 
   interface Props {
     hero: Hero;
-    onedit: (next: Hero, opts?: { label?: string; mergeKey?: string; limit?: ListKey }) => void;
+    onedit: (next: Hero, opts?: { label?: string; mergeKey?: string; limit?: ListKey; from?: Hero }) => void;
   }
   let { hero, onedit }: Props = $props();
 
@@ -22,8 +22,16 @@
     if (n >= 0) onedit({ ...hero, rations: n });
   }
   let notesBox: HTMLTextAreaElement | undefined;
+  /** The hero the notes are being typed against; teardown never reads the (possibly null) prop. */
+  let typedFrom: Hero | null = null;
   function setNotes() {
-    if (notesBox && notesBox.value !== hero.notes) onedit({ ...hero, notes: notesBox.value });
+    const from = typedFrom;
+    typedFrom = null;
+    if (from && notesBox && notesBox.value !== from.notes) onedit({ ...from, notes: notesBox.value }, { from });
+  }
+  function setRationsNote(e: Event) {
+    const v = (e.currentTarget as HTMLInputElement).value;
+    if (v !== hero.rationsNote) onedit({ ...hero, rationsNote: v });
   }
   // Tapping a button on iPad Safari may not blur the box: keep the text when the page goes away.
   $effect(() => () => setNotes());
@@ -72,11 +80,12 @@
       <button aria-label="Rations down" disabled={hero.rations === 0} onclick={() => setRations(hero.rations - 1)}>−</button>
       <strong class="total">{hero.rations}</strong>
       <button aria-label="Rations up" onclick={() => setRations(hero.rations + 1)}>+</button>
+      <input type="text" class="grow" aria-label="Rations note" placeholder="Note" value={hero.rationsNote} onchange={setRationsNote} />
     </div>
   </section>
 
   <section>
     <h3>Additional notes</h3>
-    <textarea bind:this={notesBox} aria-label="Additional notes" rows="6" value={hero.notes} onchange={setNotes}></textarea>
+    <textarea bind:this={notesBox} aria-label="Additional notes" rows="6" value={hero.notes} oninput={() => (typedFrom ??= hero)} onchange={setNotes}></textarea>
   </section>
 </div>

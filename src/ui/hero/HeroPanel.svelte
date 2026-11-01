@@ -22,6 +22,8 @@
     mergeKey?: string;
     /** Warn (never block) when this edit pushes the list past its limit. */
     limit?: ListKey;
+    /** The hero a typed edit was made against: dropped silently if the game has moved on. */
+    from?: Hero;
   }
 
   const TABS = [
@@ -56,6 +58,7 @@
   }
 
   function edit(next: Hero, opts: EditOpts = {}) {
+    if (opts.from && history.hero !== opts.from) return;
     const key = opts.limit;
     if (key && next[key].length > hero[key].length && overLimit(next, key)) {
       pending = { next, opts, message: limitMessage(next, key) };

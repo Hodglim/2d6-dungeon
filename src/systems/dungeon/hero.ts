@@ -41,6 +41,7 @@ export interface Hero {
   smallItems: string[];
   lootLockup: string[];
   rations: number;
+  rationsNote: string;
   notes: string;
   rules: HeroRules;
 }
@@ -114,6 +115,7 @@ export function createHero(t: DungeonTables, c: CreationChoices): Hero {
     smallItems: [...starting.kit],
     lootLockup: [],
     rations: starting.rations,
+    rationsNote: '',
     notes: '',
     rules: structuredClone({ limits, levels, gods, conditions, favourBoxes }),
   };
@@ -172,13 +174,14 @@ export function heroProblem(raw: unknown): string | null {
   const h = raw;
   const fail = (what: string) => `The hero is damaged: ${what}`;
   if (h.version !== 1) return fail('version');
-  const s = ['name', 'weapon', 'title', 'appliedRunes', 'narrative', 'notes'].find((k) => !isStr(h[k]));
+  const s = ['name', 'weapon', 'title', 'appliedRunes', 'narrative', 'notes', 'rationsNote'].find((k) => !isStr(h[k]));
   if (s) return fail(s);
   // HP may drop to zero or below, and XP is a plain whole number: integers only.
   const ints = ['hp', 'xp'].find((k) => !Number.isInteger(h[k]));
   if (ints) return fail(ints);
   const n = ['level', 'hpBaseline', 'shift', 'discipline', 'precision', 'legendLevel', 'bloodied', 'soaked', 'rations'].find((k) => !isCount(h[k]));
   if (n) return fail(n);
+  if ((h.legendLevel as number) > 10) return fail('legendLevel');
   if (typeof h.fever !== 'boolean') return fail('fever');
   if (typeof h.pneumonia !== 'boolean') return fail('pneumonia');
   if (!isObj(h.coins)) return fail('coins');

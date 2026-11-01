@@ -42,6 +42,21 @@ describe('heroActions', () => {
     commitHero(history, adjustHp(history.hero as Hero, -2), { mergeKey: 'hp' });
     expect(history.undoLabel).toBe('HP −2');
   });
+  it('HP −1 then +1 inside the window leaves no step behind', () => {
+    let clock = 0;
+    const history = new History(emptyMap(), 20, hero(), () => clock);
+    history.execute(addRoom(room('r1', 1, 1, 3, 3)));
+    commitHero(history, adjustHp(history.hero as Hero, -1), { mergeKey: 'hp' });
+    clock += 100;
+    commitHero(history, adjustHp(history.hero as Hero, 1), { mergeKey: 'hp' });
+    expect((history.hero as Hero).hp).toBe(11);
+    expect(history.undoLabel).toBe('Add room');
+  });
+  it('rejects a hero that cannot be cloned (a leaked proxy)', () => {
+    const history = new History(emptyMap(), 20, hero(), () => 0);
+    const bad = { ...hero(), name: (() => 1) as unknown as string };
+    expect(() => commitHero(history, bad)).toThrow();
+  });
   it('five quick HP taps are one step labelled HP −5, and an earlier map step stays undoable', () => {
     let clock = 0;
     const history = new History(emptyMap(), 20, hero(), () => clock);

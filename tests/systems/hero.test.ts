@@ -27,6 +27,7 @@ describe('createHero', () => {
     ]);
     expect(h.smallItems).toEqual(['Practice Lantern', 'Spare Bootlace']);
     expect(h.potions).toHaveLength(2);
+    expect(h.rationsNote).toBe('');
     expect(h.favour.every((f) => f.points === 0)).toBe(true);
     expect(h.favour).toHaveLength(t.tables.gods.length);
   });
@@ -47,6 +48,12 @@ describe('creationProblem', () => {
 
 describe('heroProblem', () => {
   it('passes a created hero', () => expect(heroProblem(hero())).toBeNull());
+  it('refuses a missing rations note and a legend level above 10', () => {
+    const h = hero();
+    expect(heroProblem({ ...h, rationsNote: undefined })).toMatch(/rationsNote/);
+    expect(heroProblem({ ...h, legendLevel: 11 })).toMatch(/legendLevel/);
+    expect(heroProblem({ ...h, legendLevel: 10 })).toBeNull();
+  });
   it('catches damage', () => {
     const { rules: _r, ...noRules } = hero();
     expect(heroProblem(noRules)).toMatch(/rules/);

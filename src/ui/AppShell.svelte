@@ -102,6 +102,8 @@
   let panelCollapsed = $state(false);
   /** Which panel fills the right-hand sidebar (Task 8 adds 'encounter'). */
   let sidebar = $state<'steps' | 'hero'>('steps');
+  /** The hero panel was open when a play-flow step took the sidebar: restore it when the flow ends. */
+  let heroBeforeFlow = false;
   const heroShown = $derived(sidebar === 'hero' && $view.hero !== null);
   let mapView = $state<ReturnType<typeof MapView>>();
   let step = $state.raw<Step>(flow.step);
@@ -120,7 +122,12 @@
     if (s.kind !== 'idle') {
       gapMode = false;
       panelCollapsed = false; // the steps live in the panel
+      if (sidebar === 'hero') heroBeforeFlow = true;
       sidebar = 'steps';
+    } else if (heroBeforeFlow) {
+      // The flow is over: bring the hero sheet back if it was open when the flow began.
+      heroBeforeFlow = false;
+      sidebar = 'hero';
     }
   });
 
@@ -319,6 +326,7 @@
   /** The toolbar's Hero button: create one, or show or hide the sheet. */
   function onHeroButton() {
     if (!started || loadError) return;
+    heroBeforeFlow = false;
     if ($view.hero === null) {
       wizardMode = 'add-hero';
       newMapOpen = true;
@@ -413,6 +421,7 @@
         return flow.toggleExit(action.edge);
       case 'hint':
         notice = action.text;
+        sidebar = 'steps';
         return;
       case 'ignore':
         return; // taps that don't belong to the step are ignored
@@ -424,15 +433,18 @@
     switch (action.kind) {
       case 'select':
         selection = action.selection;
+        if (selection) sidebar = 'steps';
         return;
       case 'addStairs': {
         const f = { id: randomId(), kind: 'stairs' as const, x: action.cell.x, y: action.cell.y, dir: 'down' as const };
         selection = exec(addFeature(f)) ? { kind: 'feature', featureId: f.id } : null;
+        sidebar = 'steps';
         return;
       }
       case 'hint':
         selection = null;
         notice = action.text;
+        sidebar = 'steps';
         return;
     }
   }

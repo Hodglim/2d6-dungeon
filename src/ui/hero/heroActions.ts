@@ -34,7 +34,14 @@ export function removeItem(h: Hero, list: StringList, index: number): Hero {
  */
 export function commitHero(history: History, next: Hero, opts: { label?: string; mergeKey?: string } = {}): ExecResult {
   const now = history.hero as Hero;
+  // Dev guard: a reactive proxy leaking into the hero fails here, not later at save time.
+  if (import.meta.env?.DEV) structuredClone(next);
   const merging = opts.mergeKey !== undefined && history.canMerge(opts.mergeKey);
   const base = merging ? ((history.heroBeforeLast as Hero | null) ?? now) : now;
+  // A run of taps that nets out to nothing leaves no step behind.
+  if (merging && JSON.stringify(next) === JSON.stringify(base)) {
+    history.undo();
+    return { ok: true };
+  }
   return history.execute(setHero(next, opts.label ?? heroEdit(base, next)), { mergeKey: opts.mergeKey });
 }

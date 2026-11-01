@@ -92,6 +92,12 @@
       <span class="cap">Applied runes</span>
       <input type="text" value={hero.appliedRunes} onchange={setRunes} />
     </label>
+    <div class="cond legend">
+      <span class="cap">Legend level</span>
+      <button aria-label="Legend level down" disabled={hero.legendLevel === 0} onclick={() => onedit({ ...hero, legendLevel: hero.legendLevel - 1 })}>−</button>
+      <strong class="total">{hero.legendLevel}</strong>
+      <button aria-label="Legend level up" disabled={hero.legendLevel >= 10} onclick={() => onedit({ ...hero, legendLevel: hero.legendLevel + 1 })}>+</button>
+    </div>
   </section>
 
   <section>
