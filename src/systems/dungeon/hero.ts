@@ -174,7 +174,10 @@ export function heroProblem(raw: unknown): string | null {
   if (h.version !== 1) return fail('version');
   const s = ['name', 'weapon', 'title', 'appliedRunes', 'narrative', 'notes'].find((k) => !isStr(h[k]));
   if (s) return fail(s);
-  const n = ['level', 'xp', 'hp', 'hpBaseline', 'shift', 'discipline', 'precision', 'legendLevel', 'bloodied', 'soaked', 'rations'].find((k) => !isCount(h[k]));
+  // HP may drop to zero or below, and XP is a plain whole number: integers only.
+  const ints = ['hp', 'xp'].find((k) => !Number.isInteger(h[k]));
+  if (ints) return fail(ints);
+  const n = ['level', 'hpBaseline', 'shift', 'discipline', 'precision', 'legendLevel', 'bloodied', 'soaked', 'rations'].find((k) => !isCount(h[k]));
   if (n) return fail(n);
   if (typeof h.fever !== 'boolean') return fail('fever');
   if (typeof h.pneumonia !== 'boolean') return fail('pneumonia');
@@ -204,6 +207,7 @@ export function levelUpAvailable(h: Hero): boolean {
   return h.xp >= cur.xpToLevelUp;
 }
 
+/** Callers must check `levelUpAvailable` first; this does not check XP. */
 export function levelUp(h: Hero): Hero {
   const next = nextLevelRow(h);
   if (!next) return h;
@@ -250,7 +254,10 @@ export function heroEdit(before: Hero, after: Hero): string {
   if (Array.isArray(a) && Array.isArray(b) && k !== 'favour' && Math.abs(a.length - b.length) === 1) {
     const [long, short] = a.length > b.length ? [a, b] : [b, a];
     const extra = long.filter((x) => !short.some((y) => same(x, y)));
-    if (extra.length === 1) return `${b.length > a.length ? 'Add' : 'Remove'} ${itemName(extra[0])}`;
+    const verb = b.length > a.length ? 'Add' : 'Remove';
+    if (extra.length === 1) return `${verb} ${itemName(extra[0])}`;
+    // A duplicate name leaves no unique extra: if the shorter list is a prefix, the last element is the one.
+    if (short.every((x, i) => same(x, long[i]))) return `${verb} ${itemName(long[long.length - 1])}`;
   }
   return 'Edit hero';
 }

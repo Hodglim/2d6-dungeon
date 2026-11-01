@@ -54,6 +54,9 @@ describe('heroProblem', () => {
     expect(heroProblem({ ...h, coins: { ...h.coins, gc: -1 } })).toMatch(/coins/);
     expect(heroProblem({ ...h, manoeuvres: [{ name: 'x', dice: [0, 3], modifier: '1' }] })).toMatch(/dice/);
     expect(heroProblem(null)).not.toBeNull();
+    expect(heroProblem({ ...h, hp: -2 })).toBeNull();
+    expect(heroProblem({ ...h, hp: 1.5 })).toMatch(/hp/);
+    expect(heroProblem({ ...h, xp: -5 })).toBeNull();
   });
 });
 
@@ -98,6 +101,9 @@ describe('heroEdit', () => {
     expect(heroEdit(h, { ...h, coins: { ...h.coins, gc: 12 } })).toBe('GC +12');
     expect(heroEdit(h, { ...h, largeItems: ['Rope'] })).toBe('Add Rope');
     expect(heroEdit({ ...h, largeItems: ['Rope'] }, h)).toBe('Remove Rope');
+    const rope = { ...h, largeItems: ['Rope'] };
+    expect(heroEdit(rope, { ...h, largeItems: ['Rope', 'Rope'] })).toBe('Add Rope');
+    expect(heroEdit({ ...h, largeItems: ['Rope', 'Rope'] }, rope)).toBe('Remove Rope');
     expect(heroEdit(h, { ...h, hp: 1, xp: 5 })).toBe('Edit hero');
     expect(heroEdit(h, { ...h, notes: 'x' })).toBe('Edit hero');
   });
