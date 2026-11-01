@@ -249,7 +249,7 @@ Where to find them: Core Rules p. 13; Tables Codex pp. 35, 40, 42-43 and 46 for 
 - `rooms`: the Rooms table, a D66 roll. All 36 keys `11` to `66` (red die first, then blue).
 - `smallRooms` and `largeRooms`: 2D6 rolls. All keys `2` to `12`.
 
-Each `rooms` or `largeRooms` entry has `type`, `description`, `encounter` (text), `exit` and `unique` (`true` or `false`). Each `smallRooms` entry has `type`, `description` and `unique` only; small rooms always have archway exits.
+Each `rooms` or `largeRooms` entry has `type`, `description`, `encounter` (text), `exit` and `unique` (`true` or `false`). Each `smallRooms` entry has `type`, `description` and `unique` only; small rooms always have archway exits. `unique: true` means that room type appears at most once per level; if it is rolled again, the app rolls again.
 
 `exit` is either `"random"` (roll on the level's Exit Type table) or an object with a `door` and an optional `locked: true`. The `door` must be one of: `archway`, `wooden`, `metal`, `reinforced`, `curtain`, `portcullis`, `stoneSlab`.
 
@@ -263,11 +263,12 @@ Mapping from the book's wording:
 | Metal Doors | `metal` |
 | Curtains | `curtain` |
 | Portcullises | `portcullis` |
+| Stone slab | `stoneSlab` (enter it directly) |
 | "... all locked" | add `"locked": true` |
 
 `exitTables` maps a table name (such as `EXT1`) to a D66 table: all 36 keys `11` to `66`, each `{ "door": ... }` with an optional `locked`. These tables cannot say `"random"`.
 
-A made-up example, cut down to a few keys for reading (a real file needs every key, so the lists below are shortened with "..."):
+The snippet below is NOT a complete file and would be refused as it stands. It is a made-up example, cut down to a few keys for reading (a real file needs every key, so the lists below are shortened with "..."):
 
 ```text
 "dungeonLevels": [

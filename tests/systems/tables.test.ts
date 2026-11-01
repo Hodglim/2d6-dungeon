@@ -134,6 +134,22 @@ describe('room and exit tables', () => {
     const p = clone(); p.tables.exitTables.EXT1['11'] = 'random';
     expect(err(parse(p))).toMatch(/Exit Tables EXT1 11/);
   });
+  it('refuses extra keys in rooms, exit tables and smallRooms', () => {
+    const o = clone(); o.tables.dungeonLevels[0].rooms['67'] = o.tables.dungeonLevels[0].rooms['11'];
+    expect(err(parse(o))).toBe('The table file is damaged: Dungeon Levels[0] rooms 67 (not a valid key)');
+    const p = clone(); p.tables.exitTables.EXT1['70'] = { door: 'archway' };
+    expect(err(parse(p))).toBe('The table file is damaged: Exit Tables EXT1 70 (not a valid key)');
+    const q = clone(); q.tables.dungeonLevels[0].smallRooms['13'] = q.tables.dungeonLevels[0].smallRooms['2'];
+    expect(err(parse(q))).toBe('The table file is damaged: Dungeon Levels[0] smallRooms 13 (not a valid key)');
+  });
+  it('refuses an inherited name as exitTable', () => {
+    const o = clone(); o.tables.dungeonLevels[0].exitTable = 'constructor';
+    expect(err(parse(o))).toMatch(/Dungeon Levels\[0\] exitTable/);
+  });
+  it('refuses a non-boolean locked', () => {
+    const o = clone(); o.tables.dungeonLevels[0].rooms['11'].exit = { door: 'wooden', locked: 'yes' };
+    expect(err(parse(o))).toBe('The table file is damaged: Dungeon Levels[0] rooms 11 locked (true or false)');
+  });
   it('refuses an exitTable that names no table', () => {
     const o = clone(); o.tables.dungeonLevels[0].exitTable = 'EXQ9';
     expect(err(parse(o))).toBe('The table file is damaged: Dungeon Levels[0] exitTable (no table named EXQ9 in Exit Tables)');

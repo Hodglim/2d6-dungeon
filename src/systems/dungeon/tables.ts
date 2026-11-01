@@ -1,9 +1,9 @@
 /** The player's own dungeon table file: types and validation. The app ships no table content. */
 
+import { dungeonSystem } from './index';
+
 export const TABLE_FILE_FORMAT = 1;
 export const MAX_TABLE_FILE_BYTES = 2_000_000;
-
-import { dungeonSystem } from './index';
 
 /** Die faces 1-6, in printed order; primary (red) first. */
 export type Dice = number[];
@@ -169,11 +169,14 @@ const keyed = (at: string, v: unknown, keys: string[], each: (e: Record<string, 
     const p = each(e, `${at} ${k}`);
     if (p) return p;
   }
-  return null;
+  const extra = Object.keys(v).find((k) => !keys.includes(k));
+  return extra === undefined ? null : `${at} ${extra} (not a valid key)`;
 };
 const exitProblem = (at: string, v: unknown, allowRandom: boolean): string | null => {
   if (allowRandom && v === 'random') return null;
-  if (isObj(v) && isStr(v.door) && DOOR_IDS.includes(v.door) && (v.locked === undefined || typeof v.locked === 'boolean')) return null;
+  if (isObj(v) && isStr(v.door) && DOOR_IDS.includes(v.door)) {
+    return v.locked === undefined || typeof v.locked === 'boolean' ? null : `${at} locked (true or false)`;
+  }
   return `${at} exit — use one of ${DOOR_IDS.join(', ')}`;
 };
 const roomEntry = (r: Record<string, unknown>, at: string, hasExit: boolean, hasEncounter: boolean): string | null =>
@@ -199,7 +202,7 @@ function roomTablesProblem(t: Record<string, unknown>): string | null {
     if (!isInt(l.level) || (l.level as number) < 1 || (l.level as number) > 10) return `${at} level (must be a whole number from 1 to 10)`;
     if (seen.has(l.level as number)) return `${at} level (another entry already uses level ${l.level})`;
     seen.add(l.level as number);
-    if (!isObj(exitTables) || !(l.exitTable as string in exitTables)) {
+    if (!isObj(exitTables) || !Object.hasOwn(exitTables, l.exitTable as string)) {
       return `${at} exitTable (no table named ${l.exitTable} in Exit Tables)`;
     }
     return keyed(`${at} rooms`, l.rooms, D66_KEYS, (r, rat) => roomEntry(r, rat, true, true)) ??
