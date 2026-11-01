@@ -62,7 +62,7 @@ The app is public, so these tables come from the player's own table file, like t
   - **Rooms:** a D66 table. Each of the 36 entries (11–66, red die then blue) has a room type, description, encounter text, exit type and a unique flag.
   - **Small Rooms:** a 2D6 table (2–12). Each entry has a room type, description and unique flag. The exits are always archways, so the table holds no exit column.
   - **Large Rooms:** a 2D6 table (2–12). Each entry has a room type, description, exit type and unique flag. It may also have encounter text, if the book's table has it.
-  - The level's name, for example "The Front Hall", if the book gives one.
+  - The level's name, if the book gives one.
 - **Exit Type tables** (EXT1, EXQ2, Codex p. 35): each level says which Exit Type table it uses for "Random".
 - **Exit types:** these are text that must map to the app's door types. The builder defines the mapping, for example Archways→archway, Wooden Doors→wooden door, Reinforced Doors, Curtains, Portcullis and so on. Add door types to the dungeon system and Classic theme as needed, drawn simply and originally.
 - **Validation:** the existing style applies. Every 2D6 table has entries 2–12 and every D66 table has all 36 entries. Error messages name where the problem is.
@@ -71,7 +71,7 @@ The app is public, so these tables come from the player's own table file, like t
 ## 7. Dungeon level per map
 
 - The map's `level` field becomes the dungeon level number. A new game is Level 1.
-- The current level is shown in the UI (the toolbar or step panel), for example "Level 1 · The Front Hall".
+- The current level is shown in the UI (the toolbar or step panel), for example "Level 1 · <level name>".
 - Room rolls use the current map's level. If the table file has no tables for that level, the Room step says so ("Your table file has no Level 3 room tables"), and the player can skip it or type the details by hand.
 
 ## 8. The Room step
@@ -182,7 +182,7 @@ This follows Core Rules p. 18.
   - **Typed results:** a typed duplicate is rejected with "Already on this level — roll again".
 - **Levels:**
   - `DungeonMap.level` becomes a number (1–10). This is a type change, with a schema and save-format bump and no migration (per the earlier decision).
-  - The level's display name, such as "The Front Hall", comes from the table file. With no table file, just "Level N" is shown.
+  - The level's display name, comes from the table file. With no table file, just "Level N" is shown.
   - Levels are strictly sequential: you can only go down to N+1.
   - `Campaign.maps` holds every level in order. `activeMapId` is the deepest level.
   - The History, autosave record and export carry the earlier levels, read-only, alongside the active map's timeline. The builder chooses the exact shape. History snapshots stay limited to the active map.
