@@ -12,6 +12,7 @@ export { MAX_MAP_SIZE };
 export interface WizardDraft {
   width: number;
   height: number;
+  title: string;
   name: string;
   weapon: string;
   manoeuvres: string[];
@@ -19,7 +20,7 @@ export interface WizardDraft {
   scroll: string;
 }
 
-export const emptyDraft = (): WizardDraft => ({ width: 25, height: 25, name: '', weapon: '', manoeuvres: [], armour: '', scroll: '' });
+export const emptyDraft = (): WizardDraft => ({ width: 25, height: 25, title: '', name: '', weapon: '', manoeuvres: [], armour: '', scroll: '' });
 
 const HERO_STEPS: WizardStep[] = ['name', 'weapon', 'manoeuvres', 'armour', 'scroll', 'review'];
 

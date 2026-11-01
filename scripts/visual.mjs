@@ -556,6 +556,17 @@ if (!(await page.isVisible('text=This replaces your current game.'))) problems.p
   await p.waitForTimeout(1000);
   if (!(await readSaved()).includes('Pip Tester')) problems.push('wizard hero lost after reload');
 
+  // A hero-only game still asks before New game replaces it.
+  await openMenu();
+  await p.click('[role=menuitem]:text-is("New game…")');
+  await wiz('Start without a hero');
+  await p.waitForTimeout(300);
+  if (!(await p.isVisible('text=This replaces your current game.'))) problems.push('hero-only game: replace confirmation not shown');
+  await p.click('[role=alertdialog] button:text-is("Cancel")');
+  if (!(await p.isVisible('[aria-labelledby=wizard-title]'))) problems.push('wizard closed after cancelling the replace confirmation');
+  await wiz('Cancel');
+  await p.waitForTimeout(300);
+
   // Cancel mid-wizard leaves the game alone.
   await openMenu();
   await p.click('[role=menuitem]:text-is("New game…")');

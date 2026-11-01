@@ -20,7 +20,7 @@
   interface Props {
     tables: DungeonTables | null;
     mode: WizardMode;
-    onbegin: (result: { width: number; height: number; hero: Hero | null }) => void;
+    onbegin: (result: { width: number; height: number; title: string; hero: Hero | null }) => void;
     oncancel: () => void;
     onloadtables: () => void;
   }
@@ -54,7 +54,7 @@
 
   function begin(withHero: boolean) {
     const hero = withHero && tables ? createHero(tables, { ...draft, name: draft.name.trim() }) : null;
-    onbegin({ width: draft.width, height: draft.height, hero });
+    onbegin({ width: draft.width, height: draft.height, title: draft.title.trim(), hero });
   }
 
   function next() {
@@ -85,6 +85,7 @@
           <label>Width <input type="number" min={MIN_MAP_SIZE} max={MAX_MAP_SIZE} step="1" inputmode="numeric" bind:value={draft.width} /></label>
           <label>Height <input type="number" min={MIN_MAP_SIZE} max={MAX_MAP_SIZE} step="1" inputmode="numeric" bind:value={draft.height} /></label>
         </div>
+        <label>Title <input type="text" bind:value={draft.title} placeholder="Optional" autocomplete="off" /></label>
         {#if sizeError}<p class="error" role="alert">{sizeError}</p>{/if}
         {#if !tables}
           <p class="note">No table file is loaded, so you can't make a hero yet. Load your table file, or start with the map only.</p>

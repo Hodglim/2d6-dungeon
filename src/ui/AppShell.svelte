@@ -153,7 +153,7 @@
 
   const cover = $derived(coverage($view.map));
   /** Replacing the map would lose something: content on it, or undo history. */
-  const hasWork = $derived(hasContent($view.map) || $view.canUndo);
+  const hasWork = $derived(hasContent($view.map) || $view.canUndo || $view.hero !== null);
 
   function hasContent(m: DungeonMap): boolean {
     return m.rooms.length > 0 || m.doors.length > 0 || m.features.length > 0 || m.token !== null;
@@ -293,10 +293,11 @@
   }
 
   /** The wizard finished: confirm the replacement first, as New game always has. */
-  function beginNewGame(v: { width: number; height: number; hero: Hero | null }) {
-    newMapOpen = false;
+  function beginNewGame(v: { width: number; height: number; title: string; hero: Hero | null }) {
+    // The wizard stays open until the replacement is accepted, so cancelling keeps the draft.
     askReplace('New game', () => {
-      const c = createCampaign(dungeonSystem, 'My dungeon', { width: v.width, height: v.height });
+      newMapOpen = false;
+      const c = createCampaign(dungeonSystem, v.title || 'My dungeon', { width: v.width, height: v.height, title: v.title });
       replaceGame(metaFrom(c), activeMap(c), v.hero);
     });
   }
@@ -507,7 +508,7 @@
     <UpdatePrompt />
     {#if saveFailing}<SaveBanner onexport={exportGame} />{/if}
     {#if showHint && started && !loadError}
-      <InstallHint ios={iosTab} hasGame={hasContent($view.map)} onexport={exportGame} ondismiss={dismissHint} />
+      <InstallHint ios={iosTab} hasGame={hasContent($view.map) || $view.hero !== null} onexport={exportGame} ondismiss={dismissHint} />
     {/if}
     {#if menuOpen}
       <Menu
@@ -564,7 +565,7 @@
     {tables}
     mode={wizardMode}
     onbegin={wizardMode === 'new-game' ? beginNewGame : beginAddHero}
-    oncancel={() => (newMapOpen = false)}
+    oncancel={() => !pendingReplace && (newMapOpen = false)}
     onloadtables={() => pickExtra(tablesInput)}
   />
 {/if}
