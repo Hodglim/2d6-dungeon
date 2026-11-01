@@ -22,7 +22,7 @@
 - **Single source of truth:** the campaign's map *is* the history's `current`. Never store two copies that can drift.
 - **Autosave** runs after every History change, debounced by about 1 second, and flushes on `visibilitychange` (hidden) and `pagehide`.
 - **Storage is IndexedDB, not localStorage.** localStorage is allowed only for the hint-dismissed flag, wrapped in try/catch.
-- **Validate everything loaded:** the campaign through `parseCampaign`, and **every** history snapshot (current, past, future) for map shape plus `checkInvariants`. Labels must be strings and lengths within `HISTORY_CAP` (200).
+- **Validate everything loaded:** the campaign through `parseCampaign`, and **every** history snapshot (current, past, future) for map shape plus `checkInvariants`. Labels must be strings and lengths within `HISTORY_CAP`, which **changes from 200 to 20** (user decision, 2026-11-01; it applies in memory and in the save).
 - **Never lose the game silently.**
   - A failed save shows a persistent banner and play continues.
   - Bad imports never replace the game.
@@ -48,7 +48,7 @@
 
 | File | Responsibility |
 |------|----------------|
-| `src/core/history.ts` | + `restore(state)`: replace the timeline in place and emit once |
+| `src/core/history.ts` | + `restore(state)`: replace the timeline in place and emit once; `HISTORY_CAP` 200 → 20 |
 | `src/core/serialize.ts` | + `mapProblem(raw)` exported (single-map shape check), + `parseHistoryState(raw)` |
 | `src/interaction/playflow.ts` | + `dispose()` |
 | `src/persistence/record.ts` | `SaveRecord` format, `encodeSave`, `decodeSave` (validation + format version) |
@@ -67,12 +67,13 @@
 
 ### Task 1: Core — in-place restore, whole-history validation, PlayFlow.dispose
 
-**Files:** Modify `src/core/history.ts`, `src/core/serialize.ts`, `src/interaction/playflow.ts`. Test: `tests/core/history.test.ts`, `tests/core/serialize.test.ts`, `tests/interaction/playflow.test.ts`.
+**Files:** Modify `src/core/history.ts` (including `HISTORY_CAP = 20`), `src/core/serialize.ts`, `src/interaction/playflow.ts`. Test: `tests/core/history.test.ts`, `tests/core/serialize.test.ts`, `tests/interaction/playflow.test.ts`.
 
 **Interfaces — Produces:**
 ```ts
 // history.ts
 restore(state: HistoryState): void;           // replaces current/past/future (trimmed to cap), emits ONCE
+// HISTORY_CAP: 200 → 20 (update the constant and any test that assumes 200)
 // serialize.ts
 export function mapProblem(raw: unknown): string | null;   // the existing per-map shape check, extracted; null = OK
 export type HistoryParse = { ok: true; state: HistoryState } | { ok: false; error: string };
@@ -85,12 +86,12 @@ dispose(): void;                               // unsubscribes from History; lat
 - [ ] **Step 1: Write the failing tests:**
   - **restore:**
     - Execute 3 commands on History A and export its state. Restore it into a fresh History B that has 1 subscriber: the listener is called exactly once, `B.map` equals A's current, `B.undoLabel` equals A's undo label, and two undos and a redo behave as they did in A.
-    - Restoring a state whose `past.length` is 250 keeps the newest 200.
+    - Restoring a state whose `past.length` is 30 keeps the newest 20. `HISTORY_CAP === 20`.
   - **parseHistoryState:**
     - A valid exported state gives `ok`.
     - A broken map deep in `past` (e.g. two overlapping rooms in `past[0].map`) gives `ok:false`, with an error mentioning the history.
     - A non-string label gives `ok:false`.
-    - `past.length` of 201 gives `ok:false`.
+    - `past.length` of 21 gives `ok:false`.
     - A non-object gives `ok:false`.
   - **mapProblem:** a valid map gives `null`; a map missing `rooms` gives a string.
   - **dispose:** after `flow.dispose()`, `history.undo()` while the flow is mid-draft leaves `flow.step` unchanged (no listener).
@@ -126,7 +127,7 @@ export class MemorySaveStore implements SaveStore { failNext: Error | null; save
   - `decodeSave` of `{format: 2, ...}` gives `ok:false` with "newer version". A broken snapshot gives `ok:false`. `null` gives `ok:false`.
   - `campaignFrom(meta, map)` passes `parseCampaign(serializeCampaign(...))`.
   - **IdbSaveStore** (with fake-indexeddb): `load()` on an empty DB is `null`. After `save(a)` then `save(b)`, `load()` returns b. **Review Focus 4:** two saves in flight resolve with the last-written record intact and complete (never a merge).
-  - **Size measurement:** a 200-step history from a scripted session of about 40 rooms. Log `JSON.stringify(record).length` in the test output, and assert < 20 MB.
+  - **Size measurement:** a 20-step history on a 100×100 map holding about 40 rooms. Log `JSON.stringify(record).length` in the test output, and assert < 5 MB.
 - [ ] **Step 2–4:** FAIL → implement → PASS (`npm test && npm run typecheck`).
 - [ ] **Step 5: Commit** `feat(persistence): save record format and IndexedDB store`.
 

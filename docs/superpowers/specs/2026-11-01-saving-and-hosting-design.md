@@ -73,7 +73,7 @@ These would make it a failure even if it technically worked:
 - **One autosave record** on the device, holding:
   - the `Campaign` (`schemaVersion`, the map, `hero: null` for now)
   - the `History` state (`exportState()`: `current`, `past`, `future`, with their labels),
-    capped at 200 steps as now
+    capped at **20 steps** (user decision, 2026-11-01: most undo use is correcting the latest room placement; 5–10 steps is typical). The same cap applies in memory and in the save
   - `savedAt`, a timestamp
 - **Single source of truth:** the campaign's map *is* the history's `current`. Don't store
   two copies that can drift. Rebuild the campaign map from the history state on load, or
@@ -81,13 +81,12 @@ These would make it a failure even if it technically worked:
 - **When:** after every History change (execute, undo, redo, reset), debounced by about
   1 second. Also flush when the page is hidden or closed (`visibilitychange` /
   `pagehide`), so closing the iPad app straight after an action doesn't lose it.
-- **Where:** IndexedDB, not localStorage. The history can reach several MB, because 200
-  snapshots in JSON lose their in-memory sharing.
+- **Where:** IndexedDB, not localStorage. Snapshots lose their in-memory sharing in JSON, so
+  even 20 can be a few hundred KB on a big map.
 - **Ask the browser to keep the data:** call `navigator.storage.persist()` where available,
   once, on the first save.
-- **Measure:** report the saved record's size in tests or a dev log. If a realistic 200-step
-  history goes over ~10 MB, the builder may store snapshots more compactly. This is not
-  required unless the size calls for it.
+- **Measure:** report the saved record's size for a 20-step history on a large map in tests.
+  No compaction is needed.
 
 ## 7. Resume on open
 
@@ -215,7 +214,7 @@ These would make it a failure even if it technically worked:
 
 ## 13. Builder's calls (not discussed with the user)
 
-- The storage layout, including any compaction (only if the measured size calls for it).
+- The storage layout. No compaction is needed at a 20-step cap.
 - `History.restore` in place versus rebuilding subscribers.
 - Hand-written service worker versus a pinned PWA plugin, and the update prompt's exact
   form.
