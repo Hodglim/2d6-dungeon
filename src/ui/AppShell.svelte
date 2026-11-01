@@ -101,6 +101,8 @@
   let cardsInput: HTMLInputElement | undefined;
   /** The player's table file and creature card pack: stored apart from the game, never exported. */
   let tables = $state.raw<DungeonTables | null>(null);
+  // The flow rolls rooms on the loaded tables; keep it in step with loads, removals and restores.
+  $effect(() => flow.setTables(tables));
   let cards = $state.raw<CardPack | null>(null);
   let panelCollapsed = $state(false);
   let step = $state.raw<Step>(flow.step);

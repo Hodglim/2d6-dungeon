@@ -83,6 +83,8 @@ export interface RoomPlan {
   room: Room;
   exits: Edge[];
   exitType: string;
+  /** The room's own exit doors are locked (no effect for corridors and small rooms). */
+  locked?: boolean;
 }
 
 /**
@@ -95,9 +97,11 @@ export function createRoomFromExit(map: DungeonMap, plan: RoomPlan, newId: IdFn)
   const cmds: Command[] = [addRoom(plan.room)];
   const perimeter = perimeterEdges(plan.room);
   // Small rooms and corridors get archway exits only, whatever was rolled.
-  const exitType = plan.room.kind === 'corridor' || plan.room.sizeClass === 'small' ? 'archway' : plan.exitType;
+  const archwayOnly = plan.room.kind === 'corridor' || plan.room.sizeClass === 'small';
+  const exitType = archwayOnly ? 'archway' : plan.exitType;
   for (const exit of plan.exits) {
     const exitDoor = makeDoor(newId, exit, exitType);
+    if (plan.locked && !archwayOnly) exitDoor.lock = { locked: true, note: '', quality: null };
     cmds.push(addDoor(exitDoor));
     const side = perimeter.find((p) => sameEdge(p.edge, exit));
     if (!side) continue;

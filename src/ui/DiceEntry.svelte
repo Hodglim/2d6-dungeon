@@ -4,8 +4,10 @@
   import { playClack, playTick, unlockAudio } from './sound';
 
   interface Props {
-    /** Two dice (red = primary/width, blue = secondary/height) or a single D6. */
-    dice: 'd66' | 'd6';
+    /** Two dice (d66: red = width, blue = height; 2d6: two dice that are added) or a single D6. */
+    dice: 'd66' | '2d6' | 'd6';
+    /** Names of the red and blue dice, when not the size ones. */
+    labels?: [string, string];
     /** Label for the single die (d6 mode). */
     label?: string;
     error?: string | null;
@@ -18,7 +20,7 @@
     onrolled: (values: number[]) => void;
   }
 
-  let { dice, label = 'D6', error = null, enterLabel = 'Use these', rollLabel = '🎲 Roll for me', onenter, onroll, onrolled }: Props = $props();
+  let { dice, labels, label = 'D6', error = null, enterLabel = 'Use these', rollLabel = '🎲 Roll for me', onenter, onroll, onrolled }: Props = $props();
 
   let red = $state('');
   let blue = $state('');
@@ -85,30 +87,34 @@
   }
 
   const rolling = $derived(faces !== null);
+  const redName = $derived(labels?.[0] ?? (dice === 'd66' ? 'Red · width' : dice === '2d6' ? 'Die 1' : label));
+  const blueName = $derived(labels?.[1] ?? (dice === 'd66' ? 'Blue · height' : 'Die 2'));
+  const redAria = $derived(labels ? `${labels[0]} die` : dice === 'd66' ? 'Red die (width)' : dice === '2d6' ? 'First die' : label);
+  const blueAria = $derived(labels ? `${labels[1]} die` : dice === 'd66' ? 'Blue die (height)' : 'Second die');
 
   function submit(e: SubmitEvent) {
     e.preventDefault();
     if (rolling) return;
-    onenter(dice === 'd66' ? [red, blue] : [red]);
+    onenter(dice === 'd6' ? [red] : [red, blue]);
   }
 
   /** Typing one digit in the red die moves on to the blue one. */
   function onRedInput() {
-    if (dice === 'd66' && /^[1-6]$/.test(red.trim())) blueInput?.focus();
+    if (dice !== 'd6' && /^[1-6]$/.test(red.trim())) blueInput?.focus();
   }
 </script>
 
 <form class="dice" onsubmit={submit}>
   <div class="inputs">
     <label class="die red">
-      <span>{dice === 'd66' ? 'Red · width' : label}</span>
-      <input type="text" inputmode="numeric" autocomplete="off" maxlength="3" bind:value={red} oninput={onRedInput} disabled={rolling} class:hidden={rolling} aria-label={dice === 'd66' ? 'Red die (width)' : label} />
+      <span>{redName}</span>
+      <input type="text" inputmode="numeric" autocomplete="off" maxlength="3" bind:value={red} oninput={onRedInput} disabled={rolling} class:hidden={rolling} aria-label={redAria} />
       {#if faces}<span class="face"><DieFace value={faces[0] ?? 1} colour="red" size={76} /></span>{/if}
     </label>
-    {#if dice === 'd66'}
+    {#if dice !== 'd6'}
       <label class="die blue">
-        <span>Blue · height</span>
-        <input type="text" inputmode="numeric" autocomplete="off" maxlength="3" bind:value={blue} bind:this={blueInput} disabled={rolling} class:hidden={rolling} aria-label="Blue die (height)" />
+        <span>{blueName}</span>
+        <input type="text" inputmode="numeric" autocomplete="off" maxlength="3" bind:value={blue} bind:this={blueInput} disabled={rolling} class:hidden={rolling} aria-label={blueAria} />
         {#if faces}<span class="face"><DieFace value={faces[1] ?? 1} colour="blue" size={76} /></span>{/if}
       </label>
     {/if}

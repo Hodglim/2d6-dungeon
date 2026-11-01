@@ -19,8 +19,18 @@ import {
   placeEntrance,
 } from '../core/playflow';
 import { isOpenExit } from '../core/query';
-import type { Cell, Door, DungeonMap, Edge, Rect, Room, RoomLabel } from '../core/types';
+import type { Cell, Door, DungeonMap, Edge, Rect, Room, RoomContents, RoomLabel } from '../core/types';
 import { dungeonSystem } from '../systems/dungeon';
+import {
+  contentsFrom,
+  levelTables,
+  lookupRoom,
+  resolveExit,
+  rollRoom,
+  uniqueTaken,
+  type RoomTableKind,
+} from '../systems/dungeon/roomTables';
+import type { DungeonTables, LevelTables } from '../systems/dungeon/tables';
 import {
   classify,
   exitCountFor,
@@ -70,7 +80,20 @@ export type Step =
       /** Set when the user tries to finish while placeable exits remain. */
       error: string | null;
     }
-  | { kind: 'label'; draft: Draft; chosen: Edge[]; exitType: string; dropped: number }
+  | {
+      kind: 'label';
+      draft: Draft;
+      chosen: Edge[];
+      exitType: string;
+      dropped: number;
+      /** The Room roll for this room; null for the entrance and when no table file is loaded. */
+      roll: { kind: RoomTableKind; level: number; available: boolean } | null;
+      /** A room-table result waiting to be committed (unique-checked), or null. */
+      result: RoomRollResult | null;
+      /** The player gave up on the table and fills the label in by hand. */
+      skipped: boolean;
+      error: string | null;
+    }
   | {
       kind: 'gap';
       door: Door;
@@ -82,6 +105,14 @@ export type Step =
       /** Longest length before the Outer Boundary would clip it. */
       maxLength: number;
     };
+
+/** A room-table result; `contents` is null while a random exit still needs its Exit Type roll. */
+export interface RoomRollResult {
+  dice: number[];
+  entry: { type: string; description: string; encounter: string; unique: boolean };
+  needsExit: boolean;
+  contents: RoomContents | null;
+}
 
 const BAD_DIE = 'Enter a whole number from 1 to 6';
 const IDLE: Step = { kind: 'idle', error: null };
@@ -98,6 +129,7 @@ export class PlayFlow {
   /** Ids handed out while drafting the entrance flow, replayed at commit so ids agree. */
   private recorded: string[] = [];
   private committing = false;
+  private tables: DungeonTables | null = null;
   private walk: Cell[] | null = null;
   private readonly unsubscribe: () => void;
 
@@ -115,6 +147,11 @@ export class PlayFlow {
       this.walk = null;
       this.reset(null);
     });
+  }
+
+  /** The player's table file (or null). Takes effect for rooms not yet at their exit type step. */
+  setTables(t: DungeonTables | null): void {
+    this.tables = t;
   }
 
   /** Stops listening to History; later History changes no longer touch this flow. */
@@ -338,9 +375,12 @@ export class PlayFlow {
     const count = exitCountFor(d6);
     const archwayOnly = draft.kindOf === 'corridor' || draft.sizeClass === 'small';
     if (count === 0 && draft.kindOf === 'room') {
-      this.set({ kind: 'label', draft, chosen: [], exitType: 'archway', dropped: 0 });
+      this.set(this.labelStep(draft, [], 'archway', 0));
     } else if (count === 0 || archwayOnly) {
       // A corridor with no exits still gets the exits step as its confirmation screen.
+      this.set({ kind: 'exits', draft, count, exitType: 'archway', chosen: [], dropped: 0, error: null });
+    } else if (this.rollable(draft)) {
+      // The room tables decide the door type: place the exits with a temporary archway.
       this.set({ kind: 'exits', draft, count, exitType: 'archway', chosen: [], dropped: 0, error: null });
     } else {
       this.set({ kind: 'exitType', draft, count });
@@ -400,8 +440,123 @@ export class PlayFlow {
     if (short) return short;
     if (s.draft.kindOf === 'corridor') return this.finish(null);
     const dropped = s.count - s.chosen.length;
-    this.set({ kind: 'label', draft: s.draft, chosen: s.chosen, exitType: s.exitType, dropped });
+    this.set(this.labelStep(s.draft, s.chosen, s.exitType, dropped));
     return null;
+  }
+
+  // ---- the Room roll (label step, table file loaded) ----
+
+  private levelFor(): LevelTables | null {
+    return levelTables(this.tables, this.history.map.level);
+  }
+
+  /** A table roll replaces the exit type step: a room (not corridor/entrance) on a level that has tables. */
+  private rollable(draft: Draft): boolean {
+    return this.tables !== null && draft.kindOf === 'room' && draft.source.kind === 'exit' && this.levelFor() !== null;
+  }
+
+  private labelStep(draft: Draft, chosen: Edge[], exitType: string, dropped: number): Step {
+    const roll =
+      this.tables !== null && draft.kindOf === 'room' && draft.source.kind === 'exit'
+        ? {
+            kind: (draft.sizeClass === 'small' ? 'small' : draft.sizeClass === 'large' ? 'large' : 'rooms') as RoomTableKind,
+            level: this.history.map.level,
+            available: this.levelFor() !== null,
+          }
+        : null;
+    return { kind: 'label', draft, chosen, exitType, dropped, roll, result: null, skipped: false, error: null };
+  }
+
+  private labelNow(): Extract<Step, { kind: 'label' }> | null {
+    const s = this.current;
+    return s.kind === 'label' && s.roll?.available && !s.skipped ? s : null;
+  }
+
+  /** Rolls the room dice with the injected rng, re-rolling taken unique rooms; applies nothing. */
+  rollRoomTable(): { dice: number[]; entry: { type: string; description: string; unique: boolean }; rerolls: number; capped: boolean } | null {
+    const s = this.labelNow();
+    const lv = this.levelFor();
+    if (!s || !lv || !this.tables) return null;
+    return rollRoom(lv, this.tables, s.roll!.kind, this.history.map, this.rng);
+  }
+
+  /** Typed dice for the room table. */
+  enterRoomTable(values: string[]): void {
+    const dice = values.map(parseDie);
+    if (dice.length !== 2 || dice.some((d) => d === null)) return this.labelError(BAD_DIE);
+    this.applyRoomTableResult(dice as number[]);
+  }
+
+  /** Looks the dice up; a taken unique room is refused with "Already on this level — roll again". */
+  applyRoomTableResult(dice: number[]): void {
+    const s = this.labelNow();
+    const lv = this.levelFor();
+    if (!s || !lv || !this.tables) return;
+    if (dice.length !== 2 || !dice.every((d) => Number.isInteger(d) && d >= 1 && d <= 6)) return this.labelError(BAD_DIE);
+    const kind = s.roll!.kind;
+    const entry = lookupRoom(lv, kind, dice);
+    if (entry.unique && uniqueTaken(this.history.map, entry.type)) {
+      return this.labelError('Already on this level — roll again');
+    }
+    const info = {
+      type: entry.type,
+      description: entry.description,
+      encounter: 'encounter' in entry ? entry.encounter : '',
+      unique: entry.unique,
+    };
+    const spec = 'exit' in entry ? entry.exit : { door: 'archway' as const };
+    const noExits = kind === 'small' || s.chosen.length === 0;
+    if (spec === 'random' && !noExits) {
+      this.set({ ...s, error: null, result: { dice, entry: info, needsExit: true, contents: null } });
+      return;
+    }
+    const exit = spec === 'random' ? { door: 'archway', locked: false } : resolveExit(lv, this.tables, spec);
+    this.set({ ...s, error: null, result: { dice, entry: info, needsExit: false, contents: contentsFrom(kind, dice, entry, exit) } });
+  }
+
+  /** Rolls the Exit Type dice without applying them. */
+  rollExitTable(): number[] {
+    return [rollD6(this.rng), rollD6(this.rng)];
+  }
+
+  enterExitTable(values: string[]): void {
+    const dice = values.map(parseDie);
+    if (dice.length !== 2 || dice.some((d) => d === null)) return this.labelError(BAD_DIE);
+    this.applyExitTableResult(dice as number[]);
+  }
+
+  applyExitTableResult(dice: number[]): void {
+    const s = this.current;
+    const lv = this.levelFor();
+    if (s.kind !== 'label' || !s.result?.needsExit || !lv || !this.tables) return;
+    if (dice.length !== 2 || !dice.every((d) => Number.isInteger(d) && d >= 1 && d <= 6)) return this.labelError(BAD_DIE);
+    const exit = resolveExit(lv, this.tables, 'random', dice);
+    const entry = lookupRoom(lv, s.roll!.kind, s.result.dice);
+    this.set({ ...s, error: null, result: { ...s.result, needsExit: false, contents: contentsFrom(s.roll!.kind, s.result.dice, entry, exit) } });
+  }
+
+  /** Throws the shown result away so the room can be rolled again. */
+  discardRoomRoll(): void {
+    const s = this.current;
+    if (s.kind === 'label' && s.result) this.set({ ...s, result: null, error: null });
+  }
+
+  /** Give up on the table: the manual label form, with an exit type chooser. */
+  skipRoomTable(): void {
+    const s = this.current;
+    if (s.kind === 'label' && s.roll) this.set({ ...s, result: null, skipped: true, error: null });
+  }
+
+  /** The door type for a skipped room's exits. */
+  chooseLabelExitType(type: string): void {
+    const s = this.current;
+    if (s.kind !== 'label' || !s.skipped || !dungeonSystem.doorTypes.some((t) => t.id === type)) return;
+    this.set({ ...s, exitType: type });
+  }
+
+  private labelError(error: string): void {
+    const s = this.current;
+    if (s.kind === 'label') this.set({ ...s, error });
   }
 
   // ---- step 6 + commit ----
@@ -412,7 +567,17 @@ export class PlayFlow {
     if (s.kind !== 'exits' && s.kind !== 'label') return { ok: false, reason: 'There is no room to finish' };
     const short = this.refuseShortfall();
     if (short) return short;
-    const { draft, chosen, exitType } = s;
+    const { draft, chosen } = s;
+    let exitType = s.exitType;
+    let locked = false;
+    let contents: RoomContents | undefined;
+    if (s.kind === 'label' && s.result) {
+      if (!s.result.contents) return { ok: false, reason: 'Roll the exit type first' };
+      contents = s.result.contents;
+      exitType = contents.door;
+      locked = contents.locked;
+      label = { type: contents.type, unique: s.result.entry.unique, narrative: contents.description };
+    }
     const map = this.history.map;
     let result: { command: Command; path: Cell[] | null };
     if (draft.source.kind === 'entrance') {
@@ -424,8 +589,9 @@ export class PlayFlow {
         ...(roomLabel ? { label: roomLabel } : {}),
       });
     } else {
-      const room = draft.kindOf === 'room' && label ? { ...draft.room, label: { ...label } } : draft.room;
-      result = createRoomAndWalk(map, { room, exits: chosen, exitType }, this.newId);
+      let room = draft.kindOf === 'room' && label ? { ...draft.room, label: { ...label } } : draft.room;
+      if (contents) room = { ...room, contents };
+      result = createRoomAndWalk(map, { room, exits: chosen, exitType, locked }, this.newId);
     }
     return this.commit(result.command, result.path);
   }

@@ -6,6 +6,8 @@ import type { Door, DungeonMap, Room } from '../../src/core/types';
 import { PlayFlow, type Step } from '../../src/interaction/playflow';
 import { mulberry32 } from '../../src/render/rng';
 import { classify } from '../../src/systems/dungeon/rules';
+import type { DungeonTables } from '../../src/systems/dungeon/tables';
+import fixture from '../fixtures/dungeon-tables.fixture.json';
 import { door, emptyMap, room, withContent } from '../core/fixtures';
 
 function setup(map: DungeonMap = emptyMap(10, 10)) {
@@ -648,5 +650,157 @@ describe('PlayFlow ignores hero-only changes (Review Focus 1)', () => {
     expect(flow.step.kind).toBe('exitCount');
     history.execute(addRoom(room('zz', 0, 0, 1, 1)));
     expect(flow.step.kind).toBe('idle');
+  });
+});
+
+describe('PlayFlow Room step (table file loaded)', () => {
+  const tables = fixture as unknown as DungeonTables;
+  const e34 = (tables.tables.dungeonLevels![0]!.rooms['34'])!;
+
+  /** Entrance room, then a room placed north of it; stops at the label step. */
+  function toLabel(size: [string, string] = ['3', '4'], level = 1, count = '4') {
+    const { history, flow } = withEntrance();
+    history.execute({ label: 'level', apply: (m) => ({ ...m, level }) });
+    flow.setTables(tables);
+    flow.startFromExit(northExit(history.map).id);
+    flow.enterSize(...size);
+    flow.place();
+    flow.enterExitCount(count);
+    if (flow.step.kind === 'exits') {
+      flow.placeExitsForMe(1);
+      flow.doneExits();
+    }
+    return { history, flow };
+  }
+
+  it('skips the exit type step and reaches the label step with a roll', () => {
+    const { flow } = toLabel();
+    const s = expectKind(flow, 'label');
+    expect(s.roll).toEqual({ kind: 'rooms', level: 1, available: true });
+    expect(s.chosen.length).toBeGreaterThan(0);
+  });
+
+  it('rolling [3,4] commits label, contents and door/locked on every exit, as one Add room undo', () => {
+    const { history, flow } = toLabel();
+    const doorsBefore = history.map.doors.length;
+    flow.applyRoomTableResult([3, 4]);
+    expect(flow.finish(null).ok).toBe(true);
+    const r = history.map.rooms.find((x) => x.number === 2)!;
+    expect(r.label.type).toBe(e34.type);
+    expect(r.label.narrative).toBe(e34.description);
+    expect(r.contents).toMatchObject({ table: 'rooms', roll: '34', type: e34.type, door: 'wooden', locked: true });
+    const own = history.map.doors.filter((d) => d.type === 'wooden' && d.lock?.locked === true);
+    expect(own.length).toBeGreaterThan(0);
+    expect(history.undoLabel).toBe('Add Room 2');
+    history.undo();
+    expect(history.map.rooms.some((x) => x.number === 2)).toBe(false);
+    expect(history.map.doors.length).toBe(doorsBefore);
+  });
+
+  it('typed dice are validated', () => {
+    const { flow } = toLabel();
+    flow.enterRoomTable(['7', '2']);
+    expect(expectKind(flow, 'label').error).toMatch(/1.*6/);
+    expect(expectKind(flow, 'label').result).toBeNull();
+  });
+
+  it('rollRoomTable gives dice the flow accepts', () => {
+    const { flow } = toLabel();
+    const r = flow.rollRoomTable()!;
+    expect(r.dice).toHaveLength(2);
+    flow.applyRoomTableResult(r.dice);
+    expect(expectKind(flow, 'label').result).not.toBeNull();
+  });
+
+  it('a small room uses the small table and archways', () => {
+    const { history, flow } = toLabel(['2', '3']);
+    const s = expectKind(flow, 'label');
+    expect(s.roll).toMatchObject({ kind: 'small', available: true });
+    flow.applyRoomTableResult([1, 1]);
+    expect(flow.finish(null).ok).toBe(true);
+    const r = history.map.rooms.find((x) => x.number === 2)!;
+    expect(r.contents).toMatchObject({ table: 'small', door: 'archway', locked: false });
+    expect(history.map.doors.filter((d) => d.lock !== null)).toHaveLength(0);
+  });
+
+  it('a random exit asks for an Exit Type roll and applies the EXT1 door', () => {
+    const { history, flow } = toLabel();
+    flow.applyRoomTableResult([1, 1]); // exit: random
+    const s = expectKind(flow, 'label');
+    expect(s.result).toMatchObject({ needsExit: true, contents: null });
+    expect(flow.finish(null).ok).toBe(false); // not ready yet
+    expect(flow.rollExitTable()).toHaveLength(2);
+    flow.applyExitTableResult([2, 5]);
+    expect(expectKind(flow, 'label').result!.contents).toMatchObject({ door: 'metal', locked: false });
+    expect(flow.finish(null).ok).toBe(true);
+    expect(history.map.rooms.find((x) => x.number === 2)!.contents).toMatchObject({ roll: '11', door: 'metal' });
+  });
+
+  it('a taken unique result is refused', () => {
+    const { history, flow } = toLabel();
+    const other = {
+      ...room('Z', 0, 0, 1, 1, 'room', 9),
+      contents: { table: 'rooms' as const, roll: '14', type: ' practice room 14 ', description: '', encounter: '', door: 'wooden', locked: false },
+    };
+    history.execute({ label: 'seed', apply: (m) => ({ ...m, rooms: [...m.rooms, other] }) });
+    flow.startFromExit(northExit(history.map).id);
+    flow.enterSize('3', '4');
+    flow.place();
+    flow.enterExitCount('1');
+    expectKind(flow, 'label');
+    flow.applyRoomTableResult([1, 4]);
+    expect(expectKind(flow, 'label').error).toBe('Already on this level — roll again');
+    expect(expectKind(flow, 'label').result).toBeNull();
+  });
+
+  it('no tables: the exit type step appears and the label step has no roll', () => {
+    const { history, flow } = withEntrance();
+    flow.startFromExit(northExit(history.map).id);
+    flow.enterSize('3', '4');
+    flow.place();
+    flow.enterExitCount('4');
+    expectKind(flow, 'exitType');
+    flow.chooseExitType('wooden');
+    flow.placeExitsForMe(1);
+    flow.doneExits();
+    expect(expectKind(flow, 'label').roll).toBeNull();
+  });
+
+  it('a level without tables offers Skip, which commits a manual label with the chosen door type', () => {
+    const { history, flow } = withEntrance();
+    history.execute({ label: 'level', apply: (m) => ({ ...m, level: 2 }) });
+    flow.setTables(tables);
+    flow.startFromExit(northExit(history.map).id);
+    flow.enterSize('3', '4');
+    flow.place();
+    flow.enterExitCount('4');
+    flow.chooseExitType('wooden'); // the exit type step is kept when the level has no tables
+    flow.placeExitsForMe(1);
+    flow.doneExits();
+    expect(expectKind(flow, 'label').roll).toEqual({ kind: 'rooms', level: 2, available: false });
+    flow.skipRoomTable();
+    expect(expectKind(flow, 'label').skipped).toBe(true);
+    expect(flow.finish({ type: 'Lamp Room', unique: false, narrative: '' }).ok).toBe(true);
+    const r = history.map.rooms.find((x) => x.number === 2)!;
+    expect(r.label.type).toBe('Lamp Room');
+    expect(r.contents).toBeUndefined();
+    expect(history.map.doors.some((d) => d.type === 'wooden')).toBe(true);
+  });
+
+  it('Skip with a table level lets the player choose the door type', () => {
+    const { history, flow } = toLabel();
+    flow.skipRoomTable();
+    flow.chooseLabelExitType('portcullis');
+    expect(flow.finish({ type: 'X', unique: false, narrative: '' }).ok).toBe(true);
+    expect(history.map.doors.some((d) => d.type === 'portcullis')).toBe(true);
+  });
+
+  it('corridors and the entrance get no roll', () => {
+    const { history, flow } = withEntrance();
+    flow.setTables(tables);
+    flow.startFromExit(northExit(history.map).id);
+    flow.enterSize('1', '1'); // corridor-sized
+    flow.place();
+    expect(flow.step.kind).not.toBe('label');
   });
 });

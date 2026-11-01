@@ -55,6 +55,15 @@ if (coverageText !== '0%') problems.push(`unexpected coverage badge: ${coverageT
 
 // ---- Play flow helpers ----
 
+/** Step panel buttons must be touch-sized (for a page other than the main one). */
+const checkPanelOn = async (pg, where) => {
+  const small = await pg.$$eval('aside.panel button', (els) =>
+    els.map((el) => ({ t: el.textContent?.trim(), r: el.getBoundingClientRect() })).filter((b) => b.r.width > 0 && (b.r.width < 44 || b.r.height < 44)).map((b) => `${b.t} ${b.r.width}×${b.r.height}`),
+  );
+  for (const b of small) problems.push(`${where}: panel button too small: ${b}`);
+};
+
+
 /** Tap the map at a world point (squares), using the camera MapView exposes on the canvas. */
 const tapWorld = async (x, y) => {
   const at = await page.$eval(
@@ -1084,6 +1093,98 @@ for (const reduced of [false, true]) {
     await menu();
     if (await p.locator('.menu label:has-text("Sound effects") input').isChecked()) problems.push('sound toggle did not remember off after reload');
   }
+  await ctx.close();
+}
+
+// 13. The Room step: with the fixture tables loaded the exit type step is skipped and the label step rolls.
+{
+  const ctx = await browser.newContext({ viewport: { width: 1180, height: 820 }, deviceScaleFactor: 2, hasTouch: true, reducedMotion: 'reduce' });
+  await ctx.addInitScript(() => localStorage.setItem('2d6.installHintDismissed', '1'));
+  const p = await ctx.newPage();
+  p.on('pageerror', (e) => errors.push(e.message));
+  await p.goto(url, { waitUntil: 'load' });
+  await p.waitForTimeout(800);
+  const tag = 'room roll';
+  const tap = async (x, y) => {
+    const at = await p.$eval('canvas', (c, [wx, wy]) => {
+      const [cx, cy, sc] = (c.dataset.camera ?? '').split(',').map(Number);
+      const r = c.getBoundingClientRect();
+      return { x: r.left + (wx - cx) * sc, y: r.top + (wy - cy) * sc };
+    }, [x, y]);
+    await p.mouse.click(at.x, at.y);
+    await p.waitForTimeout(150);
+  };
+  const btn = (name) => p.click(`aside.panel button:text-is("${name}")`);
+  const stepNow = () => p.getAttribute('aside.panel .body', 'data-step');
+  const dice = async (...v) => {
+    const ins = await p.$$('aside.panel form.dice input');
+    for (let i = 0; i < v.length; i++) await ins[i].fill(v[i]);
+  };
+  const fixtureObj2 = JSON.parse(readFileSync('tests/fixtures/dungeon-tables.fixture.json').toString());
+  const load = async (obj) => {
+    await p.setInputFiles('input[data-extra="tables"]', { name: 'tables.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(obj)) });
+    await p.waitForTimeout(500);
+  };
+  const undo = async () => (await p.textContent('header.toolbar button.history'))?.replace(/\s+/g, ' ').trim() ?? '';
+  await load(fixtureObj2);
+  await tap(12.5, 25.5);
+  await dice('3', '4');
+  await btn('Use these');
+  await btn('Place');
+  await btn('Done');
+  await btn('Done');
+  await p.waitForTimeout(1500);
+  const roomUndo0 = await undo();
+  await tap(12.5, 20);
+  await dice('3', '4');
+  await btn('Use these');
+  await btn('Place');
+  await dice('4');
+  await btn('Use this');
+  if ((await stepNow()) !== 'exits') problems.push(`${tag}: expected the exits step (no exit type step), got ${await stepNow()}`);
+  await dice('3');
+  await btn('Place for me');
+  await btn('Done');
+  if ((await stepNow()) !== 'label') problems.push(`${tag}: expected the label step, got ${await stepNow()}`);
+  await dice('3', '4');
+  await btn('Use these');
+  const resultText = (await p.textContent('[data-testid=room-result]'))?.replace(/\s+/g, ' ').trim() ?? '';
+  console.log(`${tag}: "${resultText}"`);
+  if (!resultText.includes('Practice Room 34')) problems.push(`${tag}: result missing the room type: "${resultText}"`);
+  if (!/Wooden/i.test(resultText) || !/locked/.test(resultText)) problems.push(`${tag}: result missing the exit: "${resultText}"`);
+  const faces = await p.$$eval('[data-testid=room-result] [role=img]', (els) => els.map((e) => e.getAttribute('aria-label')));
+  if (faces.join() !== 'red 3,blue 4') problems.push(`${tag}: result faces ${faces.join()}`);
+  await checkPanelOn(p, tag);
+  await shot('45-room-roll.png', p);
+  await btn('Done');
+  await p.waitForTimeout(1500);
+  const after = await undo();
+  if (!after.includes('Add Room 2')) problems.push(`${tag}: undo label "${after}"`);
+  await shot('46-room-rolled.png', p);
+  await p.click('header.toolbar button.history');
+  await p.waitForTimeout(300);
+  if ((await undo()) !== roomUndo0) problems.push(`${tag}: one undo did not remove the whole room (now "${await undo()}", was "${roomUndo0}")`);
+
+  // A level the table file has no tables for: the message, Skip, then the manual form with an exit type chooser.
+  const bare = structuredClone(fixtureObj2);
+  delete bare.tables.dungeonLevels;
+  await load(bare);
+  await tap(12.5, 20);
+  await dice('3', '4');
+  await btn('Use these');
+  await btn('Place');
+  await dice('4');
+  await btn('Use this');
+  if ((await stepNow()) !== 'exitType') problems.push(`${tag}: no-level table file should keep the exit type step, got ${await stepNow()}`);
+  await p.click('aside.panel button:has-text("Wooden door")');
+  await dice('3');
+  await btn('Place for me');
+  await btn('Done');
+  if (!(await p.isVisible('[data-testid=no-level-tables]'))) problems.push(`${tag}: no-level message missing`);
+  await shot('47-no-level-tables.png', p);
+  await btn('Skip');
+  if (!(await p.isVisible('aside.panel input[placeholder="e.g. Lamp Room"]'))) problems.push(`${tag}: Skip did not show the manual label form`);
+  await checkPanelOn(p, `${tag} (skipped)`);
   await ctx.close();
 }
 
