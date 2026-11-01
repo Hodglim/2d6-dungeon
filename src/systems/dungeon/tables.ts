@@ -143,6 +143,11 @@ export function parseTableFile(text: string, byteLength: number): TablesParse {
   } catch {
     return { ok: false, error: NOT_A_TABLE_FILE };
   }
+  return validateTableFile(data);
+}
+
+/** Full validation of an already-parsed value (also used for the copy stored on the device). */
+export function validateTableFile(data: unknown): TablesParse {
   if (!isObj(data) || data.systemId !== 'dungeon' || typeof data.format !== 'number') return { ok: false, error: NOT_A_TABLE_FILE };
   if (!isInt(data.format)) return damaged('format');
   if (data.format > TABLE_FILE_FORMAT) return { ok: false, error: 'Made by a newer version of the app' };

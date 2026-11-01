@@ -231,22 +231,54 @@ describe('extras', async () => {
     });
   }
 
-  it('a hero is unaffected by storing or removing a different table file', async () => {
+  it('a hero is unaffected by editing the parsed tables or storing/removing another table file', async () => {
     const text = JSON.stringify(fixture);
     const parsed = parseTableFile(text, text.length);
     if (!parsed.ok) throw new Error(parsed.error);
-    const hero = createHero(parsed.tables, {
+    const tables = parsed.tables;
+    const hero = createHero(tables, {
       name: 'Tester', weapon: 'Practice Sword', manoeuvres: ['Wobbly Poke', 'Gentle Swipe'],
       armour: 'Sackcloth Vest', scroll: 'Scroll of Mild Glow',
     });
     const snapshot = structuredClone(hero);
     const answers = () => [levelUpAvailable(hero), listLimit(hero, 'potions'), listLimit(hero, 'scrolls'), listLimit(hero, 'largeItems'), listLimit(hero, 'armour')];
     const before = answers();
-    const s = new IdbSaveStore('t-hero-extra');
-    const other = { ...fixture, name: 'A different made-up file' };
-    await s.saveExtra(TABLES_KEY, other);
+    tables.tables.levels[0]!.xpToLevelUp = 1;
+    tables.tables.limits.largeItems = 99;
+    tables.tables.gods.length = 0;
+    const s = new IdbSaveStore(`t-hero-extra-${Math.random()}`);
+    await s.saveExtra(TABLES_KEY, { ...fixture, name: 'A different made-up file' });
     await s.removeExtra(TABLES_KEY);
     expect(hero).toEqual(snapshot);
     expect(answers()).toEqual(before);
+  });
+
+  it('refuses the game key', async () => {
+    for (const s of [new IdbSaveStore(`t-guard-${Math.random()}`), new MemorySaveStore()]) {
+      await expect(s.saveExtra('current', {})).rejects.toThrow();
+      await expect(s.removeExtra('current')).rejects.toThrow();
+    }
+  });
+
+  it('gives extra writes a longer timeout than the 5 s used for the game', async () => {
+    const s = new IdbSaveStore(`t-slow-${Math.random()}`);
+    await s.load(); // open the db before the clock is faked
+    // A transaction that never fires any event: a very slow write.
+    const put = vi.spyOn(IDBDatabase.prototype, 'transaction').mockImplementation(
+      () => ({ objectStore: () => ({ put: () => ({}) }) }) as unknown as IDBTransaction,
+    );
+    vi.useFakeTimers();
+    try {
+      let settled = false;
+      const p = s.saveExtra(TABLES_KEY, { a: 1 });
+      p.catch(() => {}).finally(() => (settled = true));
+      await vi.advanceTimersByTimeAsync(5_100);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(60_000);
+      await expect(p).rejects.toThrow('Storage did not respond');
+    } finally {
+      vi.useRealTimers();
+      put.mockRestore();
+    }
   });
 });

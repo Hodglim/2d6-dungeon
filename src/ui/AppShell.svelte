@@ -13,18 +13,19 @@
   import { PlayFlow, type Step } from '../interaction/playflow';
   import { setBeforeReload } from '../pwa/register';
   import { Autosaver } from '../persistence/autosave';
+  import { cardsKind, chooseFile, loadStored, removeFile, tablesKind } from '../persistence/extras';
   import { exportCampaignFile, readImportText } from '../persistence/files';
   import { campaignFrom, metaFrom, type CampaignMeta } from '../persistence/record';
   import { shareOrDownload } from '../persistence/share';
   import { isIosSafari, isStandalone, readDisplayEnv } from '../persistence/standalone';
   import { decideStartup, loadWithTimeout } from '../persistence/startup';
-  import { CARDS_KEY, IdbSaveStore, TABLES_KEY } from '../persistence/store';
+  import { IdbSaveStore } from '../persistence/store';
   import type { Point } from '../render/camera';
   import type { Pick } from '../render/hit';
   import { DEFAULT_TOGGLES, type DisplayToggles } from '../render/renderer';
   import { dungeonSystem } from '../systems/dungeon';
-  import { parseCardPack, type CardPack } from '../systems/dungeon/cards';
-  import { parseTableFile, type DungeonTables } from '../systems/dungeon/tables';
+  import type { CardPack } from '../systems/dungeon/cards';
+  import type { DungeonTables } from '../systems/dungeon/tables';
   import { classicTheme } from '../systems/dungeon/classic';
   import { drawOverlay, overlayFor, selectionOverlay } from './overlay';
   import { historyStore, type Tool } from './historyStore';
@@ -212,30 +213,16 @@
     void loadExtras(isAlive);
   }
 
+  /** Set once the user has chosen or removed a file, so a slower start-up load can't overwrite it. */
+  let tablesTouched = false;
+  let cardsTouched = false;
+
   /** Loads the stored table file and card pack. Any failure means carrying on without them. */
   async function loadExtras(isAlive: () => boolean) {
-    try {
-      const rawTables = await loadWithTimeout(() => store.loadExtra(TABLES_KEY));
-      if (!isAlive()) return;
-      if (rawTables.kind === 'loaded' && rawTables.raw !== null) {
-        const text = JSON.stringify(rawTables.raw);
-        const r = parseTableFile(text, text.length);
-        if (r.ok) tables = r.tables;
-      }
-    } catch {
-      // carry on without it
-    }
-    try {
-      const rawCards = await loadWithTimeout(() => store.loadExtra(CARDS_KEY));
-      if (!isAlive()) return;
-      if (rawCards.kind === 'loaded' && rawCards.raw !== null) {
-        const text = JSON.stringify(rawCards.raw);
-        const r = parseCardPack(text, text.length);
-        if (r.ok) cards = r.pack;
-      }
-    } catch {
-      // carry on without it
-    }
+    const t = await loadStored(store, tablesKind);
+    if (isAlive() && !tablesTouched && t) tables = t;
+    const c = await loadStored(store, cardsKind);
+    if (isAlive() && !cardsTouched && c) cards = c;
   }
 
   function pickExtra(input: HTMLInputElement | undefined) {
@@ -243,45 +230,38 @@
     input?.click();
   }
 
-  /** Reads a chosen file, validates it, stores it, then shows it. A bad file leaves the loaded one alone. */
-  async function onExtraChosen<T>(input: HTMLInputElement | undefined, key: string, parse: (text: string, bytes: number) => { ok: true; value: T } | { ok: false; error: string }, apply: (v: T) => void) {
-    const file = input?.files?.[0];
-    if (input) input.value = '';
+  async function onTablesChosen() {
+    const file = tablesInput?.files?.[0];
+    if (tablesInput) tablesInput.value = '';
     if (!file) return;
-    let text: string;
-    try {
-      text = await file.text();
-    } catch {
-      importError = "That file couldn't be read.";
-      return;
-    }
-    const res = parse(text, file.size);
-    if (!res.ok) {
-      importError = res.error;
-      return;
-    }
-    try {
-      await store.saveExtra(key, res.value);
-    } catch (err) {
-      importError = `The file couldn't be stored on this device: ${err instanceof Error ? err.message : String(err)}`;
-      return;
-    }
-    apply(res.value);
+    tablesTouched = true;
+    const r = await chooseFile(store, tablesKind, file, tables);
+    tables = r.value;
+    if (!r.ok) importError = r.error;
   }
 
-  const onTablesChosen = () =>
-    onExtraChosen(tablesInput, TABLES_KEY, (t, n) => { const r = parseTableFile(t, n); return r.ok ? { ok: true, value: r.tables } : r; }, (v) => (tables = v));
-  const onCardsChosen = () =>
-    onExtraChosen(cardsInput, CARDS_KEY, (t, n) => { const r = parseCardPack(t, n); return r.ok ? { ok: true, value: r.pack } : r; }, (v) => (cards = v));
+  async function onCardsChosen() {
+    const file = cardsInput?.files?.[0];
+    if (cardsInput) cardsInput.value = '';
+    if (!file) return;
+    cardsTouched = true;
+    const r = await chooseFile(store, cardsKind, file, cards);
+    cards = r.value;
+    if (!r.ok) importError = r.error;
+  }
 
-  async function removeExtra(key: string, clear: () => void) {
-    try {
-      await store.removeExtra(key);
-    } catch (err) {
-      importError = `The file couldn't be removed: ${err instanceof Error ? err.message : String(err)}`;
-      return;
-    }
-    clear();
+  async function removeTables() {
+    tablesTouched = true;
+    const r = await removeFile(store, tablesKind, tables);
+    tables = r.value;
+    if (!r.ok) importError = r.error;
+  }
+
+  async function removeCards() {
+    cardsTouched = true;
+    const r = await removeFile(store, cardsKind, cards);
+    cards = r.value;
+    if (!r.ok) importError = r.error;
   }
 
   /** From the load-error dialog: replacing the game overwrites the stored record, so confirm first. */
@@ -533,8 +513,8 @@
         cardsName={cards ? `${cards.name} (${cards.cards.length} ${cards.cards.length === 1 ? "card" : "cards"})` : null}
         onloadtables={() => pickExtra(tablesInput)}
         onloadcards={() => pickExtra(cardsInput)}
-        onremovetables={() => void removeExtra(TABLES_KEY, () => (tables = null))}
-        onremovecards={() => void removeExtra(CARDS_KEY, () => (cards = null))}
+        onremovetables={() => void removeTables()}
+        onremovecards={() => void removeCards()}
       />
     {/if}
   </div>

@@ -33,6 +33,11 @@ export function parseCardPack(text: string, byteLength: number): CardsParse {
   } catch {
     return { ok: false, error: NOT_A_PACK };
   }
+  return validateCardPack(data);
+}
+
+/** Full validation of an already-parsed value (also used for the copy stored on the device). */
+export function validateCardPack(data: unknown): CardsParse {
   if (!isObj(data) || data.systemId !== 'dungeon' || typeof data.format !== 'number' || !Array.isArray(data.cards)) {
     return { ok: false, error: NOT_A_PACK };
   }
