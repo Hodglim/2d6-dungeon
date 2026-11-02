@@ -6,6 +6,17 @@ The file is limited to 2,000,000 bytes. Extra tables you add under `tables` are 
 
 Load the file from the menu: Menu → Load table file… (and Load creature cards… for a card pack). The app keeps it on your device. It is never included in map exports.
 
+## Starting from the blank template
+
+The easiest way to make your file: Menu → **Download blank table file**. It has every table, every dice key and every field, all left empty, so you only type in values from your own books. It contains no rulebook content.
+
+- Text is `""`, numbers are `null`, dice are `[]`, `unique` is `null`, and each door is `""`. Replace them all.
+- Lists whose length depends on the book (potions, kit, armour, scrolls, weapons, manoeuvres, levels, gods) have one blank row. Copy the row for each one in the book. `kit` and `potions` may be emptied to `[]`.
+- The room tables are set up for dungeon Level 1 with Exit Type table `EXT1`. For deeper levels, copy the level entry and add more exit tables. If you don't want room tables yet, delete `dungeonLevels` and `exitTables`.
+- Load it whenever you like: until every blank is filled, the app refuses it and names the first blank it finds, for example "Starting Values level" or "Weapons[0] name (empty)".
+
+## A short example
+
 A short, complete, valid example (copy it and replace the made-up values with your own):
 
 ```json
@@ -335,6 +346,6 @@ The output is written to `local-data/creature-cards.json` by default, which is g
 
 - "This isn't a 2D6 Dungeon table file": not JSON, or `systemId` is not `"dungeon"`.
 - "The table file is missing <Table Name>": a required table is absent.
-- "The table file is damaged: <detail>": a table is the wrong shape (the message names the place, such as "Weapons[1] manoeuvre 3 dice"), a die face is outside 1-6, levels are unsorted, or a weapon has too few level 1 manoeuvres.
+- "The table file is damaged: <detail>": a table is the wrong shape, or a value is still blank (names, titles, labels, room types and dice may not be left empty; the message ends in "(empty)" for a blank name) (the message names the place, such as "Weapons[1] manoeuvre 3 dice"), a die face is outside 1-6, levels are unsorted, or a weapon has too few level 1 manoeuvres.
 - "Made by a newer version of the app": `format` is higher than 1.
 - "This file is too large to be a table file.": over 2,000,000 bytes.

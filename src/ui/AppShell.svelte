@@ -17,6 +17,7 @@
   import { exportCampaignFile, readImportText } from '../persistence/files';
   import { campaignFrom, metaFrom, type CampaignMeta } from '../persistence/record';
   import { shareOrDownload } from '../persistence/share';
+  import { blankTableFile, TEMPLATE_FILE_NAME } from '../systems/dungeon/template';
   import { isIosSafari, isStandalone, readDisplayEnv } from '../persistence/standalone';
   import { decideStartup, loadWithTimeout } from '../persistence/startup';
   import { IdbSaveStore } from '../persistence/store';
@@ -474,6 +475,12 @@
     replaceGame(metaFrom(c), demoMap());
   }
 
+  function downloadTemplate() {
+    // Built synchronously so shareOrDownload runs inside the click's user gesture.
+    const text = JSON.stringify(blankTableFile(), null, 2);
+    shareOrDownload(new File([text], TEMPLATE_FILE_NAME, { type: 'application/json' }));
+  }
+
   function exportGame() {
     // Build the File synchronously so shareOrDownload runs inside the click's user gesture.
     const { name, text } = exportCampaignFile(campaignFrom(meta, history.map, history.hero));
@@ -697,6 +704,7 @@
         tablesName={tables?.name ?? null}
         cardsName={cards ? `${cards.name} (${cards.cards.length} ${cards.cards.length === 1 ? "card" : "cards"})` : null}
         onloadtables={() => pickExtra(tablesInput)}
+        ontemplate={downloadTemplate}
         onloadcards={() => pickExtra(cardsInput)}
         onremovetables={() => void removeTables()}
         onremovecards={() => void removeCards()}

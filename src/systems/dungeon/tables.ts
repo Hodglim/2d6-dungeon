@@ -90,8 +90,22 @@ const field = (o: Record<string, unknown>, at: string, keys: string[], ok: (v: u
   for (const k of keys) if (!ok(o[k])) return `${at} ${k}`;
   return null;
 };
-const strsAt = (name: string, v: unknown): string | null =>
-  !Array.isArray(v) ? name : v.findIndex((x) => !isStr(x)) >= 0 ? `${name}[${v.findIndex((x) => !isStr(x))}]` : null;
+/** Like `field`, for names that must not be left blank (as in the blank template). */
+const named = (o: Record<string, unknown>, at: string, keys: string[]): string | null => {
+  for (const k of keys) {
+    if (!isStr(o[k])) return `${at} ${k}`;
+    if ((o[k] as string).trim() === '') return `${at} ${k} (empty)`;
+  }
+  return null;
+};
+/** A list of names: each a string, none blank. */
+const strsAt = (name: string, v: unknown): string | null => {
+  if (!Array.isArray(v)) return name;
+  const i = v.findIndex((x) => !isStr(x));
+  if (i >= 0) return `${name}[${i}]`;
+  const j = v.findIndex((x) => (x as string).trim() === '');
+  return j >= 0 ? `${name}[${j}] (empty)` : null;
+};
 const rows = (name: string, v: unknown, nonEmpty: boolean, each: (r: Record<string, unknown>, at: string) => string | null): string | null => {
   if (!Array.isArray(v)) return name;
   if (nonEmpty && v.length === 0) return `${name} has no entries`;
@@ -113,22 +127,22 @@ const TABLES: [string, string, Check][] = [
     const p = field(v, 'Starting Values', ['level', 'xp', 'shift', 'discipline', 'precision', 'hp', 'rations'], isCount);
     if (p) return p;
     if (!isPositive(v.level)) return 'Starting Values level';
-    return rows('Starting Values potions', v.potions, false, (r, at) => field(r, at, ['name', 'effect'], isStr)) ?? strsAt('Starting Values kit', v.kit);
+    return rows('Starting Values potions', v.potions, false, (r, at) => named(r, at, ['name']) ?? field(r, at, ['effect'], isStr)) ?? strsAt('Starting Values kit', v.kit);
   }],
   ['startingArmour', 'Starting Armour', (v) =>
-    rows('Starting Armour', v, true, (a, at) => field(a, at, ['name', 'modifier'], isStr) ?? diceAt(at, a.dice, 1, 2))],
+    rows('Starting Armour', v, true, (a, at) => named(a, at, ['name']) ?? field(a, at, ['modifier'], isStr) ?? diceAt(at, a.dice, 1, 2))],
   ['startingScrolls', 'Starting Scrolls', (v) =>
-    rows('Starting Scrolls', v, true, (s, at) => field(s, at, ['name', 'effect', 'orbit', 'dispelDoubles', 'effectModifier'], isStr))],
+    rows('Starting Scrolls', v, true, (s, at) => named(s, at, ['name']) ?? field(s, at, ['effect', 'orbit', 'dispelDoubles', 'effectModifier'], isStr))],
   ['weapons', 'Weapons', (v) =>
-    rows('Weapons', v, true, (w, at) => field(w, at, ['name'], isStr) ??
+    rows('Weapons', v, true, (w, at) => named(w, at, ['name']) ??
       rows(`${at} manoeuvres`, w.manoeuvres, false, (m, _a) => {
         const idx = (w.manoeuvres as unknown[]).indexOf(m) + 1;
         const mat = `${at} manoeuvre ${idx}`;
-        return field(m, mat, ['name', 'damage'], isStr) ?? field(m, mat, ['level'], isPositive) ?? diceAt(mat, m.dice, 2, 2);
+        return named(m, mat, ['name']) ?? field(m, mat, ['damage'], isStr) ?? field(m, mat, ['level'], isPositive) ?? diceAt(mat, m.dice, 2, 2);
       }))],
   ['levels', 'Levels', (v) =>
     rows('Levels', v, true, (l, at) => {
-      const p = field(l, at, ['title'], isStr) ?? field(l, at, ['level', 'maxManoeuvreLevel'], isPositive) ??
+      const p = named(l, at, ['title']) ?? field(l, at, ['level', 'maxManoeuvreLevel'], isPositive) ??
         field(l, at, ['manoeuvres', 'shift', 'discipline', 'precision', 'hpBaseline'], isCount);
       if (p) return p;
       const last = at === `Levels[${(v as unknown[]).length - 1}]`;
@@ -141,13 +155,13 @@ const TABLES: [string, string, Check][] = [
     for (const k of ['bloodied', 'soaked']) {
       const c = v[k];
       if (!isObj(c)) return `Conditions ${k}`;
-      const p = field(c, `Conditions ${k}`, ['label'], isStr) ?? field(c, `Conditions ${k}`, ['boxes'], isCount);
+      const p = named(c, `Conditions ${k}`, ['label']) ?? field(c, `Conditions ${k}`, ['boxes'], isCount);
       if (p) return p;
     }
     for (const k of ['fever', 'pneumonia']) {
       const c = v[k];
       if (!isObj(c)) return `Conditions ${k}`;
-      const p = field(c, `Conditions ${k}`, ['label', 'effect'], isStr);
+      const p = named(c, `Conditions ${k}`, ['label']) ?? field(c, `Conditions ${k}`, ['effect'], isStr);
       if (p) return p;
     }
     return null;
@@ -180,7 +194,8 @@ const exitProblem = (at: string, v: unknown, allowRandom: boolean): string | nul
   return `${at} exit — use one of ${DOOR_IDS.join(', ')}`;
 };
 const roomEntry = (r: Record<string, unknown>, at: string, hasExit: boolean, hasEncounter: boolean): string | null =>
-  field(r, at, hasEncounter ? ['type', 'description', 'encounter'] : ['type', 'description'], isStr) ??
+  named(r, at, ['type']) ??
+  field(r, at, hasEncounter ? ['description', 'encounter'] : ['description'], isStr) ??
   (typeof r.unique === 'boolean' ? null : `${at} unique`) ??
   (hasExit ? exitProblem(at, r.exit, true) : null);
 

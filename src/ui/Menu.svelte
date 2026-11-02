@@ -13,6 +13,8 @@
     tablesName: string | null;
     cardsName: string | null;
     onloadtables: () => void;
+    /** Download a blank table file to fill in from your own books. */
+    ontemplate?: () => void;
     onloadcards: () => void;
     onremovetables: () => void;
     onremovecards: () => void;
@@ -21,7 +23,7 @@
     onearlier?: (index: number) => void;
   }
 
-  let { toggles = $bindable(), onclose, onnewmap, ondemo, onfit, onexport, onimport, tablesName, cardsName, onloadtables, onloadcards, onremovetables, onremovecards, earlier = [], onearlier = () => {} }: Props = $props();
+  let { toggles = $bindable(), onclose, onnewmap, ondemo, onfit, onexport, onimport, tablesName, cardsName, onloadtables, ontemplate = () => {}, onloadcards, onremovetables, onremovecards, earlier = [], onearlier = () => {} }: Props = $props();
 
   const toggleLabels: Record<keyof DisplayToggles, string> = {
     grid: 'Grid',
@@ -64,6 +66,7 @@
     <span>{tablesName ? `Table file: ${tablesName}` : 'No table file loaded'}</span>
     {#if tablesName}<button class="remove" onclick={onremovetables}>Remove</button>{/if}
   </div>
+  <button role="menuitem" onclick={act(ontemplate)}>Download blank table file</button>
   <button role="menuitem" onclick={act(onloadcards)}>Load creature cards…</button>
   <div class="status" data-status="cards">
     <span>{cardsName ? `Creature cards: ${cardsName}` : 'No creature cards loaded'}</span>
