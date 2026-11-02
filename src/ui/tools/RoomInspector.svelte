@@ -3,16 +3,21 @@
   // editable; size, class and exit count are read-only. Rooms are never moved, resized or
   // deleted, so there are no controls for that (mistakes are fixed with Undo).
   import { type Command, updateRoom } from '../../core/commands';
-  import type { DungeonMap, Room } from '../../core/types';
+  import type { DungeonMap, Room, RoomContents } from '../../core/types';
+  import { applyRoomRoll } from '../../systems/dungeon/roomTables';
+  import type { DungeonTables } from '../../systems/dungeon/tables';
+  import RoomRoll from '../RoomRoll.svelte';
   import { roomExitCount } from '../tapRouting';
 
   interface Props {
     map: DungeonMap;
     roomId: string;
     onexec: (cmd: Command | null) => boolean;
+    /** The loaded table file, if any: "Roll for this room" needs it. */
+    tables?: DungeonTables | null;
   }
 
-  let { map, roomId, onexec }: Props = $props();
+  let { map, roomId, onexec, tables = null }: Props = $props();
 
   const room = $derived(map.rooms.find((r) => r.id === roomId));
 
@@ -35,6 +40,13 @@
     onexec(updateRoom(r, { ...r, label: { type: type.trim(), unique, narrative: narrative.trim() } }));
   }
 
+  let rolling = $state(false);
+  function applyRoll(r: Room, contents: RoomContents, isUnique: boolean) {
+    // One undo step: the label, the note, the roll and the room's own exit types.
+    const cmd = applyRoomRoll(r, contents, isUnique);
+    if (onexec({ ...cmd, label: `Roll room ${r.number}` })) rolling = false;
+  }
+
   const otherTitles: Record<Exclude<Room['kind'], 'room'>, string> = {
     corridor: 'Corridor',
     passage: 'Exit square',
@@ -54,6 +66,26 @@
         <dt>Exits</dt>
         <dd>{roomExitCount(map, room)}</dd>
       </dl>
+      {#if room.contents}
+        <dl data-testid="room-contents">
+          <dt>Roll</dt>
+          <dd>{room.contents.roll}</dd>
+          <dt>Type</dt>
+          <dd>{room.contents.type}</dd>
+          <dt>Description</dt>
+          <dd>{room.contents.description}</dd>
+          {#if room.contents.encounter}
+            <dt>Encounter</dt>
+            <dd>{room.contents.encounter}</dd>
+          {/if}
+        </dl>
+      {:else if rolling}
+        <RoomRoll {map} {room} {tables} onapply={(c, u) => applyRoll(room, c, u)} oncancel={() => (rolling = false)} />
+      {:else if tables}
+        <div class="row">
+          <button type="button" onclick={() => (rolling = true)}>Roll for this room</button>
+        </div>
+      {/if}
       <form class="label" onsubmit={(e) => { e.preventDefault(); save(room); }}>
         <label class="field"><span class="name">Room type</span> <input type="text" bind:value={type} placeholder="e.g. Lamp Room" /></label>
         <label class="check"><input type="checkbox" bind:checked={unique} /> Unique</label>

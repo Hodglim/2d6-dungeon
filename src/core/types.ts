@@ -29,6 +29,17 @@ export interface RoomLabel {
   narrative: string;
 }
 
+/** What a table roll produced for a room (plain text; the app ships no table content). */
+export interface RoomContents {
+  table: 'rooms' | 'small' | 'large';
+  roll: string;
+  type: string;
+  description: string;
+  encounter: string;
+  door: string;
+  locked: boolean;
+}
+
 export interface Room extends Rect {
   id: string;
   /** Display number for kind 'room'; 0 for corridors, passages and the entrance. */
@@ -39,6 +50,7 @@ export interface Room extends Rect {
   label: RoomLabel;
   /** The door this room was entered through (its label anchors there); null for the entrance. */
   entryDoorId: string | null;
+  contents?: RoomContents;
 }
 
 export interface DoorLock {
@@ -68,7 +80,8 @@ export interface DungeonMap {
   id: string;
   title: string;
   hero: string;
-  level: string;
+  /** Dungeon level, a whole number from 1 to 10. */
+  level: number;
   width: number;
   height: number;
   themeId: string;

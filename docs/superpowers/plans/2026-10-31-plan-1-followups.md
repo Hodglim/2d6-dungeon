@@ -169,6 +169,11 @@ Minor findings from the Plan 3 reviews, not fixed:
   - cross-tab saves only approximated
   - an `onblocked` open that later succeeds could leak a connection
 
+## Next up after Plan 6 (user decision, 2026-11-02)
+
+- **Blank table-file template** for other players: a JSON file with every table, key and field pre-filled with empty values, so players only type values. The app's validation points at anything missed. It contains no rulebook content.
+- **Later "bring your own books" feature:** an in-app table editor (dice pickers, laid out like the book) and in-app creature-card cropping from the player's PDF, so no Node/CLI is needed.
+
 ## Performance notes (no action needed yet)
 
 On a 100×100 map, A* across one open room takes about 57 ms. A worst case of 2,500

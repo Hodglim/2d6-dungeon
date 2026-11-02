@@ -2,14 +2,14 @@ import { randomId, type IdFn } from './ids';
 import type { GameSystem } from './system';
 import type { Campaign, DungeonMap } from './types';
 
-export const CURRENT_SCHEMA_VERSION = 2;
+export const CURRENT_SCHEMA_VERSION = 3;
 /** Maps are at most this many squares on each side. */
 export const MAX_MAP_SIZE = 100;
 
 export interface NewMapOptions {
   title?: string;
   hero?: string;
-  level?: string;
+  level?: number;
   width?: number;
   height?: number;
   seed?: number;
@@ -27,7 +27,7 @@ export function createMap(system: GameSystem, opts: NewMapOptions = {}): Dungeon
     id: newId(),
     title: opts.title ?? '',
     hero: opts.hero ?? '',
-    level: opts.level ?? '',
+    level: opts.level ?? 1,
     width: clampSize(opts.width ?? system.defaultMapSize.width),
     height: clampSize(opts.height ?? system.defaultMapSize.height),
     themeId: system.defaultThemeId,

@@ -28,7 +28,13 @@ function roomOk(r: unknown): boolean {
   if (!isObj(r.label) || !isStr(r.label.type) || !isBool(r.label.unique) || !isStr(r.label.narrative)) return false;
   if (r.sizeClass !== null && !SIZE_CLASSES.includes(r.sizeClass as string)) return false;
   if (r.entryDoorId !== null && !isStr(r.entryDoorId)) return false;
+  if (r.contents !== undefined && !contentsOk(r.contents)) return false;
   return ['x', 'y', 'w', 'h', 'number'].every((k) => isInt(r[k]));
+}
+
+function contentsOk(c: unknown): boolean {
+  if (!isObj(c) || !['rooms', 'small', 'large'].includes(c.table as string)) return false;
+  return ['roll', 'type', 'description', 'encounter', 'door'].every((k) => isStr(c[k])) && isBool(c.locked);
 }
 
 function doorOk(d: unknown): boolean {
@@ -51,9 +57,10 @@ function tokenOk(t: unknown): boolean {
 /** Shape check for one map; null means OK. Does not run checkInvariants. */
 export function mapProblem(m: unknown): string | null {
   if (!isObj(m)) return 'a map is not an object';
-  for (const k of ['id', 'title', 'hero', 'level', 'themeId', 'defaultDoorType']) {
+  for (const k of ['id', 'title', 'hero', 'themeId', 'defaultDoorType']) {
     if (!isStr(m[k])) return `map missing ${k}`;
   }
+  if (!isInt(m.level) || (m.level as number) < 1 || (m.level as number) > 10) return 'map has an invalid level';
   if (!isNum(m.seed)) return 'map missing seed';
   for (const k of ['width', 'height']) {
     if (!isNum(m[k])) return `map missing ${k}`;

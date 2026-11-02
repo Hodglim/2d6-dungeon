@@ -1,6 +1,9 @@
 <script lang="ts">
   import type { ExecResult } from '../../core/history';
   import type { PlayFlow, Step } from '../../interaction/playflow';
+  import { dungeonSystem } from '../../systems/dungeon';
+  import DiceEntry from '../DiceEntry.svelte';
+  import DieFace from '../DieFace.svelte';
 
   interface Props {
     flow: PlayFlow;
@@ -18,6 +21,14 @@
   // svelte-ignore state_referenced_locally
   let narrative = $state(step.draft.room.label.narrative);
 
+  const doorName = (id: string) => dungeonSystem.doorTypes.find((t) => t.id === id)?.name ?? id;
+  /** Taken unique rooms the app re-rolled past on the last animated roll. */
+  let rerolled = $state(0);
+  const manual = $derived(step.roll === null || step.skipped);
+  const kindName = $derived(step.roll?.kind === 'small' ? 'Small room' : step.roll?.kind === 'large' ? 'Large room' : 'Room');
+  const twoD6 = $derived(step.roll !== null && step.roll.kind !== 'rooms');
+  const chooseDoor = $derived((step.skipped || (step.roll === null && step.draft.doorsFromTable === true)) && step.chosen.length > 0 && step.draft.sizeClass !== 'small');
+
   const title = $derived(step.draft.source.kind === 'entrance' ? 'Entrance room' : `Room ${step.draft.room.number}`);
 </script>
 
@@ -25,15 +36,76 @@
 {#if step.dropped > 0}
   <p class="warn">{step.dropped} {step.dropped === 1 ? "exit couldn't" : "exits couldn't"} be placed</p>
 {/if}
-<form class="label" onsubmit={(e) => { e.preventDefault(); oncommit(() => flow.finish({ type: type.trim(), unique, narrative: narrative.trim() })); }}>
-  <label class="field">Room type <input type="text" bind:value={type} placeholder="e.g. Lamp Room" /></label>
-  <label class="check"><input type="checkbox" bind:checked={unique} /> Unique</label>
-  <label class="field">Narrative <textarea rows="3" bind:value={narrative}></textarea></label>
-  <div class="row">
-    <button type="button" onclick={() => oncommit(() => flow.finish(null))}>Skip</button>
-    <button type="submit" class="primary">Done</button>
+{#if manual}
+  {#if chooseDoor}
+    <div class="doors" role="group" aria-label="Exit type">
+      <span class="lead">Exit type</span>
+      {#each dungeonSystem.doorTypes as t (t.id)}
+        <button type="button" aria-pressed={step.exitType === t.id} onclick={() => flow.chooseLabelExitType(t.id)}>{t.name}</button>
+      {/each}
+    </div>
+  {/if}
+  <form class="label" onsubmit={(e) => { e.preventDefault(); oncommit(() => flow.finish({ type: type.trim(), unique, narrative: narrative.trim() })); }}>
+    <label class="field">Room type <input type="text" bind:value={type} placeholder="e.g. Lamp Room" /></label>
+    <label class="check"><input type="checkbox" bind:checked={unique} /> Unique</label>
+    <label class="field">Narrative <textarea rows="3" bind:value={narrative}></textarea></label>
+    <div class="row">
+      <button type="button" onclick={() => oncommit(() => flow.finish(null))}>Skip</button>
+      <button type="submit" class="primary">Done</button>
+    </div>
+  </form>
+{:else if step.roll && !step.roll.available}
+  <p data-testid="no-level-tables">{step.error ?? `Your table file has no Level ${step.roll.level} room tables.`}</p>
+  <div class="row"><button type="button" onclick={() => flow.skipRoomTable()}>Skip</button></div>
+{:else if step.roll && !step.result}
+  <p>{kindName} roll — {twoD6 ? 'roll two dice, added together' : 'roll the red and blue dice'}, then type them in, or let the app roll.</p>
+  <DiceEntry
+    dice={twoD6 ? '2d6' : 'd66'}
+    labels={twoD6 ? ['Die 1', 'Die 2'] : ['Red', 'Blue']}
+    error={step.error}
+    onenter={(v) => { rerolled = 0; flow.enterRoomTable(v); }}
+    onroll={() => {
+      const r = flow.rollRoomTable();
+      rerolled = r?.rerolls ?? 0;
+      return r ? r.dice : [];
+    }}
+    onrolled={(v) => flow.applyRoomTableResult(v)}
+  />
+  <div class="row"><button type="button" onclick={() => flow.skipRoomTable()}>Skip</button></div>
+{:else if step.roll && step.result}
+  {@const r = step.result}
+  <div class="result" data-testid="room-result">
+    <div class="dice" data-testid="roll-faces">
+      {#each r.dice as face, i (i)}<DieFace value={face} colour={i === 0 ? 'red' : 'blue'} size={44} />{/each}
+      {#if twoD6}<span class="sum">= {r.dice[0]! + r.dice[1]!}</span>{/if}
+    </div>
+    <p class="type">{r.entry.type}{#if r.entry.unique}<span class="badge">Unique</span>{/if}</p>
+    <p>{r.entry.description}</p>
+    {#if r.entry.encounter}<p><strong>Encounter:</strong> {r.entry.encounter}</p>{/if}
+    {#if r.contents}
+      <p data-testid="exit-result"><strong>Exits:</strong> {doorName(r.contents.door)}{r.contents.locked ? ', locked' : ''}</p>
+    {/if}
+    {#if r.capped}<p class="note">No unused rooms left on this table — accepted anyway</p>{/if}
+    {#if rerolled > 0 && !r.capped}<p class="note">Re-rolled {rerolled} {rerolled === 1 ? 'time' : 'times'}: unique rooms already on this level.</p>{/if}
   </div>
-</form>
+  {#if r.needsExit}
+    <p>This room's exit type is random. Roll the Exit Type table.</p>
+    <DiceEntry
+      dice="d66"
+      labels={['Red', 'Blue']}
+      error={step.error}
+      enterLabel="Use these"
+      onenter={(v) => flow.enterExitTable(v)}
+      onroll={() => flow.rollExitTable()}
+      onrolled={(v) => flow.applyExitTableResult(v)}
+    />
+  {:else}
+    <div class="row">
+      <button type="button" onclick={() => { rerolled = 0; flow.discardRoomRoll(); }}>Roll again</button>
+      <button type="button" class="primary" onclick={() => oncommit(() => flow.finish(null))}>Done</button>
+    </div>
+  {/if}
+{/if}
 
 <style>
   .label {
@@ -73,5 +145,41 @@
     height: 28px;
     margin: 0;
     accent-color: var(--ink);
+  }
+  .doors {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  }
+  .lead {
+    flex-basis: 100%;
+    font-size: 17px;
+    font-weight: 600;
+  }
+  .result {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px 12px;
+    background: var(--paper-dim);
+    border-left: 4px solid var(--ink);
+  }
+  .dice {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .sum {
+    font-size: 24px;
+    font-weight: 700;
+  }
+  .type {
+    font-size: 21px !important;
+    font-weight: 700;
+  }
+  .note {
+    font-size: 16px !important;
+    color: var(--muted);
   }
 </style>

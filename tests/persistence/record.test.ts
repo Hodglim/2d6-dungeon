@@ -4,15 +4,64 @@ import { History } from '../../src/core/history';
 import { parseCampaign, serializeCampaign } from '../../src/core/serialize';
 import { dungeonSystem } from '../../src/systems/dungeon';
 import { SAVE_FORMAT, campaignFrom, decodeSave, encodeSave, metaFrom } from '../../src/persistence/record';
+import { decideStartup } from '../../src/persistence/startup';
 import { emptyMap, room } from '../core/fixtures';
 
-const meta = { id: 'c1', name: 'Camp', systemId: 'dungeon' };
+const meta = { id: 'c1', name: 'Camp', systemId: 'dungeon', earlierLevels: [] };
 
 function historyWith(n: number, size = 10): History {
   const h = new History(emptyMap(size, size));
   for (let i = 0; i < n; i++) h.execute(addRoom(room(`r${i}`, (i % 10) * 3, Math.floor(i / 10) * 3, 2, 2, 'room', i + 1)));
   return h;
 }
+
+const levelMaps = () => {
+  const a = { ...emptyMap(10, 10), id: 'L1', level: 1 };
+  const b = { ...emptyMap(10, 10), id: 'L2', level: 2 };
+  return [a, b];
+};
+
+describe('earlier levels', () => {
+  it('round-trip through encodeSave, decodeSave and decideStartup', () => {
+    const [a, b] = levelMaps();
+    const m = { ...meta, earlierLevels: [a!, b!] };
+    const h = historyWith(2);
+    const rec = JSON.parse(JSON.stringify(encodeSave(m, h.exportState())));
+    const out = decodeSave(rec);
+    expect(out.ok && out.meta.earlierLevels).toEqual([a, b]);
+    const start = decideStartup(rec);
+    expect(start.kind).toBe('restore');
+    if (start.kind === 'restore') expect(start.meta.earlierLevels).toEqual([a, b]);
+  });
+  it('an exported two-map campaign imports with one earlier level', () => {
+    const [a, b] = levelMaps();
+    const c = { ...createCampaign(dungeonSystem, 'X'), maps: [a!, b!], activeMapId: 'L2' };
+    const parsed = parseCampaign(serializeCampaign(c));
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    const m = metaFrom(parsed.campaign);
+    expect(m.earlierLevels).toEqual([a]);
+    expect(campaignFrom(m, b!, null).maps).toEqual([a, b]);
+  });
+  it('a format 2 record is refused as an older test version', () => {
+    const rec = JSON.parse(JSON.stringify(encodeSave(meta, historyWith(1).exportState())));
+    expect(decodeSave({ ...rec, format: 2 })).toEqual({ ok: false, error: "This save is from an older test version of the app and can't be loaded." });
+  });
+  it('a damaged earlier level is a damaged save', () => {
+    const [a] = levelMaps();
+    const rec = JSON.parse(JSON.stringify(encodeSave({ ...meta, earlierLevels: [a!] }, historyWith(1).exportState())));
+    rec.meta.earlierLevels[0].level = 'one';
+    const out = decodeSave(rec);
+    expect(out.ok).toBe(false);
+    if (!out.ok) expect(out.error).toMatch(/earlier level 1/);
+    const rec2 = JSON.parse(JSON.stringify(encodeSave({ ...meta, earlierLevels: [a!] }, historyWith(1).exportState())));
+    rec2.meta.earlierLevels[0].doors = [{ id: 'd', type: 'wooden', x: 50, y: 50, side: 'N', secret: false, lock: null }];
+    expect(decodeSave(rec2).ok).toBe(false);
+    expect(decideStartup(rec2).kind).toBe('error');
+    delete rec2.meta.earlierLevels;
+    expect(decodeSave(rec2).ok).toBe(false);
+  });
+});
 
 describe('save record', () => {
   it('round-trips through JSON', () => {
@@ -33,7 +82,7 @@ describe('save record', () => {
 
   it('refuses a newer format, a broken snapshot, and null', () => {
     const rec = JSON.parse(JSON.stringify(encodeSave(meta, historyWith(1).exportState())));
-    const newer = decodeSave({ ...rec, format: 3 });
+    const newer = decodeSave({ ...rec, format: 4 });
     expect(newer.ok).toBe(false);
     if (!newer.ok) expect(newer.error).toContain('newer version');
     const broken = decodeSave({ ...rec, history: { ...rec.history, current: { nope: 1 } } });

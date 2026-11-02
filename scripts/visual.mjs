@@ -55,6 +55,15 @@ if (coverageText !== '0%') problems.push(`unexpected coverage badge: ${coverageT
 
 // ---- Play flow helpers ----
 
+/** Step panel buttons must be touch-sized (for a page other than the main one). */
+const checkPanelOn = async (pg, where) => {
+  const small = await pg.$$eval('aside.panel button', (els) =>
+    els.map((el) => ({ t: el.textContent?.trim(), r: el.getBoundingClientRect() })).filter((b) => b.r.width > 0 && (b.r.width < 44 || b.r.height < 44)).map((b) => `${b.t} ${b.r.width}×${b.r.height}`),
+  );
+  for (const b of small) problems.push(`${where}: panel button too small: ${b}`);
+};
+
+
 /** Tap the map at a world point (squares), using the camera MapView exposes on the canvas. */
 const tapWorld = async (x, y) => {
   const at = await page.$eval(
@@ -1084,6 +1093,348 @@ for (const reduced of [false, true]) {
     await menu();
     if (await p.locator('.menu label:has-text("Sound effects") input').isChecked()) problems.push('sound toggle did not remember off after reload');
   }
+  await ctx.close();
+}
+
+// 13. The Room step: with the fixture tables loaded the exit type step is skipped and the label step rolls.
+{
+  const ctx = await browser.newContext({ viewport: { width: 1180, height: 820 }, deviceScaleFactor: 2, hasTouch: true, reducedMotion: 'reduce' });
+  await ctx.addInitScript(() => localStorage.setItem('2d6.installHintDismissed', '1'));
+  const p = await ctx.newPage();
+  p.on('pageerror', (e) => errors.push(e.message));
+  await p.goto(url, { waitUntil: 'load' });
+  await p.waitForTimeout(800);
+  const tag = 'room roll';
+  const tap = async (x, y) => {
+    const at = await p.$eval('canvas', (c, [wx, wy]) => {
+      const [cx, cy, sc] = (c.dataset.camera ?? '').split(',').map(Number);
+      const r = c.getBoundingClientRect();
+      return { x: r.left + (wx - cx) * sc, y: r.top + (wy - cy) * sc };
+    }, [x, y]);
+    await p.mouse.click(at.x, at.y);
+    await p.waitForTimeout(150);
+  };
+  const btn = (name) => p.click(`aside.panel button:text-is("${name}")`);
+  const stepNow = () => p.getAttribute('aside.panel .body', 'data-step');
+  const dice = async (...v) => {
+    const ins = await p.$$('aside.panel form.dice input');
+    for (let i = 0; i < v.length; i++) await ins[i].fill(v[i]);
+  };
+  const fixtureObj2 = JSON.parse(readFileSync('tests/fixtures/dungeon-tables.fixture.json').toString());
+  const load = async (obj) => {
+    await p.setInputFiles('input[data-extra="tables"]', { name: 'tables.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(obj)) });
+    await p.waitForTimeout(500);
+  };
+  const undo = async () => (await p.textContent('header.toolbar button.history'))?.replace(/\s+/g, ' ').trim() ?? '';
+  await load(fixtureObj2);
+  await tap(12.5, 25.5);
+  await dice('3', '4');
+  await btn('Use these');
+  await btn('Place');
+  await btn('Done');
+  await btn('Done');
+  await p.waitForTimeout(1500);
+  const roomUndo0 = await undo();
+  await tap(12.5, 20);
+  await dice('3', '4');
+  await btn('Use these');
+  await btn('Place');
+  await dice('4');
+  await btn('Use this');
+  if ((await stepNow()) !== 'exits') problems.push(`${tag}: expected the exits step (no exit type step), got ${await stepNow()}`);
+  await dice('3');
+  await btn('Place for me');
+  await btn('Done');
+  if ((await stepNow()) !== 'label') problems.push(`${tag}: expected the label step, got ${await stepNow()}`);
+  await dice('3', '4');
+  await btn('Use these');
+  const resultText = (await p.textContent('[data-testid=room-result]'))?.replace(/\s+/g, ' ').trim() ?? '';
+  console.log(`${tag}: "${resultText}"`);
+  if (!resultText.includes('Practice Room 34')) problems.push(`${tag}: result missing the room type: "${resultText}"`);
+  if (!/Wooden/i.test(resultText) || !/locked/.test(resultText)) problems.push(`${tag}: result missing the exit: "${resultText}"`);
+  const faces = await p.$$eval('[data-testid=room-result] [role=img]', (els) => els.map((e) => e.getAttribute('aria-label')));
+  if (faces.join() !== 'red 3,blue 4') problems.push(`${tag}: result faces ${faces.join()}`);
+  await checkPanelOn(p, tag);
+  await shot('45-room-roll.png', p);
+  await btn('Done');
+  await p.waitForTimeout(1500);
+  if (await p.isVisible('text=/Autosave isn.t working/')) problems.push(`${tag}: autosave banner after the room roll`);
+  const after = await undo();
+  if (!after.includes('Add Room 2')) problems.push(`${tag}: undo label "${after}"`);
+  await shot('46-room-rolled.png', p);
+  await p.click('header.toolbar button.history');
+  await p.waitForTimeout(300);
+  if ((await undo()) !== roomUndo0) problems.push(`${tag}: one undo did not remove the whole room (now "${await undo()}", was "${roomUndo0}")`);
+
+  // A level the table file has no tables for: the message, Skip, then the manual form with an exit type chooser.
+  const bare = structuredClone(fixtureObj2);
+  delete bare.tables.dungeonLevels;
+  await load(bare);
+  await tap(12.5, 20);
+  await dice('3', '4');
+  await btn('Use these');
+  await btn('Place');
+  await dice('4');
+  await btn('Use this');
+  if ((await stepNow()) !== 'exitType') problems.push(`${tag}: no-level table file should keep the exit type step, got ${await stepNow()}`);
+  await p.click('aside.panel button:has-text("Wooden door")');
+  await dice('3');
+  await btn('Place for me');
+  await btn('Done');
+  if (!(await p.isVisible('[data-testid=no-level-tables]'))) problems.push(`${tag}: no-level message missing`);
+  await shot('47-no-level-tables.png', p);
+  await btn('Skip');
+  if (!(await p.isVisible('aside.panel input[placeholder="e.g. Lamp Room"]'))) problems.push(`${tag}: Skip did not show the manual label form`);
+  await checkPanelOn(p, `${tag} (skipped)`);
+  await ctx.close();
+}
+
+// 14. Roll later: skip a room's roll, then roll for it from the Select inspector.
+{
+  const ctx = await browser.newContext({ viewport: { width: 1180, height: 820 }, deviceScaleFactor: 2, hasTouch: true, reducedMotion: 'reduce' });
+  await ctx.addInitScript(() => localStorage.setItem('2d6.installHintDismissed', '1'));
+  const p = await ctx.newPage();
+  p.on('pageerror', (e) => errors.push(e.message));
+  await p.goto(url, { waitUntil: 'load' });
+  await p.waitForTimeout(800);
+  const tag = 'roll later';
+  const tap = async (x, y) => {
+    const at = await p.$eval('canvas', (c, [wx, wy]) => {
+      const [cx, cy, sc] = (c.dataset.camera ?? '').split(',').map(Number);
+      const r = c.getBoundingClientRect();
+      return { x: r.left + (wx - cx) * sc, y: r.top + (wy - cy) * sc };
+    }, [x, y]);
+    await p.mouse.click(at.x, at.y);
+    await p.waitForTimeout(150);
+  };
+  const btn = (name) => p.click(`aside.panel button:text-is("${name}")`);
+  const tool = (name) => p.click(`header.toolbar button.tool:text-is("${name}")`);
+  const dice = async (...v) => {
+    const ins = await p.$$('aside.panel form.dice input');
+    for (let i = 0; i < v.length; i++) await ins[i].fill(v[i]);
+  };
+  const undo = async () => (await p.textContent('header.toolbar button.history'))?.replace(/\s+/g, ' ').trim() ?? '';
+  const doorNow = async (x, y) => {
+    await tool('Door');
+    await tap(x, y);
+    const pressed = await p.$$eval('aside.panel [data-editor=door] button[aria-pressed=true]', (els) => els.map((e) => e.textContent?.trim()));
+    await tool('Select');
+    return pressed.join('+');
+  };
+  await p.setInputFiles('input[data-extra="tables"]', { name: 'tables.json', mimeType: 'application/json', buffer: Buffer.from(readFileSync('tests/fixtures/dungeon-tables.fixture.json')) });
+  await p.waitForTimeout(500);
+  await tap(12.5, 25.5);
+  await dice('3', '4');
+  await btn('Use these');
+  await btn('Place');
+  await btn('Done');
+  await btn('Done');
+  await p.waitForTimeout(1500);
+  await tap(12.5, 20);
+  await dice('3', '4');
+  await btn('Use these');
+  await btn('Place');
+  await dice('4');
+  await btn('Use this');
+  await dice('3');
+  await btn('Place for me');
+  await btn('Done');
+  await btn('Skip'); // skip the roll
+  await btn('Skip'); // and leave the room unlabelled
+  await p.waitForTimeout(1500);
+  const level = (await p.textContent('[data-testid=level-indicator]'))?.trim();
+  if (level !== 'Level 1 · Test Halls') problems.push(`${tag}: level indicator is "${level}"`);
+  await tool('Select');
+  const roomAt = [12.5, 18.5];
+  const entry = [12.5, 20.5];
+  const exitE = [14, 17.5];
+  const exitN = [12.5, 16];
+  const before = [await doorNow(...entry), await doorNow(...exitE), await doorNow(...exitN)];
+  await tap(...roomAt);
+  if (!(await p.isVisible('aside.panel button:text-is("Roll for this room")'))) problems.push(`${tag}: no "Roll for this room" button`);
+  await shot('48a-roll-later-button.png', p);
+  await btn('Roll for this room');
+  await dice('3', '4');
+  await btn('Use these');
+  const result = (await p.textContent('[data-testid=room-result]'))?.replace(/\s+/g, ' ').trim() ?? '';
+  console.log(`${tag}: "${result}"`);
+  if (!result.includes('Practice Room 34') || !/Wooden/i.test(result) || !/locked/.test(result)) problems.push(`${tag}: bad result "${result}"`);
+  await btn('Apply');
+  await p.waitForTimeout(2500);
+  if (await p.isVisible('text=/Autosave isn.t working/')) problems.push(`${tag}: autosave banner after Apply`);
+  if (!(await undo()).includes('Roll room 2')) problems.push(`${tag}: undo label "${await undo()}"`);
+  const after = [await doorNow(...entry), await doorNow(...exitE), await doorNow(...exitN)];
+  console.log(`${tag}: doors before ${before.join(' | ')}; after ${after.join(' | ')}`);
+  if (after[0] !== before[0]) problems.push(`${tag}: entry door changed (${before[0]} -> ${after[0]})`);
+  for (const i of [1, 2]) if (!after[i].includes('Wooden door')) problems.push(`${tag}: exit ${i} is "${after[i]}", expected Wooden door`);
+  await tap(...roomAt);
+  const insp = (await p.innerText('aside.panel [data-editor="room"]')).replace(/\s+/g, ' ').trim();
+  console.log(`${tag}: inspector "${insp}"`);
+  if (!insp.includes('Nothing but invented dust (34).')) problems.push(`${tag}: inspector missing the encounter text`);
+  const typeValue = await p.inputValue('aside.panel [data-editor="room"] input[type="text"]');
+  if (typeValue !== 'Practice Room 34') problems.push(`${tag}: room type "${typeValue}"`);
+  if (await p.isVisible('aside.panel button:text-is("Roll for this room")')) problems.push(`${tag}: roll button still shown after rolling`);
+  await checkPanelOn(p, tag);
+  await shot('48-roll-later.png', p);
+  // One undo takes the whole roll back.
+  await p.click('header.toolbar button.history');
+  await p.waitForTimeout(300);
+  if (!(await p.isVisible('aside.panel button:text-is("Roll for this room")'))) problems.push(`${tag}: undo did not remove the roll`);
+  if ((await doorNow(...exitE)) !== before[1]) problems.push(`${tag}: undo did not restore the exit type`);
+  await ctx.close();
+}
+
+// 15. Going down a level: stairs down, the ration rule, the new level, reload, the read-only viewer, export.
+{
+  const ctx = await browser.newContext({ viewport: { width: 1180, height: 820 }, deviceScaleFactor: 2, hasTouch: true, reducedMotion: 'reduce', acceptDownloads: true });
+  await ctx.addInitScript(() => localStorage.setItem('2d6.installHintDismissed', '1'));
+  const p = await ctx.newPage();
+  p.on('pageerror', (e) => errors.push(e.message));
+  await p.goto(url, { waitUntil: 'load' });
+  await p.waitForTimeout(800);
+  const tag = 'go down';
+  const tap = async (x, y) => {
+    const at = await p.$eval('canvas', (c, [wx, wy]) => {
+      const [cx, cy, sc] = (c.dataset.camera ?? '').split(',').map(Number);
+      const r = c.getBoundingClientRect();
+      return { x: r.left + (wx - cx) * sc, y: r.top + (wy - cy) * sc };
+    }, [x, y]);
+    await p.mouse.click(at.x, at.y);
+    await p.waitForTimeout(150);
+  };
+  const btn = (name) => p.click(`aside.panel button:text-is("${name}")`);
+  const dice = async (...v) => {
+    const ins = await p.$$('aside.panel form.dice input');
+    for (let i = 0; i < v.length; i++) await ins[i].fill(v[i]);
+  };
+  const wiz = (t) => p.click(`[role=dialog][aria-labelledby=wizard-title] button:text-is("${t}")`);
+  const menu = () => p.click('header.toolbar button[aria-label="Menu"]');
+  const banner = async (where) => {
+    if (await p.isVisible('text=/Autosave isn.t working/')) problems.push(`${tag}: autosave banner ${where}`);
+  };
+  const saved = () =>
+    p.evaluate(
+      () =>
+        new Promise((resolve, reject) => {
+          const r = indexedDB.open('2d6-map-maker', 1);
+          r.onsuccess = () => {
+            const g = r.result.transaction('saves').objectStore('saves').get('current');
+            g.onsuccess = () => resolve(g.result ?? null);
+            g.onerror = () => reject(g.error);
+          };
+          r.onerror = () => reject(r.error);
+        }),
+    );
+  await p.setInputFiles('input[data-extra="tables"]', { name: 'tables.json', mimeType: 'application/json', buffer: Buffer.from(readFileSync('tests/fixtures/dungeon-tables.fixture.json')) });
+  await p.waitForTimeout(500);
+  await menu();
+  await p.click('[role=menuitem]:text-is("New game…")');
+  await wiz('Next');
+  await p.fill('[aria-labelledby=wizard-title] input[type=text]', 'Pip Stairs');
+  await wiz('Next');
+  await p.click('.weapon:has-text("Practice Sword")');
+  await p.click('.mtable .row:has-text("Wobbly Poke")');
+  await p.click('.mtable .row:has-text("Gentle Swipe")');
+  await wiz('Next');
+  await p.click('.option:has-text("Padded Tablecloth")');
+  await wiz('Next');
+  await p.click('.option:has-text("Scroll of Mild Glow")');
+  await wiz('Next');
+  await wiz('Begin');
+  await p.waitForTimeout(500);
+  if (await p.isVisible('[role=alertdialog] button:text-is("Replace")')) await p.click('[role=alertdialog] button:text-is("Replace")');
+  await p.waitForTimeout(800);
+  await tap(12.5, 25.5);
+  await dice('3', '4');
+  await btn('Use these');
+  await btn('Place');
+  await btn('Done');
+  await btn('Done');
+  await p.waitForTimeout(1500);
+  if (await p.isVisible('[data-testid=go-down]')) problems.push(`${tag}: Go down offered before any stairs`);
+  await p.click('header.toolbar button.tool:text-is("Stairs")');
+  await tap(12.5, 23.5);
+  await p.waitForTimeout(300);
+  const goLabel = (await p.textContent('[data-testid=go-down]'))?.trim();
+  if (goLabel !== 'Go down to Level 2') problems.push(`${tag}: button reads "${goLabel}"`);
+  await checkPanelOn(p, tag);
+  await shot('49-stairs.png', p);
+  await p.click('[data-testid=go-down]');
+  await p.waitForSelector('[data-testid=stairs-dialog]');
+  const dlg = (await p.innerText('[data-testid=stairs-dialog]')).replace(/\s+/g, ' ');
+  console.log(`${tag}: dialog "${dlg}"`);
+  if (!/Eat a ration/.test(dlg) || !/Don't eat/.test(dlg) || !/Cloth or bandage/.test(dlg)) problems.push(`${tag}: dialog text "${dlg}"`);
+  const undoDlg = await p.textContent('header.toolbar button.history');
+  await p.keyboard.press('Control+z');
+  await p.keyboard.press('Control+y');
+  await p.waitForTimeout(200);
+  if ((await p.textContent('header.toolbar button.history')) !== undoDlg) problems.push(`${tag}: Ctrl+Z/Y changed history behind the stairs dialog`);
+  const before = (await saved()).history.hero;
+  await p.click('[data-testid=stairs-dialog] button:has-text("Eat a ration")');
+  await p.waitForTimeout(2000);
+  await banner('after going down');
+  const level = (await p.textContent('[data-testid=level-indicator]'))?.trim();
+  if (!level?.startsWith('Level 2')) problems.push(`${tag}: level indicator "${level}"`);
+  const rec = await saved();
+  const hero = rec.history.hero;
+  console.log(`${tag}: rations ${before.rations} -> ${hero.rations}, hp ${before.hp} -> ${hero.hp}, level ${rec.history.current.level}, earlier ${rec.meta.earlierLevels.length}`);
+  if (hero.rations !== before.rations - 1) problems.push(`${tag}: rations ${before.rations} -> ${hero.rations}`);
+  if (rec.history.current.level !== 2 || rec.history.current.rooms.length !== 0) problems.push(`${tag}: new map is not a fresh Level 2`);
+  if (rec.meta.earlierLevels.length !== 1 || rec.meta.earlierLevels[0].level !== 1) problems.push(`${tag}: earlier levels not kept`);
+  if (!(await p.isDisabled('header.toolbar button.history'))) problems.push(`${tag}: undo should start empty on the new level`);
+  await shot('49a-level-2.png', p);
+  // The new level's entrance: three archways, no doubles (1-1 stays a 1x1... the clamp applies, no second roll).
+  await p.click('header.toolbar button.tool:text-is("Play")');
+  await tap(12.5, 25.5);
+  await dice('2', '2');
+  await btn('Use these');
+  const stepAfter = await p.getAttribute('aside.panel .body', 'data-step');
+  if (stepAfter !== 'position') problems.push(`${tag}: doubles on the entrance asked for a second roll (step ${stepAfter})`);
+  await btn('Place');
+  const exitsStep = await p.getAttribute('aside.panel .body', 'data-step');
+  if (exitsStep !== 'exits') problems.push(`${tag}: entrance did not go to exits (step ${exitsStep})`);
+  await btn('Done');
+  await p.waitForTimeout(300);
+  await btn('Done');
+  await p.waitForTimeout(1500);
+  const rec2 = await saved();
+  const doors = rec2.history.current.doors.map((d) => d.type);
+  console.log(`${tag}: level 2 doors ${doors.join(',')}`);
+  const exitStubs = rec2.history.current.rooms.filter((r) => r.kind === 'passage').length;
+  if (exitStubs !== 3 || doors.some((t) => t !== 'archway')) problems.push(`${tag}: expected 3 archway exits, got ${exitStubs} stubs and doors ${doors.join(',')}`);
+  // Reload.
+  await p.reload({ waitUntil: 'load' });
+  await p.waitForTimeout(1200);
+  const level2 = (await p.textContent('[data-testid=level-indicator]'))?.trim();
+  if (!level2?.startsWith('Level 2')) problems.push(`${tag}: after reload the level is "${level2}"`);
+  await banner('after reload');
+  // Earlier levels, read-only.
+  await menu();
+  await p.click('[role=menuitem]:has-text("Level 1")');
+  await p.waitForSelector('[data-testid=level-viewer]');
+  const undoBefore = await p.textContent('header.toolbar button.history');
+  await p.keyboard.press('Control+z');
+  await p.keyboard.press('Control+y');
+  await p.waitForTimeout(200);
+  if ((await p.textContent('header.toolbar button.history')) !== undoBefore) problems.push(`${tag}: Ctrl+Z/Y changed history behind the level viewer`);
+  const c = await p.$('[data-testid=level-viewer] canvas');
+  const box = await c.boundingBox();
+  await p.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  await p.waitForTimeout(300);
+  await shot('50-earlier-level.png', p);
+  await p.click('[data-testid=level-viewer] button:text-is("Close")');
+  await p.waitForTimeout(300);
+  if ((await p.textContent('header.toolbar button.history')) !== undoBefore) problems.push(`${tag}: viewing an earlier level changed the undo step`);
+  if (await p.isVisible('[data-testid=level-viewer]')) problems.push(`${tag}: viewer did not close`);
+  const after = await saved();
+  if (JSON.stringify(after.meta.earlierLevels) !== JSON.stringify(rec2.meta.earlierLevels)) problems.push(`${tag}: earlier level changed while viewing`);
+  // Export holds both maps.
+  await menu();
+  const [dl] = await Promise.all([p.waitForEvent('download'), p.click('[role=menuitem]:text-is("Export game")')]);
+  const exported = JSON.parse(readFileSync(await dl.path(), 'utf8'));
+  console.log(`${tag}: export holds ${exported.maps?.length} maps`);
+  if (exported.maps?.length !== 2) problems.push(`${tag}: export has ${exported.maps?.length} maps`);
+  await banner('at the end');
   await ctx.close();
 }
 

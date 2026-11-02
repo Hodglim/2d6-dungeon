@@ -148,7 +148,7 @@ A short, complete, valid example (copy it and replace the made-up values with yo
 - `format`: always `1`. A higher number is refused as made by a newer version of the app.
 - `systemId`: always `"dungeon"`.
 - `name`: any label for your own use.
-- `tables`: the tables below. Every one is required.
+- `tables`: the tables below. Every one is required except `dungeonLevels` and `exitTables`.
 
 Dice are lists of faces, each a whole number 1 to 6, in printed order with the primary (red) die first.
 
@@ -237,6 +237,56 @@ Where to find them: Core Rules, p. 39, the sheet.
 ```
 
 `gods` is the list of gods to choose from. `bloodied` and `soaked` give a label and a number of boxes; `fever` and `pneumonia` give a label and an effect text. `favourBoxes` is how many favour boxes the sheet shows. `limits` is how many potions, scrolls, large items and armour you may carry. Limits only warn on the sheet; they never stop you editing.
+
+## dungeonLevels and exitTables (optional)
+
+Where to find them: Core Rules p. 13; Tables Codex pp. 35, 40, 42-43 and 46 for Level 1. Deeper levels are listed in the Codex contents. Both keys are optional: a file without them still loads, and the Room step then has nothing to roll on. (`dungeonLevels` is separate from `levels` above, which holds the hero's character levels.)
+
+`dungeonLevels` has one entry per dungeon level (1 to 10, each used once). Add entries as you reach deeper levels. Each entry has:
+
+- `level` and `name`: the level number, and the name the book gives it (any text).
+- `exitTable`: the name of a table in `exitTables` that this level uses when an exit is "Random".
+- `rooms`: the Rooms table, a D66 roll. All 36 keys `11` to `66` (red die first, then blue).
+- `smallRooms` and `largeRooms`: 2D6 rolls. All keys `2` to `12`.
+
+Each `rooms` or `largeRooms` entry has `type`, `description`, `encounter` (text), `exit` and `unique` (`true` or `false`). Each `smallRooms` entry has `type`, `description` and `unique` only; small rooms always have archway exits. `unique: true` means that room type appears at most once per level; if it is rolled again, the app rolls again.
+
+`exit` is either `"random"` (roll on the level's Exit Type table) or an object with a `door` and an optional `locked: true`. The `door` must be one of: `archway`, `wooden`, `metal`, `reinforced`, `curtain`, `portcullis`, `stoneSlab`.
+
+Mapping from the book's wording:
+
+| Book wording | `door` |
+| --- | --- |
+| Archways | `archway` |
+| Wooden Doors | `wooden` |
+| Reinforced Doors | `reinforced` |
+| Metal Doors | `metal` |
+| Curtains | `curtain` |
+| Portcullises | `portcullis` |
+| Stone slab | `stoneSlab` (enter it directly) |
+| "... all locked" | add `"locked": true` |
+
+`exitTables` maps a table name (such as `EXT1`) to a D66 table: all 36 keys `11` to `66`, each `{ "door": ... }` with an optional `locked`. These tables cannot say `"random"`.
+
+The snippet below is NOT a complete file and would be refused as it stands. It is a made-up example, cut down to a few keys for reading (a real file needs every key, so the lists below are shortened with "..."):
+
+```text
+"dungeonLevels": [
+  { "level": 1, "name": "Test Halls", "exitTable": "EXT1",
+    "rooms": {
+      "11": { "type": "Practice Room", "description": "A made-up room.", "encounter": "Only invented dust.",
+              "exit": { "door": "wooden", "locked": true }, "unique": false },
+      "12": { "type": "Spare Room", "description": "Another made-up room.", "encounter": "None.",
+              "exit": "random", "unique": true },
+      ...
+    },
+    "smallRooms": { "2": { "type": "Practice Closet", "description": "A made-up closet.", "unique": false }, ... },
+    "largeRooms": { "2": { "type": "Practice Hall", "description": "A made-up hall.", "encounter": "None.",
+                           "exit": { "door": "archway" }, "unique": false }, ... } } ],
+"exitTables": {
+  "EXT1": { "11": { "door": "archway" }, "12": { "door": "curtain", "locked": true }, ... }
+}
+```
 
 ## Creature cards
 

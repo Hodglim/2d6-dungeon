@@ -1,9 +1,10 @@
 <script lang="ts">
   import type { Command } from '../core/commands';
   import type { ExecResult } from '../core/history';
-  import { openExits } from '../core/query';
+  import { coverage, openExits } from '../core/query';
   import type { DungeonMap } from '../core/types';
   import type { PlayFlow, Step } from '../interaction/playflow';
+  import type { DungeonTables } from '../systems/dungeon/tables';
   import type { Tool } from './historyStore';
   import ExitCountStep from './steps/ExitCountStep.svelte';
   import ExitsStep from './steps/ExitsStep.svelte';
@@ -34,11 +35,17 @@
     /** Runs an editor's command through History; false (reason in the notice) when rejected. */
     onexec: (cmd: Command | null) => boolean;
     onselect: (s: Selection | null) => void;
+    /** The loaded table file, for rolling a room later from the inspector. */
+    tables?: DungeonTables | null;
+    /** "Level N · Name", shown at the top of the panel. */
+    levelText?: string;
+    /** Opens the stairs dialog; the Go down button shows only while this is given. */
+    ongodown?: () => void;
     collapsed: boolean;
     ontoggle: () => void;
   }
 
-  let { tool, map, flow, step, notice, gapMode, ongapmode, oncommit, selection, onexec, onselect, collapsed, ontoggle }: Props = $props();
+  let { tool, map, flow, step, notice, gapMode, ongapmode, oncommit, selection, onexec, onselect, tables = null, levelText = '', ongodown, collapsed, ontoggle }: Props = $props();
 
   /** Remounts an editor (fresh drafts) when a different thing is selected. */
   function selectionKey(s: Selection): string {
@@ -84,6 +91,9 @@
   const playing = $derived(tool === 'play' && step.kind !== 'idle');
   const hint = $derived(hintFor(tool, map));
   const message = $derived(tool === 'play' && step.kind === 'idle' ? (step.error ?? notice) : notice);
+  const hasStairsDown = $derived(map.features.some((f) => f.kind === 'stairs' && f.dir === 'down'));
+  const canGoDown = $derived(hasStairsDown && map.level < 10 && !!ongodown);
+  const readyHint = $derived(!hasStairsDown && coverage(map) >= 0.75);
   const canGap = $derived(tool === 'play' && map.rooms.length > 0 && openExits(map).length > 0);
 </script>
 
@@ -93,6 +103,7 @@
   </button>
   {#if !collapsed}
     <div class="body" data-step={playing ? step.kind : 'idle'}>
+      {#if levelText}<p class="level" data-testid="level-indicator">{levelText}</p>{/if}
       {#if playing}
         {#if step.kind === 'size'}
           <SizeStep {flow} {step} />
@@ -128,9 +139,16 @@
             {:else if tool === 'note' && (selection.kind === 'feature' || selection.kind === 'newNote')}
               <NoteEditor {map} {selection} {onexec} {onselect} />
             {:else if tool === 'select' && selection.kind === 'room'}
-              <RoomInspector {map} roomId={selection.roomId} {onexec} />
+              <RoomInspector {map} roomId={selection.roomId} {onexec} {tables} />
             {/if}
           {/key}
+        {/if}
+        {#if canGoDown}
+          <div class="row">
+            <button class="primary" data-testid="go-down" onclick={ongodown}>Go down to Level {map.level + 1}</button>
+          </div>
+        {:else if readyHint}
+          <p class="notice" data-testid="finish-hint">Ready to finish this level? Place the stairs down in the final room.</p>
         {/if}
         {#if canGap}
           <div class="row">
@@ -203,6 +221,12 @@
     background: var(--paper-dim);
     border-left: 4px solid var(--muted);
     font-size: 17px !important;
+  }
+  .level {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--muted);
   }
   .body :global(.row) {
     display: flex;

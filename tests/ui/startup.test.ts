@@ -9,7 +9,7 @@ import { dungeonSystem } from '../../src/systems/dungeon';
 import { addRoom } from '../../src/core/commands';
 import { room } from '../core/fixtures';
 
-const meta = { id: 'c1', name: 'Test', systemId: dungeonSystem.id };
+const meta = { id: 'c1', name: 'Test', systemId: dungeonSystem.id, earlierLevels: [] };
 const newHistory = () => new History(createMap(dungeonSystem, { width: 25, height: 25 }));
 const record = (h = newHistory()) => JSON.parse(JSON.stringify(encodeSave(meta, h.exportState())));
 
@@ -28,7 +28,7 @@ describe('decideStartup', () => {
     }
   });
 
-  it('a format 2 record with a null hero restores with labels intact', () => {
+  it('a format 3 record with a null hero restores with labels intact', () => {
     const h = newHistory();
     h.execute(addRoom(room('r1', 2, 2, 3, 3, 'room', 1)));
     const res = decideStartup(record(h), dungeonSystem.heroProblem);
@@ -49,8 +49,8 @@ describe('decideStartup', () => {
     expect(JSON.stringify(r)).toBe(before);
   });
 
-  it('a format 3 record is the newer-version error', () => {
-    const res = decideStartup({ ...record(), format: 3 });
+  it('a format 4 record is the newer-version error', () => {
+    const res = decideStartup({ ...record(), format: 4 });
     expect(res.kind === 'error' && res.error).toContain('newer version');
   });
 
