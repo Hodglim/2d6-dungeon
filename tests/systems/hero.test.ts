@@ -3,7 +3,7 @@ import fixture from '../fixtures/dungeon-tables.fixture.json';
 import { parseTableFile } from '../../src/systems/dungeon/tables';
 import type { DungeonTables } from '../../src/systems/dungeon/tables';
 import {
-  createHero, creationProblem, heroEdit, heroProblem, levelUp, levelUpAvailable, listLimit, overLimit,
+  canEat, createHero, creationProblem, heroEdit, heroProblem, levelUp, levelUpAvailable, listLimit, overLimit, restOnStairs,
   type CreationChoices, type Hero,
 } from '../../src/systems/dungeon/hero';
 
@@ -113,5 +113,30 @@ describe('heroEdit', () => {
     expect(heroEdit({ ...h, largeItems: ['Rope', 'Rope'] }, rope)).toBe('Remove Rope');
     expect(heroEdit(h, { ...h, hp: 1, xp: 5 })).toBe('Edit hero');
     expect(heroEdit(h, { ...h, notes: 'x' })).toBe('Edit hero');
+  });
+});
+
+describe('restOnStairs', () => {
+  const h = (o: Partial<Hero>): Hero => ({ ...hero(), level: 2, hp: 5, hpBaseline: 20, rations: 2, ...o });
+  it('eating heals 2 per level plus 2 with a bandage, and uses a ration', () => {
+    const r = restOnStairs(h({}), { eat: true, bandage: true });
+    expect([r.hp, r.rations]).toEqual([11, 1]);
+    expect(restOnStairs(h({}), { eat: true, bandage: false }).hp).toBe(9);
+  });
+  it('eating at or above the baseline changes no HP', () => {
+    const r = restOnStairs(h({ hp: 25 }), { eat: true, bandage: true });
+    expect([r.hp, r.rations]).toEqual([25, 1]);
+  });
+  it('not eating loses half the HP, capped at 20', () => {
+    expect(restOnStairs(h({ hp: 50 }), { eat: false, bandage: false }).hp).toBe(30);
+    expect(restOnStairs(h({ hp: 7 }), { eat: false, bandage: false }).hp).toBe(4);
+    expect(restOnStairs(h({ hp: 0 }), { eat: false, bandage: false }).hp).toBe(0);
+    expect(restOnStairs(h({ hp: -3 }), { eat: false, bandage: false }).hp).toBe(-3);
+  });
+  it('wanting to eat with no rations falls back to not eating', () => {
+    const r = restOnStairs(h({ rations: 0, hp: 10 }), { eat: true, bandage: false });
+    expect([r.hp, r.rations]).toEqual([5, 0]);
+    expect(canEat(h({ rations: 0 }))).toBe(false);
+    expect(canEat(h({}))).toBe(true);
   });
 });

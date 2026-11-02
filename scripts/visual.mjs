@@ -1284,6 +1284,151 @@ for (const reduced of [false, true]) {
   await ctx.close();
 }
 
+// 15. Going down a level: stairs down, the ration rule, the new level, reload, the read-only viewer, export.
+{
+  const ctx = await browser.newContext({ viewport: { width: 1180, height: 820 }, deviceScaleFactor: 2, hasTouch: true, reducedMotion: 'reduce', acceptDownloads: true });
+  await ctx.addInitScript(() => localStorage.setItem('2d6.installHintDismissed', '1'));
+  const p = await ctx.newPage();
+  p.on('pageerror', (e) => errors.push(e.message));
+  await p.goto(url, { waitUntil: 'load' });
+  await p.waitForTimeout(800);
+  const tag = 'go down';
+  const tap = async (x, y) => {
+    const at = await p.$eval('canvas', (c, [wx, wy]) => {
+      const [cx, cy, sc] = (c.dataset.camera ?? '').split(',').map(Number);
+      const r = c.getBoundingClientRect();
+      return { x: r.left + (wx - cx) * sc, y: r.top + (wy - cy) * sc };
+    }, [x, y]);
+    await p.mouse.click(at.x, at.y);
+    await p.waitForTimeout(150);
+  };
+  const btn = (name) => p.click(`aside.panel button:text-is("${name}")`);
+  const dice = async (...v) => {
+    const ins = await p.$$('aside.panel form.dice input');
+    for (let i = 0; i < v.length; i++) await ins[i].fill(v[i]);
+  };
+  const wiz = (t) => p.click(`[role=dialog][aria-labelledby=wizard-title] button:text-is("${t}")`);
+  const menu = () => p.click('header.toolbar button[aria-label="Menu"]');
+  const banner = async (where) => {
+    if (await p.isVisible('text=/Autosave isn.t working/')) problems.push(`${tag}: autosave banner ${where}`);
+  };
+  const saved = () =>
+    p.evaluate(
+      () =>
+        new Promise((resolve, reject) => {
+          const r = indexedDB.open('2d6-map-maker', 1);
+          r.onsuccess = () => {
+            const g = r.result.transaction('saves').objectStore('saves').get('current');
+            g.onsuccess = () => resolve(g.result ?? null);
+            g.onerror = () => reject(g.error);
+          };
+          r.onerror = () => reject(r.error);
+        }),
+    );
+  await p.setInputFiles('input[data-extra="tables"]', { name: 'tables.json', mimeType: 'application/json', buffer: Buffer.from(readFileSync('tests/fixtures/dungeon-tables.fixture.json')) });
+  await p.waitForTimeout(500);
+  await menu();
+  await p.click('[role=menuitem]:text-is("New game…")');
+  await wiz('Next');
+  await p.fill('[aria-labelledby=wizard-title] input[type=text]', 'Pip Stairs');
+  await wiz('Next');
+  await p.click('.weapon:has-text("Practice Sword")');
+  await p.click('.mtable .row:has-text("Wobbly Poke")');
+  await p.click('.mtable .row:has-text("Gentle Swipe")');
+  await wiz('Next');
+  await p.click('.option:has-text("Padded Tablecloth")');
+  await wiz('Next');
+  await p.click('.option:has-text("Scroll of Mild Glow")');
+  await wiz('Next');
+  await wiz('Begin');
+  await p.waitForTimeout(500);
+  if (await p.isVisible('[role=alertdialog] button:text-is("Replace")')) await p.click('[role=alertdialog] button:text-is("Replace")');
+  await p.waitForTimeout(800);
+  await tap(12.5, 25.5);
+  await dice('3', '4');
+  await btn('Use these');
+  await btn('Place');
+  await btn('Done');
+  await btn('Done');
+  await p.waitForTimeout(1500);
+  if (await p.isVisible('[data-testid=go-down]')) problems.push(`${tag}: Go down offered before any stairs`);
+  await p.click('header.toolbar button.tool:text-is("Stairs")');
+  await tap(12.5, 23.5);
+  await p.waitForTimeout(300);
+  const goLabel = (await p.textContent('[data-testid=go-down]'))?.trim();
+  if (goLabel !== 'Go down to Level 2') problems.push(`${tag}: button reads "${goLabel}"`);
+  await checkPanelOn(p, tag);
+  await shot('49-stairs.png', p);
+  await p.click('[data-testid=go-down]');
+  await p.waitForSelector('[data-testid=stairs-dialog]');
+  const dlg = (await p.innerText('[data-testid=stairs-dialog]')).replace(/\s+/g, ' ');
+  console.log(`${tag}: dialog "${dlg}"`);
+  if (!/Eat a ration/.test(dlg) || !/Don't eat/.test(dlg) || !/Cloth or bandage/.test(dlg)) problems.push(`${tag}: dialog text "${dlg}"`);
+  const before = (await saved()).history.hero;
+  await p.click('[data-testid=stairs-dialog] button:has-text("Eat a ration")');
+  await p.waitForTimeout(2000);
+  await banner('after going down');
+  const level = (await p.textContent('[data-testid=level-indicator]'))?.trim();
+  if (!level?.startsWith('Level 2')) problems.push(`${tag}: level indicator "${level}"`);
+  const rec = await saved();
+  const hero = rec.history.hero;
+  console.log(`${tag}: rations ${before.rations} -> ${hero.rations}, hp ${before.hp} -> ${hero.hp}, level ${rec.history.current.level}, earlier ${rec.meta.earlierLevels.length}`);
+  if (hero.rations !== before.rations - 1) problems.push(`${tag}: rations ${before.rations} -> ${hero.rations}`);
+  if (rec.history.current.level !== 2 || rec.history.current.rooms.length !== 0) problems.push(`${tag}: new map is not a fresh Level 2`);
+  if (rec.meta.earlierLevels.length !== 1 || rec.meta.earlierLevels[0].level !== 1) problems.push(`${tag}: earlier levels not kept`);
+  if (!(await p.isDisabled('header.toolbar button.history'))) problems.push(`${tag}: undo should start empty on the new level`);
+  await shot('49a-level-2.png', p);
+  // The new level's entrance: three archways, no doubles (1-1 stays a 1x1... the clamp applies, no second roll).
+  await p.click('header.toolbar button.tool:text-is("Play")');
+  await tap(12.5, 25.5);
+  await dice('2', '2');
+  await btn('Use these');
+  const stepAfter = await p.getAttribute('aside.panel .body', 'data-step');
+  if (stepAfter !== 'position') problems.push(`${tag}: doubles on the entrance asked for a second roll (step ${stepAfter})`);
+  await btn('Place');
+  const exitsStep = await p.getAttribute('aside.panel .body', 'data-step');
+  if (exitsStep !== 'exits') problems.push(`${tag}: entrance did not go to exits (step ${exitsStep})`);
+  await btn('Done');
+  await p.waitForTimeout(300);
+  await btn('Done');
+  await p.waitForTimeout(1500);
+  const rec2 = await saved();
+  const doors = rec2.history.current.doors.map((d) => d.type);
+  console.log(`${tag}: level 2 doors ${doors.join(',')}`);
+  const exitStubs = rec2.history.current.rooms.filter((r) => r.kind === 'passage').length;
+  if (exitStubs !== 3 || doors.some((t) => t !== 'archway')) problems.push(`${tag}: expected 3 archway exits, got ${exitStubs} stubs and doors ${doors.join(',')}`);
+  // Reload.
+  await p.reload({ waitUntil: 'load' });
+  await p.waitForTimeout(1200);
+  const level2 = (await p.textContent('[data-testid=level-indicator]'))?.trim();
+  if (!level2?.startsWith('Level 2')) problems.push(`${tag}: after reload the level is "${level2}"`);
+  await banner('after reload');
+  // Earlier levels, read-only.
+  await menu();
+  await p.click('[role=menuitem]:has-text("Level 1")');
+  await p.waitForSelector('[data-testid=level-viewer]');
+  const undoBefore = await p.textContent('header.toolbar button.history');
+  const c = await p.$('[data-testid=level-viewer] canvas');
+  const box = await c.boundingBox();
+  await p.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  await p.waitForTimeout(300);
+  await shot('50-earlier-level.png', p);
+  await p.click('[data-testid=level-viewer] button:text-is("Close")');
+  await p.waitForTimeout(300);
+  if ((await p.textContent('header.toolbar button.history')) !== undoBefore) problems.push(`${tag}: viewing an earlier level changed the undo step`);
+  if (await p.isVisible('[data-testid=level-viewer]')) problems.push(`${tag}: viewer did not close`);
+  const after = await saved();
+  if (JSON.stringify(after.meta.earlierLevels) !== JSON.stringify(rec2.meta.earlierLevels)) problems.push(`${tag}: earlier level changed while viewing`);
+  // Export holds both maps.
+  await menu();
+  const [dl] = await Promise.all([p.waitForEvent('download'), p.click('[role=menuitem]:text-is("Export game")')]);
+  const exported = JSON.parse(readFileSync(await dl.path(), 'utf8'));
+  console.log(`${tag}: export holds ${exported.maps?.length} maps`);
+  if (exported.maps?.length !== 2) problems.push(`${tag}: export has ${exported.maps?.length} maps`);
+  await banner('at the end');
+  await ctx.close();
+}
+
 await browser.close();
 if (errors.length) problems.push('page errors:\n' + errors.join('\n'));
 if (problems.length) {

@@ -226,6 +226,18 @@ export function levelUp(h: Hero): Hero {
   };
 }
 
+export const canEat = (h: Hero): boolean => h.rations > 0;
+
+/** Resting on the stairs (Core Rules p. 18): eat to heal, or lose half the current HP (at most 20). */
+export function restOnStairs(h: Hero, opts: { eat: boolean; bandage: boolean }): Hero {
+  if (opts.eat && canEat(h)) {
+    const gain = 2 * h.level + (opts.bandage ? 2 : 0);
+    return { ...h, rations: h.rations - 1, hp: Math.max(h.hp, Math.min(h.hpBaseline, h.hp + gain)) };
+  }
+  if (h.hp <= 0) return h;
+  return { ...h, hp: h.hp - Math.min(20, Math.floor(h.hp / 2)) };
+}
+
 export type ListKey = 'potions' | 'scrolls' | 'largeItems' | 'armour' | 'manoeuvres';
 
 export function listLimit(h: Hero, key: ListKey): number {

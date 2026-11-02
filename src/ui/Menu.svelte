@@ -16,9 +16,12 @@
     onloadcards: () => void;
     onremovetables: () => void;
     onremovecards: () => void;
+    /** Levels above the current one, oldest first. */
+    earlier?: { level: number; label: string }[];
+    onearlier?: (index: number) => void;
   }
 
-  let { toggles = $bindable(), onclose, onnewmap, ondemo, onfit, onexport, onimport, tablesName, cardsName, onloadtables, onloadcards, onremovetables, onremovecards }: Props = $props();
+  let { toggles = $bindable(), onclose, onnewmap, ondemo, onfit, onexport, onimport, tablesName, cardsName, onloadtables, onloadcards, onremovetables, onremovecards, earlier = [], onearlier = () => {} }: Props = $props();
 
   const toggleLabels: Record<keyof DisplayToggles, string> = {
     grid: 'Grid',
@@ -49,6 +52,12 @@
   <button role="menuitem" onclick={act(onfit)}>Fit map to screen</button>
   <button role="menuitem" onclick={act(onexport)}>Export game</button>
   <button role="menuitem" onclick={act(onimport)}>Import game…</button>
+  {#if earlier.length}
+    <h3>Earlier levels</h3>
+    {#each earlier as e, i (e.level)}
+      <button role="menuitem" onclick={act(() => onearlier(i))}>{e.label}</button>
+    {/each}
+  {/if}
   <h3>Your files</h3>
   <button role="menuitem" onclick={act(onloadtables)}>Load table file…</button>
   <div class="status" data-status="tables">

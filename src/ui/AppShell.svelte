@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { demoMap } from '../app/demo';
-  import { createCampaign } from '../core/campaign';
+  import { createCampaign, createMap } from '../core/campaign';
   import { addFeature, setHero, type Command } from '../core/commands';
   import { rectContains } from '../core/geometry';
   import { type ExecResult, History } from '../core/history';
@@ -25,7 +25,7 @@
   import { DEFAULT_TOGGLES, type DisplayToggles } from '../render/renderer';
   import { dungeonSystem } from '../systems/dungeon';
   import type { CardPack, CreatureCard } from '../systems/dungeon/cards';
-  import type { Hero } from '../systems/dungeon/hero';
+  import { restOnStairs, type Hero } from '../systems/dungeon/hero';
   import { levelLabel } from './levelLabel';
   import type { DungeonTables } from '../systems/dungeon/tables';
   import { classicTheme } from '../systems/dungeon/classic';
@@ -42,6 +42,8 @@
   import HeroPanel from './hero/HeroPanel.svelte';
   import EncounterCard from './encounter/EncounterCard.svelte';
   import EncounterPicker from './encounter/EncounterPicker.svelte';
+  import LevelViewer from './LevelViewer.svelte';
+  import StairsDialog from './StairsDialog.svelte';
   import StepPanel from './StepPanel.svelte';
   import { resolveSelection, routeEditorTap, routePlayTap, type Selection } from './tapRouting';
   import Toolbar from './Toolbar.svelte';
@@ -56,6 +58,10 @@
   const history = new History(activeMap(firstGame));
   /** Everything about the game except its map (which is the history's current). Replaced with the game. */
   let meta: CampaignMeta = metaFrom(firstGame);
+  /** Mirror of meta.earlierLevels for the UI (meta itself is not reactive). Kept in step wherever meta changes. */
+  let earlier = $state.raw<DungeonMap[]>(meta.earlierLevels);
+  let stairsOpen = $state(false);
+  let viewing = $state.raw<DungeonMap | null>(null);
   const store = new IdbSaveStore();
   const saver = new Autosaver(history, store, () => meta);
   const view = historyStore(history);
@@ -275,7 +281,10 @@
       void loadExtras(isAlive);
       return; // the autosaver stays paused and never started: the record is not touched
     }
-    if (decision.kind === 'restore') meta = decision.meta;
+    if (decision.kind === 'restore') {
+      meta = decision.meta;
+      earlier = meta.earlierLevels;
+    }
     saver.start();
     saver.resume();
     started = true;
@@ -350,6 +359,9 @@
   function replaceGame(next: CampaignMeta, map: DungeonMap, hero: unknown | null = null) {
     (document.activeElement as HTMLElement | null)?.blur?.(); // commit a half-typed field into the old game first
     meta = next;
+    earlier = next.earlierLevels;
+    stairsOpen = false;
+    viewing = null;
     heroOn = false;
     encOn = false;
     encCard = null;
@@ -436,6 +448,25 @@
     encCard = null;
     encOn = false;
     if (!heroShown) sidebar = 'steps';
+  }
+
+  /** Confirmed, one-way: keep this level's map, rest the hero, start the next level's map. */
+  function goDown(opts: { eat: boolean; bandage: boolean }) {
+    (document.activeElement as HTMLElement | null)?.blur?.(); // commit a half-typed field first
+    stairsOpen = false;
+    const old = history.map;
+    if (old.level >= 10) return;
+    const hero = history.hero as Hero | null;
+    const rested = hero ? restOnStairs(hero, opts) : null;
+    const fresh = createMap(dungeonSystem, { level: old.level + 1, width: old.width, height: old.height, title: old.title, hero: old.hero });
+    flow.cancel();
+    meta = { ...meta, earlierLevels: [...meta.earlierLevels, old] };
+    earlier = meta.earlierLevels;
+    selection = null;
+    gapMode = false;
+    notice = null;
+    history.reset(fresh, rested);
+    void saver.flush();
   }
 
   function loadDemo() {
@@ -669,6 +700,8 @@
         onloadcards={() => pickExtra(cardsInput)}
         onremovetables={() => void removeTables()}
         onremovecards={() => void removeCards()}
+        earlier={earlier.map((m) => ({ level: m.level, label: levelLabel(tables, m.level) }))}
+        onearlier={(i) => (viewing = earlier[i] ?? null)}
       />
     {/if}
   </div>
@@ -692,6 +725,7 @@
       oncommit={commit}
       {tables}
       levelText={levelLabel(tables, $view.map.level)}
+      ongodown={() => (stairsOpen = true)}
       selection={liveSelection}
       onexec={exec}
       onselect={(sel) => (selection = sel)}
@@ -788,6 +822,14 @@
   <div class="scrim">
     <p class="loading" role="status">Loading your game…</p>
   </div>
+{/if}
+
+{#if stairsOpen}
+  <StairsDialog hero={$view.hero as Hero | null} nextLevel={$view.map.level + 1} onconfirm={goDown} oncancel={() => (stairsOpen = false)} />
+{/if}
+
+{#if viewing}
+  <LevelViewer map={viewing} title={levelLabel(tables, viewing.level)} onclose={() => (viewing = null)} />
 {/if}
 
 {#if pendingReplace}
