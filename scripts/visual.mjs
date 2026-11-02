@@ -1364,6 +1364,11 @@ for (const reduced of [false, true]) {
   const dlg = (await p.innerText('[data-testid=stairs-dialog]')).replace(/\s+/g, ' ');
   console.log(`${tag}: dialog "${dlg}"`);
   if (!/Eat a ration/.test(dlg) || !/Don't eat/.test(dlg) || !/Cloth or bandage/.test(dlg)) problems.push(`${tag}: dialog text "${dlg}"`);
+  const undoDlg = await p.textContent('header.toolbar button.history');
+  await p.keyboard.press('Control+z');
+  await p.keyboard.press('Control+y');
+  await p.waitForTimeout(200);
+  if ((await p.textContent('header.toolbar button.history')) !== undoDlg) problems.push(`${tag}: Ctrl+Z/Y changed history behind the stairs dialog`);
   const before = (await saved()).history.hero;
   await p.click('[data-testid=stairs-dialog] button:has-text("Eat a ration")');
   await p.waitForTimeout(2000);
@@ -1408,6 +1413,10 @@ for (const reduced of [false, true]) {
   await p.click('[role=menuitem]:has-text("Level 1")');
   await p.waitForSelector('[data-testid=level-viewer]');
   const undoBefore = await p.textContent('header.toolbar button.history');
+  await p.keyboard.press('Control+z');
+  await p.keyboard.press('Control+y');
+  await p.waitForTimeout(200);
+  if ((await p.textContent('header.toolbar button.history')) !== undoBefore) problems.push(`${tag}: Ctrl+Z/Y changed history behind the level viewer`);
   const c = await p.$('[data-testid=level-viewer] canvas');
   const box = await c.boundingBox();
   await p.mouse.click(box.x + box.width / 2, box.y + box.height / 2);

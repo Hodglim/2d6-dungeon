@@ -194,7 +194,7 @@
   });
 
   /** A modal (menu, dialogs, start-up) is open: map taps and shortcuts are off. */
-  const modalOpen = $derived(!started || !!loadError || menuOpen || newMapOpen || !!pendingReplace || !!importError);
+  const modalOpen = $derived(!started || !!loadError || menuOpen || newMapOpen || !!pendingReplace || !!importError || stairsOpen || !!viewing);
 
   // The overlay follows the step (and the map, for idle highlights). draftMap isn't reactive,
   // but it only changes together with the step or the committed map.
