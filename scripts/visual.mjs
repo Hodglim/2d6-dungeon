@@ -1168,6 +1168,12 @@ for (const reduced of [false, true]) {
   if (faces.join() !== 'red 3,blue 4') problems.push(`${tag}: result faces ${faces.join()}`);
   await checkPanelOn(p, tag);
   await shot('45-room-roll.png', p);
+  // Picking another tool mid-placement must not drop the room.
+  for (const name of ['Door', 'Stairs', 'Note', 'Select']) {
+    if (!(await p.isDisabled(`header.toolbar button.tool:text-is("${name}")`))) problems.push(`${tag}: ${name} tool not disabled while placing a room`);
+  }
+  if (await p.isDisabled('header.toolbar button.tool:text-is("Play")')) problems.push(`${tag}: Play disabled while placing`);
+  if ((await stepNow()) !== 'label') problems.push(`${tag}: room no longer being placed (step ${await stepNow()})`);
   await btn('Done');
   await p.waitForTimeout(1500);
   if (await p.isVisible('text=/Autosave isn.t working/')) problems.push(`${tag}: autosave banner after the room roll`);
@@ -2208,6 +2214,380 @@ for (const reduced of [false, true]) {
   await p.reload({ waitUntil: 'load' });
   await p.waitForTimeout(1000);
   if (await p.isVisible(cover)) problems.push(`${tag}: Game Over came back after reloading the new game`);
+  await ctx.close();
+}
+
+// 19. The Tables pane: search, read and roll on reference tables from the fixture; chain to another
+// table by its code and come Back; the state survives switching tabs; rolls add no History step;
+// d66 has no modifier, a list has no roll; removing the table file leaves an explanation.
+{
+  const ctx = await browser.newContext({ viewport: { width: 1180, height: 820 }, deviceScaleFactor: 2, hasTouch: true, reducedMotion: 'reduce' });
+  await ctx.addInitScript(() => localStorage.setItem('2d6.installHintDismissed', '1'));
+  const p = await ctx.newPage();
+  p.on('pageerror', (e) => errors.push(e.message));
+  p.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
+  await p.goto(url, { waitUntil: 'load' });
+  await p.waitForTimeout(800);
+  const tag = 'tables';
+  const pane = '.tables-pane';
+  const wiz = (t) => p.click(`[role=dialog][aria-labelledby=wizard-title] button:text-is("${t}")`);
+  const menu = () => p.click('header.toolbar button[aria-label="Menu"]');
+  const undoText = async () => (await p.textContent('header.toolbar button.history'))?.trim() ?? '';
+  const toolbarHeight = () => p.$eval('header.toolbar', (e) => e.getBoundingClientRect().height);
+  const resultText = async () => ((await p.textContent(`${pane} [data-testid=ref-result]`).catch(() => null)) ?? '').replace(/\s+/g, ' ').trim();
+  const hitRow = () => p.$$eval(`${pane} tbody tr`, (rows) => rows.findIndex((r) => r.classList.contains('hit')));
+  const typeD6 = async (v) => {
+    await p.fill(`${pane} input[aria-label="D6"]`, String(v));
+    await p.click(`${pane} .rolling button:text-is("Use this")`);
+    await p.waitForTimeout(200);
+  };
+  const smallButtons = async (where) => {
+    const small = await p.$$eval(`${pane} button, ${pane} input`, (els) =>
+      els.map((el) => ({ t: el.textContent?.trim() || el.getAttribute('aria-label') || el.tagName, r: el.getBoundingClientRect() })).filter((b) => b.r.width > 0 && (b.r.width < 44 || b.r.height < 44)).map((b) => `${b.t} ${b.r.width.toFixed(1)}×${b.r.height.toFixed(1)}`),
+    );
+    for (const b of small) problems.push(`${tag} ${where}: control too small: ${b}`);
+  };
+
+  // The toolbar with a Tables button still fits on one row at 1180 px ("Create hero" is the longest Hero label).
+  const h0 = await toolbarHeight();
+  console.log(`${tag}: toolbar height ${h0.toFixed(1)} with "Create hero"`);
+  if (h0 > 70) problems.push(`${tag}: toolbar wraps at 1180 px (height ${h0})`);
+  if (!(await p.isVisible('header.toolbar button.tables'))) problems.push(`${tag}: no Tables button`);
+  // Worst case: both history buttons at their longest (they ellipsize at a max width) beside "Create hero".
+  const saved = await p.$$eval('header.toolbar button.history .label', (els) => els.map((e) => e.textContent));
+  await p.$$eval('header.toolbar button.history .label', (els) => els.forEach((e, i) => (e.textContent = `${i ? 'Redo' : 'Undo'} Start encounter and then some`)));
+  const hWorst = await toolbarHeight();
+  console.log(`${tag}: toolbar height ${hWorst.toFixed(1)} with long Undo and Redo labels`);
+  if (hWorst > 70) problems.push(`${tag}: toolbar wraps at 1180 px with long Undo and Redo labels (height ${hWorst})`);
+  await p.$$eval('header.toolbar button.history .label', (els, t) => els.forEach((e, i) => (e.textContent = t[i])), saved);
+
+  // No table file: the pane explains.
+  await p.click('header.toolbar button.tables');
+  await p.waitForSelector(pane);
+  const noFile = (await p.textContent(`${pane} [data-testid=tables-empty]`))?.trim() ?? '';
+  if (!noFile.startsWith('No table file is loaded. Load your table file') || noFile.includes('Your table file has no reference tables')) problems.push(`${tag}: no-file text "${noFile}"`);
+  await shot('70-tables-no-file.png', p);
+  await p.click('header.toolbar button.tables'); // put it away
+  await p.waitForTimeout(150);
+  if (await p.isVisible(pane)) problems.push(`${tag}: second Tables tap did not close the pane`);
+
+  // A hero (for the Hero tab), on the fixture tables.
+  await p.setInputFiles('input[data-extra="tables"]', { name: 'tables.json', mimeType: 'application/json', buffer: Buffer.from(readFileSync('tests/fixtures/dungeon-tables.fixture.json')) });
+  await p.waitForTimeout(500);
+  await menu();
+  await p.click('[role=menuitem]:text-is("New game…")');
+  await wiz('Next');
+  await p.fill('[aria-labelledby=wizard-title] input[type=text]', 'Pip Reader');
+  await wiz('Next');
+  await p.click('.weapon:has-text("Practice Sword")');
+  await p.click('.mtable .row:has-text("Wobbly Poke")');
+  await p.click('.mtable .row:has-text("Gentle Swipe")');
+  await wiz('Next');
+  await p.click('.option:has-text("Padded Tablecloth")');
+  await wiz('Next');
+  await p.click('.option:has-text("Scroll of Mild Glow")');
+  await wiz('Next');
+  await wiz('Begin');
+  await p.waitForTimeout(500);
+  if (await p.isVisible('[role=alertdialog] button:text-is("Replace")')) await p.click('[role=alertdialog] button:text-is("Replace")');
+  await p.waitForTimeout(500);
+  const h1 = await toolbarHeight();
+  if (h1 > 70) problems.push(`${tag}: toolbar wraps at 1180 px with a hero (height ${h1})`);
+  const undo0 = await undoText();
+
+  // 1. Open Tables and search "practice".
+  await p.click('header.toolbar button.tables');
+  await p.waitForSelector(`${pane} input[type=search]`);
+  await p.fill(`${pane} input[type=search]`, 'practice');
+  await p.waitForTimeout(150);
+  const listed = (await p.$$eval(`${pane} .list button`, (els) => els.map((e) => e.textContent?.replace(/\s+/g, ' ').trim()))) ?? [];
+  console.log(`${tag}: list ${JSON.stringify(listed)}`);
+  const want = ['XX1 — Practice Crate Table · p. 7', 'Practice Shelf Contents · p. 12', 'XX3 — Practice Echo Table · p. 10', 'XX2 — Practice Trinket Table · p. 8', 'XX4 — Practice Puddle Table · p. 11', 'LIST1 — Practice Price List · p. 9'];
+  if (JSON.stringify(listed) !== JSON.stringify(want)) problems.push(`${tag}: list ${JSON.stringify(listed)}`);
+  await p.click(`${pane} .chips button:text-is("Loot")`);
+  const loot = await p.$$eval(`${pane} .list button`, (els) => els.length);
+  if (loot !== 1) problems.push(`${tag}: Loot chip shows ${loot} tables`);
+  await p.click(`${pane} .chips button:text-is("All")`);
+  await smallButtons('list');
+  await shot('71-tables-list.png', p);
+
+  // 2. XX1: a typed 1 with −2 is clamped ("counts as 1"); then a typed 2 with −1 lands on the first row.
+  await p.click(`${pane} .list button:has-text("XX1 —")`);
+  await p.waitForSelector(`${pane} .rolling`);
+  if (await p.isVisible(`${pane} button:text-is("‹ Back")`)) problems.push(`${tag}: Back shown with nothing to go back to`);
+  await p.click(`${pane} button[aria-label="Modifier down"]`);
+  await p.click(`${pane} button[aria-label="Modifier down"]`);
+  await typeD6(1);
+  let r = await resultText();
+  console.log(`${tag}: XX1 result "${r}"`);
+  if (!r.startsWith('1 − 2 = −1 · counts as 1')) problems.push(`${tag}: clamped result "${r}"`);
+  if ((await hitRow()) !== 0) problems.push(`${tag}: clamped roll highlights row ${await hitRow()}`);
+  await shot('72-xx1-clamped.png', p);
+  await p.fill(`${pane} .mod input`, '-1');
+  await p.waitForTimeout(100);
+  await typeD6(2);
+  r = await resultText();
+  if (!r.startsWith('2 − 1 = 1') || r.includes('counts as')) problems.push(`${tag}: XX1 result "${r}"`);
+  if (!r.includes('Nothing but straw.')) problems.push(`${tag}: row text not repeated under the dice: "${r}"`);
+  if ((await hitRow()) !== 0) problems.push(`${tag}: typed 2 −1 highlights row ${await hitRow()}`);
+  await smallButtons('XX1');
+  const squashed = await p.$eval(`${pane} .scroll`, (e) => e.clientHeight + 1 < e.scrollHeight);
+  if (squashed) problems.push(`${tag}: the table rows are cut off in the pane`);
+  await shot('73-xx1-result.png', p);
+
+  // 3. "XX2 +1" in a row opens XX2 with modifier 1 at the top of the pane; a total in a gap says so; an animated roll lands.
+  const scrolled = await p.$eval(`${pane} .body`, (e) => { e.scrollTop = e.scrollHeight; return e.scrollTop; });
+  console.log(`${tag}: pane body scrolled to ${scrolled} before opening XX2`);
+  await p.click(`${pane} tbody button:text-is("XX2 +1")`);
+  await p.waitForSelector(`${pane} h3:has-text("Practice Trinket Table")`);
+  await p.waitForTimeout(100);
+  const top2 = await p.$eval(`${pane} .body`, (e) => e.scrollTop);
+  if (top2 !== 0) problems.push(`${tag}: XX2 opened scrolled to ${top2} (was ${scrolled})`);
+  const mod2 = await p.inputValue(`${pane} .mod input`);
+  if (mod2 !== '1') problems.push(`${tag}: XX2 opened with modifier "${mod2}"`);
+  if (!(await p.isVisible(`${pane} button:text-is("‹ Back")`))) problems.push(`${tag}: no Back on XX2`);
+  await p.fill(`${pane} input[aria-label="First die"]`, '1');
+  await p.fill(`${pane} input[aria-label="Second die"]`, '3');
+  await p.click(`${pane} .rolling button:text-is("Use this")`);
+  await p.waitForTimeout(200);
+  r = await resultText();
+  if (!r.startsWith('4 + 1 = 5') || !r.includes('No row for 5')) problems.push(`${tag}: gap result "${r}"`);
+  if ((await hitRow()) !== -1) problems.push(`${tag}: a gap highlights row ${await hitRow()}`);
+  await shot('74-xx2-gap.png', p);
+  await p.click(`${pane} .rolling button:has-text("Roll for me")`);
+  await p.waitForTimeout(900);
+  r = await resultText();
+  if (!/^\d+ \+ 1 = \d+/.test(r)) problems.push(`${tag}: animated roll result "${r}"`);
+  console.log(`${tag}: XX2 rolled "${r}"`);
+
+  // 4. Back returns to XX1 with its modifier and result.
+  await p.click(`${pane} button:text-is("‹ Back")`);
+  await p.waitForSelector(`${pane} h3:has-text("Practice Crate Table")`);
+  r = await resultText();
+  if (!r.startsWith('2 − 1 = 1')) problems.push(`${tag}: Back lost XX1's result ("${r}")`);
+  if ((await p.inputValue(`${pane} .mod input`)) !== '−1') problems.push(`${tag}: Back lost XX1's modifier ("${await p.inputValue(`${pane} .mod input`)}")`);
+  if ((await hitRow()) !== 0) problems.push(`${tag}: Back lost the highlight`);
+  await shot('75-back-to-xx1.png', p);
+
+  // 5. The Hero tab and back: the pane keeps its state.
+  await p.click('header.toolbar button.hero');
+  await p.waitForTimeout(200);
+  if (!(await p.isVisible('#side-tab-tables'))) problems.push(`${tag}: no Tables tab beside the Hero tab`);
+  await p.click('#side-tab-hero');
+  await p.waitForTimeout(150);
+  if (await p.isVisible(pane)) problems.push(`${tag}: Tables pane still showing on the Hero tab`);
+  await p.click('#side-tab-tables');
+  await p.waitForSelector(pane);
+  r = await resultText();
+  if (!(await p.isVisible(`${pane} h3:has-text("Practice Crate Table")`)) || !r.startsWith('2 − 1 = 1')) problems.push(`${tag}: switching tabs lost the table or result ("${r}")`);
+  if ((await undoText()) !== undo0) problems.push(`${tag}: rolling added a History step ("${await undoText()}", was "${undo0}")`);
+
+  // 6. A d66 table has no modifier field; 2 then 5 is 25.
+  await p.click(`${pane} button:text-is("☰ List")`);
+  await p.fill(`${pane} input[type=search]`, 'echo');
+  await p.click(`${pane} .list button:has-text("XX3 —")`);
+  await p.waitForSelector(`${pane} .rolling`);
+  if (await p.isVisible(`${pane} .mod`)) problems.push(`${tag}: d66 table shows a modifier field`);
+  await p.fill(`${pane} input[aria-label="Red · tens die"]`, '2');
+  await p.fill(`${pane} input[aria-label="Blue · units die"]`, '5');
+  await p.click(`${pane} .rolling button:text-is("Use this")`);
+  await p.waitForTimeout(200);
+  r = await resultText();
+  if (!r.startsWith('25') || !r.includes('Footsteps')) problems.push(`${tag}: d66 result "${r}"`);
+  if ((await hitRow()) !== 1) problems.push(`${tag}: d66 highlights row ${await hitRow()}`);
+  await shot('76-d66.png', p);
+
+  // A d3 table takes 1–3 only.
+  await p.click(`${pane} button:text-is("☰ List")`);
+  await p.fill(`${pane} input[type=search]`, 'XX4');
+  await p.click(`${pane} .list button:has-text("XX4 —")`);
+  await p.waitForSelector(`${pane} .rolling`);
+  await p.fill(`${pane} input[aria-label="D3"]`, '4');
+  await p.click(`${pane} .rolling button:text-is("Use this")`);
+  await p.waitForTimeout(150);
+  if (!(await p.isVisible(`${pane} .rolling [role=alert]`))) problems.push(`${tag}: a typed 4 on a D3 was accepted`);
+  await p.fill(`${pane} input[aria-label="D3"]`, '3');
+  await p.click(`${pane} .rolling button:text-is("Use this")`);
+  await p.waitForTimeout(150);
+  r = await resultText();
+  if (!r.startsWith('3') || !r.includes('Surprisingly deep.')) problems.push(`${tag}: d3 result "${r}"`);
+  await p.click(`${pane} .rolling button:has-text("Roll for me")`);
+  await p.waitForTimeout(900);
+  r = await resultText();
+  if (!/^[1-3]\b/.test(r)) problems.push(`${tag}: d3 animated roll "${r}"`);
+  await shot('77-d3.png', p);
+
+  // 7. A list has no Roll button.
+  await p.click(`${pane} button:text-is("☰ List")`);
+  await p.fill(`${pane} input[type=search]`, '');
+  await p.click(`${pane} .list button:has-text("LIST1 —")`);
+  await p.waitForSelector(`${pane} h3:has-text("Practice Price List")`);
+  if (await p.isVisible(`${pane} .rolling`)) problems.push(`${tag}: a list shows dice`);
+  if (await p.isVisible(`${pane} button:has-text("Roll for me")`)) problems.push(`${tag}: a list has a Roll button`);
+  await shot('78-list-table.png', p);
+
+  // 8. Remove the table file: the explanation shows; the toolbar still works.
+  await menu();
+  await p.click('.menu [data-status="tables"] button:text-is("Remove")');
+  await p.waitForTimeout(300);
+  await p.keyboard.press('Escape');
+  if (await p.isVisible('.menu')) await p.click('.backdrop', { position: { x: 5, y: 5 } });
+  await p.waitForTimeout(150);
+  if (!(await p.isVisible(`${pane} [data-testid=tables-empty]`))) problems.push(`${tag}: no explanation after removing the table file`);
+  await shot('79-tables-removed.png', p);
+  await ctx.close();
+}
+
+// 20. Opening reference tables from text: a room's encounter text names XX1 -1 and a Victory treasure
+// line names XX2 +1; each is a button that opens the Tables pane on that table with its modifier,
+// and the fight stays untouched. The modifier field keeps what is typed until it loses focus.
+{
+  const ctx = await browser.newContext({ viewport: { width: 1180, height: 820 }, deviceScaleFactor: 2, hasTouch: true, reducedMotion: 'reduce' });
+  await ctx.addInitScript(() => localStorage.setItem('2d6.installHintDismissed', '1'));
+  const p = await ctx.newPage();
+  p.on('pageerror', (e) => errors.push(e.message));
+  p.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
+  await p.goto(url, { waitUntil: 'load' });
+  await p.waitForTimeout(800);
+  const tag = 'open table';
+  const tap = async (x, y) => {
+    const at = await p.$eval('canvas', (c, [wx, wy]) => {
+      const [cx, cy, sc] = (c.dataset.camera ?? '').split(',').map(Number);
+      const r = c.getBoundingClientRect();
+      return { x: r.left + (wx - cx) * sc, y: r.top + (wy - cy) * sc };
+    }, [x, y]);
+    await p.mouse.click(at.x, at.y);
+    await p.waitForTimeout(150);
+  };
+  const btn = (name) => p.click(`aside.panel button:text-is("${name}")`);
+  const wiz = (t) => p.click(`[role=dialog][aria-labelledby=wizard-title] button:text-is("${t}")`);
+  const menu = () => p.click('header.toolbar button[aria-label="Menu"]');
+  const enc = '.encounter-pane';
+  const tp = '.tables-pane';
+  const ENC = 'Made-up: a GRUMBLER sits by a crate, see XX1 -1 or practice-shelf.';
+  const fx = JSON.parse(readFileSync('tests/fixtures/dungeon-tables.fixture.json', 'utf8'));
+  const swap = (v) => {
+    if (Array.isArray(v)) v.forEach(swap);
+    else if (v && typeof v === 'object') for (const k of Object.keys(v)) k === 'encounter' && typeof v[k] === 'string' ? (v[k] = ENC) : swap(v[k]);
+  };
+  swap(fx.tables.dungeonLevels);
+  fx.tables.creatures.Grumbler.treasure = 'Made-up: a pouch of pebbles; roll on XX2 +1.';
+  // PRAC1 is both a creature table and a reference table; XX1's last row names it.
+  fx.tables.referenceTables.PRAC1 = { ...fx.tables.referenceTables.XX4, name: 'Practice Both Table' };
+  fx.tables.referenceTables.XX1.rows[3].cells = ['A made-up trinket. Or PRAC1.'];
+  await p.setInputFiles('input[data-extra="tables"]', { name: 'tables.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(fx)) });
+  await p.waitForTimeout(500);
+  await menu();
+  await p.click('[role=menuitem]:text-is("New game…")');
+  await wiz('Next');
+  await p.fill('[aria-labelledby=wizard-title] input[type=text]', 'Pip Open');
+  await wiz('Next');
+  await p.click('.weapon:has-text("Practice Sword")');
+  await p.click('.mtable .row:has-text("Wobbly Poke")');
+  await p.click('.mtable .row:has-text("Gentle Swipe")');
+  await wiz('Next');
+  await p.click('.option:has-text("Padded Tablecloth")');
+  await wiz('Next');
+  await p.click('.option:has-text("Scroll of Mild Glow")');
+  await wiz('Next');
+  await wiz('Begin');
+  await p.waitForTimeout(500);
+  if (await p.isVisible('[role=alertdialog] button:text-is("Replace")')) await p.click('[role=alertdialog] button:text-is("Replace")');
+  await p.waitForTimeout(800);
+  const dice = async (...v) => {
+    const ins = await p.$$('aside.panel form.dice input');
+    for (let i = 0; i < v.length; i++) await ins[i].fill(v[i]);
+  };
+  await tap(12.5, 25.5);
+  await dice('3', '4');
+  await btn('Use these');
+  await btn('Place');
+  await btn('Done');
+  await btn('Done');
+  await p.waitForTimeout(1500);
+  await tap(12.5, 20);
+  await dice('3', '4');
+  await btn('Use these');
+  await btn('Place');
+  await dice('4');
+  await btn('Use this');
+  await dice('3');
+  await btn('Place for me');
+  await btn('Done');
+  await dice('3', '4');
+  await btn('Use these');
+  await p.waitForSelector('aside.panel [data-testid=encounter-actions]');
+  const labels = await p.$$eval('aside.panel [data-testid=encounter-actions] button', (els) => els.map((e) => e.textContent.trim()));
+  console.log(`${tag}: buttons ${JSON.stringify(labels)}`);
+  if (labels.join('|') !== '⚔ Fight Grumbler|📖 Open XX1 −1') problems.push(`${tag}: buttons ${JSON.stringify(labels)}`);
+  const small = await p.$$eval('aside.panel [data-testid=encounter-actions] button', (els) => els.map((e) => e.getBoundingClientRect()).filter((r) => r.width < 44 || r.height < 44).length);
+  if (small) problems.push(`${tag}: ${small} buttons under 44 px`);
+  await shot('80-table-button-in-text.png', p);
+
+  // Start the fight, go back to the Room tab and open the table from the text.
+  await p.click('aside.panel button:text-is("⚔ Fight Grumbler")');
+  await p.waitForSelector(enc);
+  const foesNow = () => p.$$eval(`${enc} .foe`, (els) => els.map((e) => `${e.querySelector('.name span')?.textContent?.trim()}:${e.querySelector('.num')?.textContent?.trim()}`));
+  if ((await foesNow()).join('|') !== 'Grumbler:4') problems.push(`${tag}: fight ${JSON.stringify(await foesNow())}`);
+  await p.click('#side-tab-room');
+  const undoBefore = (await p.textContent('header.toolbar button.history'))?.trim();
+  await p.click('aside.panel button:text-is("📖 Open XX1 −1")');
+  await p.waitForSelector(`${tp} h3:has-text("Practice Crate Table")`);
+  if ((await p.inputValue(`${tp} .mod input`)) !== '−1') problems.push(`${tag}: XX1 opened with modifier "${await p.inputValue(`${tp} .mod input`)}"`);
+  if ((await p.getAttribute('#side-tab-tables', 'aria-selected')) !== 'true') problems.push(`${tag}: Tables tab not selected`);
+  if ((await p.textContent('header.toolbar button.history'))?.trim() !== undoBefore) problems.push(`${tag}: opening a table added a History step`);
+  await shot('81-table-opened-from-text.png', p);
+  // A code that is a creature table too opens its reference table from inside the pane.
+  await p.click(`${tp} tbody button:text-is("PRAC1")`);
+  await p.waitForSelector(`${tp} h3:has-text("Practice Both Table")`);
+  await p.click(`${tp} button:text-is("‹ Back")`);
+  await p.waitForSelector(`${tp} h3:has-text("Practice Crate Table")`);
+
+  // The modifier field: typing is not rewritten under the caret; every minus form works; blur tidies.
+  const mod = `${tp} .mod input`;
+  await p.focus(mod);
+  await p.fill(mod, '');
+  await p.keyboard.type('-1');
+  if ((await p.inputValue(mod)) !== '-1') problems.push(`${tag}: typing "-1" became "${await p.inputValue(mod)}"`);
+  await p.fill(mod, '');
+  await p.keyboard.type('+2');
+  if ((await p.inputValue(mod)) !== '+2') problems.push(`${tag}: typing "+2" became "${await p.inputValue(mod)}"`);
+  await p.fill(mod, '');
+  await p.fill(mod, '−3'); // minus sign
+  await p.fill(mod, '–2'); // en dash
+  await p.click(`${tp} h3`); // blur
+  if ((await p.inputValue(mod)) !== '−2') problems.push(`${tag}: en dash modifier gave "${await p.inputValue(mod)}"`);
+  await p.fill(mod, '+2');
+  await p.click(`${tp} h3`);
+  if ((await p.inputValue(mod)) !== '2') problems.push(`${tag}: blur left "${await p.inputValue(mod)}"`);
+  await p.fill(mod, '−3');
+  await p.click(`${tp} h3`);
+  if ((await p.inputValue(mod)) !== '−3') problems.push(`${tag}: U+2212 modifier gave "${await p.inputValue(mod)}"`);
+
+  // The fight is untouched.
+  await p.click('#side-tab-encounter');
+  await p.waitForSelector(enc);
+  if ((await foesNow()).join('|') !== 'Grumbler:4') problems.push(`${tag}: fight lost after opening a table: ${JSON.stringify(await foesNow())}`);
+
+  // Win: the treasure line has a working button.
+  await p.click(`${enc} .foe:has(.name span:text-is("Grumbler")) .num`);
+  await p.fill(`${enc} .foe:has(.name span:text-is("Grumbler")) input`, '0');
+  await p.keyboard.press('Enter');
+  await p.waitForSelector(`${enc} .confirm.win`);
+  await p.click(`${enc} .confirm.win button:text-is("Win the fight")`);
+  await p.waitForSelector(`${enc} .victory`);
+  const line = (await p.textContent(`${enc} [data-testid=treasure-line]`))?.replace(/\s+/g, ' ').trim();
+  console.log(`${tag}: treasure "${line}"`);
+  if (!line?.includes('📖 Open XX2 +1')) problems.push(`${tag}: treasure line "${line}"`);
+  const smallV = await p.$$eval(`${enc} .victory button`, (els) => els.map((e) => e.getBoundingClientRect()).filter((r) => r.width < 44 || r.height < 44).length);
+  if (smallV) problems.push(`${tag}: ${smallV} Victory buttons under 44 px`);
+  await shot('82-victory-table-button.png', p);
+  await p.click(`${enc} .victory button:text-is("📖 Open XX2 +1")`);
+  await p.waitForSelector(`${tp} h3:has-text("Practice Trinket Table")`);
+  if ((await p.inputValue(`${tp} .mod input`)) !== '1') problems.push(`${tag}: XX2 opened with modifier "${await p.inputValue(`${tp} .mod input`)}"`);
+  await shot('83-table-opened-from-victory.png', p);
+  await p.click('#side-tab-encounter');
+  await p.waitForSelector(`${enc} .victory`);
   await ctx.close();
 }
 

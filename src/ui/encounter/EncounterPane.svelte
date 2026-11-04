@@ -73,6 +73,8 @@
     onwin?: (w: WinState) => void;
     /** Don't ask "win the fight?" now (the death question goes first, or the game is over). */
     holdWin?: boolean;
+    /** Show a reference table in the Tables pane. */
+    onopentable?: (code: string, modifier: number) => void;
   }
   let {
     history,
@@ -87,6 +89,7 @@
     win = NO_WIN,
     onwin = () => {},
     holdWin = false,
+    onopentable,
   }: Props = $props();
 
   const askingWin = $derived(!holdWin && !win.victory && shouldAskWin(encounter, win.dismissed));
@@ -428,7 +431,7 @@
       {/if}
 
       {#if showVictory && encounter}
-        <VictoryPanel {encounter} hasHero={hero !== null} onaddxp={addVictoryXp} ondone={winDone} />
+        <VictoryPanel {encounter} {tables} {onopentable} hasHero={hero !== null} onaddxp={addVictoryXp} ondone={winDone} />
       {/if}
 
       {#if encounter && askingFor === null}
@@ -447,7 +450,7 @@
             <button type="button" class="dismiss" aria-label="Dismiss roll result" onclick={() => dismissRolled(history, i)}>×</button>
           </div>
           {#if entry && 'text' in entry}
-            <p class="said"><EncounterText text={entry.text} {tables} onroll={(code, mod) => queueCreatureRoll(history, code, mod)} onfight={(name) => void addByName([name])} /></p>
+            <p class="said"><EncounterText text={entry.text} {tables} onroll={(code, mod) => queueCreatureRoll(history, code, mod)} onfight={(name) => void addByName([name])} {onopentable} /></p>
           {/if}
         </div>
       {/each}

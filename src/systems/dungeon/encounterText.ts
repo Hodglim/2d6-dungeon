@@ -1,9 +1,11 @@
 import { findCreature } from './creatures';
+import { findTable } from './referenceTables';
 import type { DungeonTables } from './tables';
 
 export type EncounterPart =
   | { kind: 'text'; text: string }
   | { kind: 'roll'; text: string; code: string; modifier: number }
+  | { kind: 'table'; text: string; code: string; modifier: number }
   | { kind: 'fight'; text: string; name: string };
 
 const escapeRe = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -43,19 +45,61 @@ function scanFights(text: string, t: DungeonTables, parts: EncounterPart[]): voi
   pushText(parts, text.slice(pos));
 }
 
-export function scanEncounter(text: string, t: DungeonTables | null): EncounterPart[] {
+/** A reference-table id with a lowercase letter is a slug: reached from the list and search, never a code in text. */
+export function isSlug(code: string): boolean {
+  return /[a-z]/.test(code);
+}
+
+interface Scanner { creatureCodes: Set<string>; re: RegExp | null }
+const scanners = new WeakMap<DungeonTables, Scanner>();
+
+/** The code pattern for a table file, built once per tables object. */
+function scannerFor(t: DungeonTables): Scanner {
+  let s = scanners.get(t);
+  if (s) return s;
+  const creatureCodes = new Set(Object.keys(t.tables.creatureTables ?? {}));
+  const refCodes = Object.keys(t.tables.referenceTables ?? {}).filter((id) => !isSlug(id));
+  const codes = [...new Set([...creatureCodes, ...refCodes])].sort((a, b) => b.length - a.length);
+  const re = codes.length === 0
+    ? null
+    : new RegExp(`(?<![A-Za-z0-9])(${codes.map(escapeRe).join('|')})(?:\\s*([+\\-−–])\\s*(\\d+))?(?![A-Za-z0-9])`, 'g');
+  s = { creatureCodes, re };
+  scanners.set(t, s);
+  return s;
+}
+
+export interface ScanOptions {
+  /** false: creature names stay plain text (no fight scan). Default true. */
+  fights?: boolean;
+}
+
+export function scanEncounter(text: string, t: DungeonTables | null, opts: ScanOptions = {}): EncounterPart[] {
   const parts: EncounterPart[] = [];
   if (!t) { pushText(parts, text); return parts; }
-  const codes = Object.keys(t.tables.creatureTables ?? {}).sort((a, b) => b.length - a.length);
-  if (codes.length === 0) { scanFights(text, t, parts); return parts; }
-  const re = new RegExp(`(?<![A-Za-z0-9])(${codes.map(escapeRe).join('|')})(?:\\s*([+\\-−–])\\s*(\\d+))?(?![A-Za-z0-9])`, 'g');
+  const between = (s: string): void => (opts.fights === false ? pushText(parts, s) : scanFights(s, t, parts));
+  const { creatureCodes, re } = scannerFor(t);
+  if (!re) { between(text); return parts; }
   let pos = 0;
   for (const m of text.matchAll(re)) {
-    scanFights(text.slice(pos, m.index!), t, parts);
+    between(text.slice(pos, m.index!));
     const modifier = m[2] ? (m[2] === '+' ? 1 : -1) * Number(m[3]) : 0;
-    parts.push({ kind: 'roll', text: m[0], code: m[1]!, modifier });
+    parts.push({ kind: creatureCodes.has(m[1]!) ? 'roll' : 'table', text: m[0], code: m[1]!, modifier });
     pos = m.index! + m[0].length;
   }
-  scanFights(text.slice(pos), t, parts);
+  between(text.slice(pos));
+  return parts;
+}
+
+/**
+ * Text inside a reference table: only reference-table codes are parts of their own (kind 'table'),
+ * including a code that is also a creature table. Creature-only codes and creature names stay text.
+ */
+export function scanReference(text: string, t: DungeonTables | null): EncounterPart[] {
+  const parts: EncounterPart[] = [];
+  for (const p of scanEncounter(text, t, { fights: false })) {
+    if (p.kind === 'table') parts.push(p);
+    else if (p.kind === 'roll' && findTable(t, p.code)) parts.push({ ...p, kind: 'table' });
+    else pushText(parts, p.text);
+  }
   return parts;
 }

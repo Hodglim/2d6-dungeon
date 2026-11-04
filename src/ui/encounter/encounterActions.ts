@@ -11,6 +11,8 @@ import type { DungeonTables } from '../../systems/dungeon/tables';
 export interface EncounterHooks {
   onroll: (code: string, modifier: number) => void;
   onfight: (name: string) => void;
+  /** A reference-table code: show that table (with the modifier) in the Tables pane. */
+  onopentable: (code: string, modifier: number) => void;
 }
 
 const FOE_HP = 'foe-hp:';

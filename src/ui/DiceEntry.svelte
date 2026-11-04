@@ -4,11 +4,11 @@
   import { playClack, playTick, unlockAudio } from './sound';
 
   interface Props {
-    /** Two dice (d66: red = width, blue = height; 2d6: two dice that are added) or a single D6. */
-    dice: 'd66' | '2d6' | 'd6';
+    /** Two dice (d66: red = width, blue = height; 2d6: two dice that are added) or a single D6 or D3 (a die read 1–3). */
+    dice: 'd66' | '2d6' | 'd6' | 'd3';
     /** Names of the red and blue dice, when not the size ones. */
     labels?: [string, string];
-    /** Label for the single die (d6 mode). */
+    /** Label for the single die (d6 and d3 modes). */
     label?: string;
     error?: string | null;
     enterLabel?: string;
@@ -47,9 +47,13 @@
   }
   onDestroy(cancel);
 
+  /** The animation's faces: 1–3 for a D3, so it settles on a face it could show. */
+  const sides = $derived(dice === 'd3' ? 3 : 6);
+  const single = $derived(dice === 'd6' || dice === 'd3');
+
   function randomFace(prev: number): number {
     let f = prev;
-    while (f === prev) f = Math.floor(Math.random() * 6) + 1;
+    while (f === prev) f = Math.floor(Math.random() * sides) + 1;
     return f;
   }
 
@@ -95,12 +99,12 @@
   function submit(e: SubmitEvent) {
     e.preventDefault();
     if (rolling) return;
-    onenter(dice === 'd6' ? [red] : [red, blue]);
+    onenter(single ? [red] : [red, blue]);
   }
 
   /** Typing one digit in the red die moves on to the blue one. */
   function onRedInput() {
-    if (dice !== 'd6' && /^[1-6]$/.test(red.trim())) blueInput?.focus();
+    if (!single && /^[1-6]$/.test(red.trim())) blueInput?.focus();
   }
 </script>
 
@@ -111,7 +115,7 @@
       <input type="text" inputmode="numeric" autocomplete="off" maxlength="3" bind:value={red} oninput={onRedInput} disabled={rolling} class:hidden={rolling} aria-label={redAria} />
       {#if faces}<span class="face"><DieFace value={faces[0] ?? 1} colour="red" size={76} /></span>{/if}
     </label>
-    {#if dice !== 'd6'}
+    {#if !single}
       <label class="die blue">
         <span>{blueName}</span>
         <input type="text" inputmode="numeric" autocomplete="off" maxlength="3" bind:value={blue} bind:this={blueInput} disabled={rolling} class:hidden={rolling} aria-label={blueAria} />

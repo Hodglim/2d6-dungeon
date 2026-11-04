@@ -52,6 +52,9 @@ export function blankTableFile() {
       exitTables: { EXT1: keyed(D66_KEYS, () => ({ door: '' })) } as Record<string, Record<string, { door: string; locked?: boolean }>>,
       creatureTables: { L1X: keyed(['1', '2', '3', '4', '5', '6'], () => ({ creatures: [''] })) } as Record<string, Record<string, { creatures: string[] }>>,
       creatures: { '': { level: null, hp: null, xp: null, shift: null, treasure: '' } } as Record<string, { level: number | null; hp: number | null; xp: number | null; shift: number | null; treasure: string }>,
+      referenceTables: {
+        XX1: { name: '', group: '', page: null as number | null, dice: null as string | null, columns: [''], rows: [{ cells: [''] }] },
+      } as Record<string, { name: string; group: string; page: number | null; dice: string | null; columns: string[]; rows: { roll?: string; cells: string[] }[] }>,
     },
   };
 }

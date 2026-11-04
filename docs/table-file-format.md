@@ -332,6 +332,38 @@ A made-up example:
 }
 ```
 
+## referenceTables (optional)
+
+Printed tables for the Tables pane, to look up and roll on. They are for display and rolling only; the room and creature tables above stay as they are. A file without this key still loads. Where to find it: the Tables Codex contents pages.
+
+```json
+"referenceTables": {
+  "XX1": {
+    "name": "Practice Crate Table", "group": "generic", "page": 7, "dice": "d6",
+    "intro": "You pry open the made-up crate.",
+    "notes": "Made-up note.",
+    "columns": ["Roll", "Result"],
+    "rows": [
+      { "roll": "1-3", "cells": ["Nothing but straw."] },
+      { "roll": "4-6", "cells": ["Roll on XX2 +1"] }
+    ]
+  },
+  "LIST1": {
+    "name": "Practice Price List", "group": "optional", "page": 9, "dice": null,
+    "columns": ["Item", "Cost"],
+    "rows": [{ "cells": ["Practice Lantern", "2"] }]
+  }
+}
+```
+
+- The key is the table id: the book's code where it has one (such as `XX1`), otherwise a short id made from the name (such as `practice-crate-table`). Only ids that hold a book code become buttons in text.
+- `name` (not blank), `group` (`generic`, `random`, `loot`, `level` or `optional`), `page` (whole number, 1 or more) and `dice` are required. `level` (1 to 10, for level tables), `intro` (printed above the rows) and `notes` (printed below) are optional.
+- `dice` is `"d3"`, `"d6"`, `"2d6"`, `"d66"`, or `null` for a list that cannot be rolled (no Roll button). A table that does not fit the model (two roll columns, sub-tables) is stored as a list with the roll text in its first cell.
+- `columns`: the headings (a heading may be left blank for an unlabelled column; there must be at least one column). When `dice` is set, the first is the roll column. `cells` in each row has one entry per column after the roll column (`columns.length - 1`), or one per column for a list (and a list's rows have no `roll`).
+- `roll` is a single value or range as printed: `"3"`, `"1-2"` (a hyphen or en dash), `"7+"` (7 and above), `"0 or less"`. Totals are d3 1-3, d6 1-6, 2d6 2-12, d66 11-66. Rows must not overlap. Gaps are allowed; a total in a gap shows "No row for N". When a modifier takes the total past the lowest or highest row, it counts as that row; a natural (unmodified) total that no row covers is never moved and shows "No row for N", so check the rows reach every total the dice can roll.
+- A table needs at least one row.
+- Dice pictures in cells are written as text ("3 & 4").
+
 ## Creature cards
 
 A creature card pack is a separate JSON file, loaded from the menu next to the table file. It is stored on the device, never exported, and never published. The app ships none; you make your own from your own Tables Codex PDF.

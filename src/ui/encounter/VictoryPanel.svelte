@@ -1,14 +1,19 @@
 <script lang="ts">
+  import type { DungeonTables } from '../../systems/dungeon/tables';
+  import EncounterText from './EncounterText.svelte';
   import { totalXp, treasureLines, type Encounter } from '../../systems/dungeon/combat';
 
   interface Props {
     encounter: Encounter;
+    tables?: DungeonTables | null;
+    /** Treasure lines name reference tables as buttons. */
+    onopentable?: (code: string, modifier: number) => void;
     /** Add XP is offered only with a hero. */
     hasHero: boolean;
     onaddxp: () => void;
     ondone: () => void;
   }
-  let { encounter, hasHero, onaddxp, ondone }: Props = $props();
+  let { encounter, tables = null, onopentable, hasHero, onaddxp, ondone }: Props = $props();
 
   const lines = $derived(treasureLines(encounter));
   const xp = $derived(totalXp(encounter));
@@ -20,7 +25,7 @@
   <h3 id="victory-title">Victory</h3>
   {#if lines.length}
     <ul class="treasure" aria-label="Treasure">
-      {#each lines as line, i (i)}<li data-testid="treasure-line">{line}</li>{/each}
+      {#each lines as line, i (i)}<li data-testid="treasure-line"><EncounterText text={line} {tables} {onopentable} /></li>{/each}
     </ul>
   {:else}
     <p class="none">No treasure to roll for</p>

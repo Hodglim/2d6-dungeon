@@ -53,6 +53,9 @@
   import StepPanel from './StepPanel.svelte';
   import { resolveSelection, routeEditorTap, routePlayTap, type Selection } from './tapRouting';
   import Toolbar from './Toolbar.svelte';
+  import TablesPane from './tables/TablesPane.svelte';
+  import { initialTablesState, openTable, type TablesState } from './tables/tablesState';
+  import { findTable } from '../systems/dungeon/referenceTables';
 
   function activeMap(c: Campaign): DungeonMap {
     const m = c.maps.find((x) => x.id === c.activeMapId) ?? c.maps[0];
@@ -73,12 +76,14 @@
   let deathDismissed = $state.raw<Hero | null>(null);
   /** The win question and Victory panel (kept here so a remounted pane keeps them). */
   let win = $state.raw<WinState>(NO_WIN);
+  /** The Tables pane: open table, back stack, search, results. Kept here so it survives switching tabs; never saved. */
+  let tablesState = $state.raw<TablesState>(initialTablesState);
   let viewing = $state.raw<DungeonMap | null>(null);
   const store = new IdbSaveStore();
   const saver = new Autosaver(history, store, () => meta);
   const view = historyStore(history);
   // Real dice and ids for the app. Its History listener cancels a draft on any Undo/Redo.
-  type SideTab = 'room' | 'encounter' | 'hero';
+  type SideTab = 'room' | 'encounter' | 'hero' | 'tables';
   const flow = new PlayFlow(history, Math.random, randomId);
 
   let tool = $state<Tool>('play');
@@ -122,6 +127,13 @@
   let tables = $state.raw<DungeonTables | null>(null);
   // The flow rolls rooms on the loaded tables; keep it in step with loads, removals and restores.
   $effect(() => flow.setTables(tables));
+  // Results point at rows of the file they were rolled on: a new or removed table file starts the Tables pane afresh.
+  let tablesFor: DungeonTables | null = null;
+  $effect(() => {
+    if (tables === tablesFor) return;
+    tablesFor = tables;
+    tablesState = initialTablesState;
+  });
   let cards = $state.raw<CardPack | null>(null);
   let panelCollapsed = $state(false);
   let step = $state.raw<Step>(flow.step);
@@ -132,15 +144,18 @@
   let heroOn = $state(false);
   /** The player opened the encounter pane from the toolbar with no fight on (an open fight always shows it). */
   let encounterPaneOpen = $state(false);
+  /** The player opened the Tables pane. */
+  let tablesOn = $state(false);
   /** Which tab is selected while both are open. */
   let sideTab = $state<SideTab>('encounter');
   const fighting = $derived($view.encounter !== null);
   const heroShown = $derived(sidebar === 'side' && heroOn && $view.hero !== null);
   const encShown = $derived(sidebar === 'side' && (fighting || encounterPaneOpen));
-  const sideShown = $derived(heroShown || encShown);
+  const tablesShown = $derived(sidebar === 'side' && tablesOn);
+  const sideShown = $derived(heroShown || encShown || tablesShown);
   /** While a play-flow step is open, the step panel is a tab too, so Place and Cancel stay one tap away. */
   const roomTab = $derived(sideShown && step.kind !== 'idle');
-  const tabs = $derived<SideTab[]>([...(roomTab ? ['room' as const] : []), ...(encShown ? ['encounter' as const] : []), ...(heroShown ? ['hero' as const] : [])]);
+  const tabs = $derived<SideTab[]>([...(roomTab ? ['room' as const] : []), ...(encShown ? ['encounter' as const] : []), ...(heroShown ? ['hero' as const] : []), ...(tablesShown ? ['tables' as const] : [])]);
   const activeTab = $derived<SideTab>(tabs.includes(sideTab) ? sideTab : (tabs[0] ?? 'encounter'));
   /** A short self-clearing message beside the toolbar (no card pack loaded). */
   let toast = $state<string | null>(null);
@@ -165,7 +180,7 @@
       else sidebar = 'side';
     } else {
       encounterPaneOpen = false;
-      if (sidebar === 'side' && !(heroOn && $view.hero !== null)) sidebar = 'steps';
+      if (sidebar === 'side' && !(heroOn && $view.hero !== null) && !tablesOn) sidebar = 'steps';
     }
   });
   // No hero, no hero panel.
@@ -259,6 +274,8 @@
   });
 
   function selectTool(t: Tool) {
+    // Switching tools used to cancel a half-placed room without asking; finish or cancel it first.
+    if (t !== 'play' && step.kind !== 'idle') return; // the toolbar disables these while placing
     if (t !== 'play') {
       flow.cancel();
       gapMode = false;
@@ -420,6 +437,7 @@
     viewing = null;
     heroOn = false;
     encounterPaneOpen = false;
+    tablesOn = false;
     sidebar = 'steps';
     sideBeforeFlow = false;
     selection = null;
@@ -476,7 +494,7 @@
       newMapOpen = true;
     } else if (heroShown) {
       heroOn = false;
-      if (!encShown) sidebar = 'steps';
+      if (!encShown && !tablesShown) sidebar = 'steps';
     } else {
       heroOn = true;
       sideTab = 'hero';
@@ -492,6 +510,7 @@
       if (!fighting) closeEncounterPane();
       // An open fight only steps aside (to the hero sheet or the step panel); the button brings it back.
       else if (heroShown) sideTab = 'hero';
+      else if (tablesShown) sideTab = 'tables';
       else sidebar = 'steps';
       return;
     }
@@ -525,12 +544,45 @@
       else fightRequest = { names: [name], seq: ++fightSeq };
       showEncounterPane();
     },
+    onopentable(code, modifier) {
+      showTable(code, modifier);
+    },
   };
 
   function closeEncounterPane() {
     encounterPaneOpen = false;
-    if (!heroShown) sidebar = 'steps';
+    if (!heroShown && !tablesShown) sidebar = 'steps';
   }
+
+  /** The toolbar's Tables button: show the pane, bring it to the front, or put it away. Works with no table file. */
+  function onTablesButton() {
+    if (!started || loadError) return;
+    sideBeforeFlow = false;
+    if (tablesShown && activeTab === 'tables') {
+      closeTablesPane();
+      return;
+    }
+    tablesOn = true;
+    sideTab = 'tables';
+    sidebar = 'side';
+  }
+
+  function closeTablesPane() {
+    tablesOn = false;
+    if (!heroShown && !encShown) sidebar = 'steps';
+  }
+
+  /** Open a reference table in the Tables pane with a modifier (an encounter text or treasure button). An open fight is untouched. */
+  function showTable(code: string, modifier = 0) {
+    if (!started || loadError) return;
+    const t = findTable(tables, code);
+    if (t) tablesState = openTable(tablesState, t.code, modifier);
+    sideBeforeFlow = false;
+    tablesOn = true;
+    sideTab = 'tables';
+    sidebar = 'side';
+  }
+
 
   /** Confirmed, one-way: keep this level's map, rest the hero, start the next level's map. */
   function goDown(opts: { eat: boolean; bandage: boolean }) {
@@ -759,13 +811,16 @@
       {menuOpen}
       heroOpen={heroShown}
       encounterOpen={encShown}
+      tablesOpen={tablesShown && activeTab === 'tables'}
       disabled={!started || !!loadError || gameOver !== null}
+      placing={step.kind !== 'idle'}
       ontool={selectTool}
       onundo={() => !modalOpen && history.undo()}
       onredo={() => !modalOpen && history.redo()}
       onmenu={() => started && !loadError && (menuOpen = !menuOpen)}
       onhero={onHeroButton}
       onencounter={onEncounterButton}
+      ontables={onTablesButton}
     />
     {#if toast}<p class="toast" role="status">{toast}</p>{/if}
     <UpdatePrompt />
@@ -842,6 +897,9 @@
           {#if heroShown}
             <button role="tab" id="side-tab-hero" aria-selected={activeTab === 'hero'} onclick={() => (sideTab = 'hero')}>Hero</button>
           {/if}
+          {#if tablesShown}
+            <button role="tab" id="side-tab-tables" aria-selected={activeTab === 'tables'} onclick={() => (sideTab = 'tables')}>Tables</button>
+          {/if}
         </div>
       {/if}
       {#if activeTab === 'room'}
@@ -853,9 +911,11 @@
           {tables}
           onclose={() => {
             heroOn = false;
-            if (!encShown) sidebar = 'steps';
+            if (!encShown && !tablesShown) sidebar = 'steps';
           }}
         />
+      {:else if activeTab === 'tables'}
+        <TablesPane {tables} state={tablesState} onstate={(st) => (tablesState = st)} onclose={closeTablesPane} />
       {:else}
         <EncounterPane
           {history}
@@ -870,6 +930,7 @@
           {win}
           onwin={(w) => (win = w)}
           holdWin={askingDeath || gameOver !== null}
+          onopentable={showTable}
         />
       {/if}
     </div>

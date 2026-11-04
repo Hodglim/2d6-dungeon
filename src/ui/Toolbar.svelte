@@ -10,17 +10,22 @@
     heroOpen?: boolean;
     /** The Encounter panel is showing in the sidebar. */
     encounterOpen?: boolean;
+    /** The Tables pane is showing in the sidebar. */
+    tablesOpen?: boolean;
     /** Start-up hasn't finished: nothing on the toolbar may act yet. */
     disabled?: boolean;
+    /** A room is being placed: only Play stays available, so the room can't be dropped by accident. */
+    placing?: boolean;
     ontool: (tool: Tool) => void;
     onundo: () => void;
     onredo: () => void;
     onmenu: () => void;
     onhero: () => void;
     onencounter: () => void;
+    ontables: () => void;
   }
 
-  let { view, tool, coverage, menuOpen, heroOpen = false, encounterOpen = false, disabled = false, ontool, onundo, onredo, onmenu, onhero, onencounter }: Props = $props();
+  let { view, tool, coverage, menuOpen, heroOpen = false, encounterOpen = false, tablesOpen = false, disabled = false, placing = false, ontool, onundo, onredo, onmenu, onhero, onencounter, ontables }: Props = $props();
 
   const tools: { id: Tool; label: string }[] = [
     { id: 'play', label: 'Play' },
@@ -43,11 +48,12 @@
   </div>
   <div class="group tools" role="group" aria-label="Tools">
     {#each tools as t (t.id)}
-      <button class="tool" aria-pressed={tool === t.id} {disabled} onclick={() => ontool(t.id)}>{t.label}</button>
+      <button class="tool" aria-pressed={tool === t.id} disabled={disabled || (placing && t.id !== 'play')} title={placing && t.id !== 'play' ? 'Finish or cancel the room first' : undefined} onclick={() => ontool(t.id)}>{t.label}</button>
     {/each}
   </div>
   <button class="hero" aria-pressed={heroOpen} {disabled} onclick={onhero}>{view.hero === null ? 'Create hero' : 'Hero'}</button>
   <button class="encounter" aria-pressed={encounterOpen} {disabled} onclick={onencounter}>Encounter</button>
+  <button class="tables" aria-pressed={tablesOpen} {disabled} onclick={ontables}>Tables</button>
   <div class="coverage" title="Map coverage" aria-label="Map coverage {Math.round(coverage * 100)}%">
     {Math.round(coverage * 100)}%
   </div>
@@ -58,7 +64,7 @@
     display: flex;
     align-items: center;
     flex-wrap: wrap;
-    gap: 8px 16px;
+    gap: 8px 10px;
     padding: 6px 10px;
     background: var(--paper);
     border-bottom: 2px solid var(--ink);
@@ -71,7 +77,7 @@
   button {
     min-width: 48px;
     min-height: 48px;
-    padding: 0 14px;
+    padding: 0 10px;
     font: inherit;
     font-size: 17px;
     color: var(--ink);
@@ -98,7 +104,7 @@
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    max-width: 230px;
+    max-width: 170px;
   }
   .history .label {
     overflow: hidden;
@@ -107,6 +113,7 @@
   }
   .tool[aria-pressed='true'],
   .encounter[aria-pressed='true'],
+  .tables[aria-pressed='true'],
   .hero[aria-pressed='true'] {
     color: var(--paper);
     background: var(--ink);
@@ -114,7 +121,7 @@
   }
   .coverage {
     margin-left: auto;
-    min-width: 64px;
+    min-width: 56px;
     min-height: 44px;
     display: grid;
     place-items: center;
@@ -123,6 +130,6 @@
     font-variant-numeric: tabular-nums;
     border: 2px solid var(--ink);
     border-radius: 22px;
-    padding: 0 10px;
+    padding: 0 6px;
   }
 </style>

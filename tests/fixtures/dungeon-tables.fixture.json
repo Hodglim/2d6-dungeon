@@ -144,6 +144,64 @@
       "Moss Lurker": {"level":1,"hp":6,"xp":3,"shift":-1,"treasure":""},
       "Dust Wisp": {"level":2,"hp":3,"xp":1,"shift":1,"treasure":"Made-up: a glass bead."}
     },
+    "referenceTables": {
+      "XX1": {
+        "name": "Practice Crate Table", "group": "generic", "page": 7, "dice": "d6",
+        "intro": "You pry open the made-up crate.", "notes": "Made-up note: a crate opens once.",
+        "columns": ["Roll", "Result"],
+        "rows": [
+          {"roll": "1-2", "cells": ["Nothing but straw."]},
+          {"roll": "3", "cells": ["A single practice coin."]},
+          {"roll": "4-5", "cells": ["Roll on XX2 +1"]},
+          {"roll": "6+", "cells": ["A made-up trinket."]}
+        ]
+      },
+      "XX2": {
+        "name": "Practice Trinket Table", "group": "loot", "page": 8, "dice": "2d6",
+        "columns": ["Roll", "Trinket", "Worth"],
+        "rows": [
+          {"roll": "0 or less", "cells": ["Bent nail", "0"]},
+          {"roll": "2-4", "cells": ["Glass bead", "1"]},
+          {"roll": "6-8", "cells": ["Brass button", "2"]},
+          {"roll": "10+", "cells": ["Tin ring", "3"]}
+        ]
+      },
+      "LIST1": {
+        "name": "Practice Price List", "group": "optional", "page": 9, "dice": null,
+        "columns": ["Item", "Cost", "Note"],
+        "rows": [
+          {"cells": ["Practice Lantern", "2", "Made-up"]},
+          {"cells": ["Spare Bootlace", "1", ""]}
+        ]
+      },
+      "XX3": {
+        "name": "Practice Echo Table", "group": "random", "page": 10, "dice": "d66",
+        "intro": "A made-up echo drifts down the hall.",
+        "columns": ["D66", "Echo"],
+        "rows": [
+          {"roll": "11-16", "cells": ["A distant made-up sneeze."]},
+          {"roll": "21-36", "cells": ["Footsteps, then nothing. See XX1."]},
+          {"roll": "41-66", "cells": ["A cheerful invented whistle."]}
+        ]
+      },
+      "XX4": {
+        "name": "Practice Puddle Table", "group": "level", "level": 1, "page": 11, "dice": "d3",
+        "columns": ["D3", "Puddle"],
+        "rows": [
+          {"roll": "1", "cells": ["Shallow and made up."]},
+          {"roll": "2", "cells": ["Ankle deep."]},
+          {"roll": "3+", "cells": ["Surprisingly deep."]}
+        ]
+      },
+      "practice-shelf": {
+        "name": "Practice Shelf Contents", "group": "generic", "page": 12, "dice": null,
+        "columns": ["Shelf"],
+        "rows": [
+          {"cells": ["Invented jars."]},
+          {"cells": ["Made-up books."]}
+        ]
+      }
+    },
     "exitTables": {
       "EXT1": {
           "11": {"door":"archway","locked":true},

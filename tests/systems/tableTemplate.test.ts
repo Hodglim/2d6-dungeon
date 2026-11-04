@@ -19,7 +19,7 @@ describe('blankTableFile', () => {
     expect(t.format).toBe(1);
     expect(t.systemId).toBe('dungeon');
     expect(Object.keys(t.tables).sort()).toEqual(
-      ['conditions', 'creatureTables', 'creatures', 'dungeonLevels', 'exitTables', 'favourBoxes', 'gods', 'levels', 'limits', 'starting', 'startingArmour', 'startingScrolls', 'weapons'].sort(),
+      ['conditions', 'creatureTables', 'creatures', 'dungeonLevels', 'exitTables', 'favourBoxes', 'gods', 'levels', 'limits', 'referenceTables', 'starting', 'startingArmour', 'startingScrolls', 'weapons'].sort(),
     );
     expect(TEMPLATE_FILE_NAME).toMatch(/\.json$/);
   });
@@ -39,6 +39,16 @@ describe('blankTableFile', () => {
     expect(Object.keys(t.tables.creatureTables.L1X!)).toEqual(['1', '2', '3', '4', '5', '6']);
     expect(t.tables.creatureTables.L1X!['1']).toEqual({ creatures: [''] });
     expect(t.tables.creatures).toEqual({ '': { level: null, hp: null, xp: null, shift: null, treasure: '' } });
+  });
+
+  it('has one blank reference list, XX1, refused until filled in', () => {
+    const t = blankTableFile();
+    expect(t.tables.referenceTables).toEqual({
+      XX1: { name: '', group: '', page: null, dice: null, columns: [''], rows: [{ cells: [''] }] },
+    });
+    const f = fixture as any;
+    const o = { ...t, tables: { ...f.tables, referenceTables: t.tables.referenceTables } };
+    expect(err(o)).toBe('The table file is damaged: Reference Tables XX1 name (empty)');
   });
 
   it('holds no text at all except the file name and the exit table name', () => {

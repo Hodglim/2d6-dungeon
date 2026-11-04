@@ -1,6 +1,7 @@
 /** The player's own dungeon table file: types and validation. The app ships no table content. */
 
 import { dungeonSystem } from './index';
+import { referenceProblem, type RefTable } from './referenceTables';
 
 export const TABLE_FILE_FORMAT = 1;
 export const MAX_TABLE_FILE_BYTES = 2_000_000;
@@ -78,6 +79,8 @@ export interface DungeonTables {
     creatureTables?: Record<string, Record<string, CreatureTableEntry>>;
     /** Creature stats keyed by printed name (optional). */
     creatures?: Record<string, CreatureStats>;
+    /** Printed tables for the Tables pane, keyed by table id (optional). Display and rolling only. */
+    referenceTables?: Record<string, RefTable>;
   };
 }
 
@@ -252,7 +255,7 @@ function roomTablesProblem(t: Record<string, unknown>): string | null {
   }
   const dl = t.dungeonLevels;
   const roomP = dl === undefined ? null : roomLevelsProblem(dl, exitTables);
-  return roomP ?? creatureProblem(t);
+  return roomP ?? creatureProblem(t) ?? referenceProblem(t);
 }
 
 function roomLevelsProblem(dl: unknown, exitTables: unknown): string | null {
