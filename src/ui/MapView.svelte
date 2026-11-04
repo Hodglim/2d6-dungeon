@@ -3,6 +3,7 @@
   import type { Cell, DungeonMap } from '../core/types';
   import { type Camera, clampCamera, panBy, pinchCamera, type Point, wheelFactor, worldBounds, zoomAt } from '../render/camera';
   import { type Pick, pick } from '../render/hit';
+  import { labelText } from '../render/labels';
   import { type DisplayToggles, MapRenderer } from '../render/renderer';
   import { classicTheme } from '../systems/dungeon/classic';
   import { onToken } from './tokenDrag';
@@ -48,6 +49,23 @@
   let dragCell = $state<Cell | null>(null);
   /** The mouse is over the token while it can be dragged: show a grab cursor. */
   let overToken = $state(false);
+  /** Hover tooltip with the full label of the room under the mouse (canvas-local CSS px); null when hidden. */
+  let tip = $state<{ text: string; x: number; y: number; flip: boolean } | null>(null);
+
+  /** Show the tooltip for the numbered room under a hovering mouse, or hide it. */
+  function updateTip(e: PointerEvent): void {
+    if (e.pointerType !== 'mouse' || e.buttons !== 0 || !renderer || ghost || dragCell) {
+      tip = null;
+      return;
+    }
+    const room = pick(map, renderer.screenToWorldPoint(e.clientX, e.clientY)).room;
+    if (!room || room.kind !== 'room') {
+      tip = null;
+      return;
+    }
+    const p = local(e);
+    tip = { text: labelText(room), x: p.x, y: p.y, flip: p.x > viewW - 220 };
+  }
 
   function tokenDrag(world: Point | null): void {
     dragCell = world ? { x: Math.floor(world.x), y: Math.floor(world.y) } : null;
@@ -166,11 +184,13 @@
 
   function onWheel(e: WheelEvent) {
     e.preventDefault();
+    tip = null;
     if (!renderer) return;
     setCamera(zoomAt(renderer.camera, wheelFactor(e.deltaY, e.deltaMode), local(e)));
   }
 
   function onPointerDown(e: PointerEvent) {
+    tip = null;
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     if (pointers.size >= 2) return;
     canvas.setPointerCapture(e.pointerId);
@@ -198,6 +218,7 @@
         overToken = grabsToken(e);
         onhover?.(renderer.screenToWorldPoint(e.clientX, e.clientY));
       }
+      updateTip(e);
       return;
     }
     if (!renderer || !gesture) return;
@@ -268,11 +289,15 @@
     onpointermove={onPointerMove}
     onpointerup={onPointerUp}
     onpointercancel={onPointerUp}
+    onpointerleave={() => (tip = null)}
     data-ghost={ghost ? `${ghost.x},${ghost.y},${ghost.w},${ghost.h}` : undefined}
     data-token-drag={dragCell ? `${dragCell.x},${dragCell.y}` : undefined}
     data-token={map.token ? `${map.token.x},${map.token.y}` : undefined}
     aria-label="Map"
   ></canvas>
+  {#if tip && !ghost}
+    <div class="room-tip" class:flip={tip.flip} style:left="{tip.x}px" style:top="{tip.y}px" role="tooltip">{tip.text}</div>
+  {/if}
 </div>
 
 <style>
@@ -289,6 +314,25 @@
     height: 100%;
     display: block;
     touch-action: none;
+  }
+  .room-tip {
+    position: absolute;
+    transform: translate(14px, 18px);
+    pointer-events: none;
+    white-space: nowrap;
+    max-width: 320px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding: 4px 8px;
+    font-size: 14px;
+    background: var(--paper);
+    color: var(--ink);
+    border: 2px solid var(--ink);
+    border-radius: 6px;
+    z-index: 1;
+  }
+  .room-tip.flip {
+    transform: translate(calc(-100% - 10px), 18px);
   }
   canvas.grab {
     cursor: grab;

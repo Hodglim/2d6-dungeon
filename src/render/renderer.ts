@@ -23,7 +23,7 @@ import {
 } from './draw';
 import { floorDecals, floorTiles } from './floor';
 import { hatchStrokes } from './hatching';
-import { type MeasureText, placeLabels } from './labels';
+import { type LabelBox, type MeasureText, placeLabels } from './labels';
 import type { Theme } from './theme';
 import { footprints, pathPosition, walkTrail } from './token';
 import { wallSegments, wallShadows } from './walls';
@@ -82,7 +82,7 @@ export function renderStatic(
   map: DungeonMap,
   theme: Theme,
   toggles: DisplayToggles,
-  options: { exitStubs?: boolean } = {},
+  options: { exitStubs?: boolean; labels?: boolean; features?: boolean } = {},
 ): void {
   const layers: (() => void)[] = [
     () => { drawPaper(ctx, map, theme, toggles.grid); },
@@ -93,8 +93,8 @@ export function renderStatic(
     () => { drawWalls(ctx, wallSegments(map), theme); },
     () => { drawDoors(ctx, doorGlyphs(map), theme); },
     () => { if (options.exitStubs ?? true) drawExitStubs(ctx, exitStubs(map), theme, fadedExits(map)); },
-    () => { drawFeatures(ctx, map.features, theme); },
-    () => { drawLabels(ctx, placeLabels(map, canvasMeasure(ctx, theme)), theme); },
+    () => { if (options.labels ?? true) drawLabels(ctx, placeLabels(map, canvasMeasure(ctx, theme)), theme); },
+    () => { if (options.features ?? true) drawFeatures(ctx, map.features, theme); },
   ];
   for (const layer of layers) {
     ctx.save();
@@ -139,7 +139,8 @@ interface Walk {
 /**
  * Draws a map onto a canvas. Static layers are rendered once into an offscreen cache at a
  * resolution matched to the zoom level (rebuilt when the map, theme, toggles or zoom
- * bucket change); each frame just blits the cache and draws footprints and the token.
+ * bucket change); each frame just blits the cache and draws exit stubs, footprints, the
+ * room labels (placed once per cache rebuild), features and the token.
  */
 export class MapRenderer {
   private ctx: CanvasRenderingContext2D;
@@ -150,6 +151,8 @@ export class MapRenderer {
   private cache: HTMLCanvasElement | null = null;
   private cacheScale = 0;
   private cacheDirty = true;
+  /** Room labels, placed when the cache is rebuilt and drawn every frame over the footprints. */
+  private labels: LabelBox[] = [];
   private walk: Walk | null = null;
   private frame = 0;
   private needsDraw = true;
@@ -285,10 +288,21 @@ export class MapRenderer {
     ctx.save();
     drawExitStubs(ctx, exitStubs(map), this.theme, fadedExits(map, token?.at ?? null));
     ctx.restore();
-    if (token) {
+    if (token && this.toggles.footprints) {
       ctx.save();
-      if (this.toggles.footprints) drawFootprints(ctx, footprints(map, token.trail, token.at), this.theme);
-      if (this.toggles.token) drawToken(ctx, token.pos.x, token.pos.y, this.theme, time);
+      drawFootprints(ctx, footprints(map, token.trail, token.at), this.theme);
+      ctx.restore();
+    }
+    // Labels cover the footprints (their boxes are opaque); note pins, stairs and the token stay on top.
+    ctx.save();
+    drawLabels(ctx, this.labels, this.theme);
+    ctx.restore();
+    ctx.save();
+    drawFeatures(ctx, map.features, this.theme);
+    ctx.restore();
+    if (token && this.toggles.token) {
+      ctx.save();
+      drawToken(ctx, token.pos.x, token.pos.y, this.theme, time);
       ctx.restore();
     }
     if (this.overlay) {
@@ -334,13 +348,18 @@ export class MapRenderer {
     const b = worldBounds(map);
     const scale = cacheScaleFor(wanted, b.w, b.h);
     if (!this.cacheDirty && this.cache && scale === this.cacheScale) return;
+    if (this.cacheDirty) {
+      this.labels = placeLabels(map, canvasMeasure(this.ctx, this.theme));
+      // For scripts/visual.mjs: room id, box and whether only the number is shown.
+      this.canvas.dataset.labels = this.labels.map((l) => `${l.roomId}:${l.x},${l.y},${l.w},${l.h}${l.badge ? ':badge' : ''}`).join(';');
+    }
     const cache = this.cache ?? document.createElement('canvas');
     cache.width = Math.ceil((b.w + 2) * scale);
     cache.height = Math.ceil((b.h + 2) * scale);
     const cctx = cache.getContext('2d');
     if (!cctx) return;
     cctx.setTransform(scale, 0, 0, scale, -(b.x - 1) * scale, -(b.y - 1) * scale);
-    renderStatic(cctx, map, this.theme, this.toggles, { exitStubs: false });
+    renderStatic(cctx, map, this.theme, this.toggles, { exitStubs: false, labels: false, features: false });
     this.cache = cache;
     this.cacheScale = scale;
     this.cacheDirty = false;

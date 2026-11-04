@@ -267,7 +267,8 @@ export function drawFeatures(ctx: CanvasRenderingContext2D, features: Feature[],
 
 export function drawLabels(ctx: CanvasRenderingContext2D, boxes: LabelBox[], theme: Theme): void {
   ctx.textBaseline = 'middle';
-  ctx.textAlign = 'left';
+  ctx.textAlign = 'center';
+  ctx.globalAlpha = 1; // opaque boxes: footprints and floor never show through
   for (const b of boxes) {
     ctx.fillStyle = theme.labelFill;
     ctx.strokeStyle = theme.ink;
@@ -275,7 +276,11 @@ export function drawLabels(ctx: CanvasRenderingContext2D, boxes: LabelBox[], the
     ctx.fillRect(b.x, b.y, b.w, b.h);
     ctx.strokeRect(b.x, b.y, b.w, b.h);
     ctx.fillStyle = theme.labelText;
-    fillText(ctx, b.text, b.x + LABEL_PAD_X, b.y + b.h / 2 + 0.01, LABEL_FONT_SIZE, theme.labelFont);
+    const lineH = b.h / b.lines.length;
+    for (const [i, line] of b.lines.entries()) {
+      // A number-only badge is bold so it reads as a key to tap, not as a short name.
+      fillText(ctx, line, b.x + b.w / 2, b.y + lineH * (i + 0.5) + 0.01, LABEL_FONT_SIZE, theme.labelFont, b.badge ? 'bold' : '');
+    }
   }
 }
 

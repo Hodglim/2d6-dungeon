@@ -1,19 +1,23 @@
 import { rectsOverlap } from '../core/geometry';
-import type { DungeonMap, Rect, Room } from '../core/types';
+import type { DungeonMap, Feature, Rect, Room } from '../core/types';
 
 export interface LabelBox extends Rect {
   roomId: string;
+  /** The full label ("N - Type", or "N"), whatever is shown. */
   text: string;
+  /** What is drawn, one entry per line, each centred in the box. */
+  lines: string[];
+  /** True when only the number is shown because the full label didn't fit. */
+  badge: boolean;
 }
 
-/** Text size in grid units. */
+/** Size of one line of text, padding included, in grid units. */
 export type MeasureText = (text: string) => { w: number; h: number };
 
 const STEP = 0.25;
+/** Labels keep this far inside their room's walls. */
 const INSET = 0.12;
-const GAP = 0.06;
-/** Outside searches widen through these margins (squares around the room), then the whole world. */
-const OUTSIDE_MARGINS = [1.5, 3, 6, Infinity];
+const MAX_LINES = 3;
 
 export function labelText(room: Room): string {
   const type = room.label.type.trim();
@@ -21,82 +25,107 @@ export function labelText(room: Room): string {
 }
 
 /**
- * Place a boxed label for every numbered room. Preferred spot: inside the room, as close
- * as possible to its entry door. If the text doesn't fit inside the room, the box moves to
- * the nearest spot on the rock outside where it overlaps no room and no other label.
- * Labels are placed in room-number order, so earlier rooms keep their spots.
+ * Wrap "N - Type" at word boundaries into exactly `lines` lines, keeping "N -" together and
+ * making the widest line as narrow as possible, then the lines as even as possible.
+ * Null when there are too few words.
+ */
+export function wrapLabel(number: number, type: string, lines: number, measure: MeasureText): string[] | null {
+  const words = [`${number} -`, ...type.trim().split(/\s+/).filter(Boolean)];
+  if (words.length < lines) return null;
+  let best: string[] | null = null;
+  let bestW = Infinity;
+  let bestSq = Infinity;
+  const split = (from: number, left: number, acc: string[]): void => {
+    if (left === 1) {
+      const all = [...acc, words.slice(from).join(' ')];
+      const ws = all.map((l) => measure(l).w);
+      const w = Math.max(...ws);
+      const sq = ws.reduce((sum, x) => sum + x * x, 0);
+      if (w < bestW - 1e-9 || (w < bestW + 1e-9 && sq < bestSq - 1e-9)) {
+        bestW = w;
+        bestSq = sq;
+        best = all;
+      }
+      return;
+    }
+    for (let end = from + 1; end <= words.length - left + 1; end++) split(end, left - 1, [...acc, words.slice(from, end).join(' ')]);
+  };
+  split(0, lines, []);
+  return best;
+}
+
+/**
+ * Place a boxed label inside every numbered room, never outside its walls. Each room tries,
+ * in order: "N - Type" on one line, wrapped onto 2 then 3 lines, then the number alone as a
+ * badge — taking the first that fits clear of door symbols and features (notes, stairs), as
+ * near the room's centre as possible. If even the badge has no clear spot it is centred in
+ * the room regardless (features are drawn above labels, so they stay visible).
  */
 export function placeLabels(map: DungeonMap, measure: MeasureText): LabelBox[] {
   const placed: LabelBox[] = [];
   const rooms = map.rooms.filter((r) => r.kind === 'room').sort((a, b) => a.number - b.number);
-  const doorZones = map.doors.map(doorZone);
-  const roomsGrown = map.rooms.map((o) => grow(o, GAP));
-  const placedGrown: Rect[] = [];
+  // Door symbols, note pins and stairs stay visible: labels keep clear of them.
+  const obstacles = [...map.doors.map(doorZone), ...map.features.map(featureZone)];
   for (const room of rooms) {
     const text = labelText(room);
-    const { w, h } = measure(text);
-    const anchor = anchorPoint(map, room);
-    const free = (r: Rect) => !placedGrown.some((p) => rectsOverlap(p, r)) && !doorZones.some((z) => rectsOverlap(z, r));
-    const onRock = (r: Rect) => !roomsGrown.some((o) => rectsOverlap(o, r));
-    let rect = bestSpot(insideCandidates(room, w, h), anchor, free);
-    for (let i = 0; !rect && i < OUTSIDE_MARGINS.length; i++) {
-      rect = bestSpot(outsideCandidates(map, room, w, h, OUTSIDE_MARGINS[i]!), anchor, (r) => free(r) && onRock(r));
+    const zones = obstacles.filter((z) => rectsOverlap(z, room));
+    const free = (r: Rect) => !zones.some((z) => rectsOverlap(z, r));
+    const tryLines = (lines: string[], badge: boolean): LabelBox | null => {
+      const sizes = lines.map(measure);
+      let w = Math.max(...sizes.map((s) => s.w));
+      const h = sizes.reduce((sum, s) => sum + s.h, 0);
+      if (badge) w = Math.max(w, h);
+      const rect = bestSpot(room, w, h, free);
+      return rect && { ...rect, roomId: room.id, text, lines, badge };
+    };
+    let box = tryLines([text], false);
+    const type = room.label.type.trim();
+    for (let n = 2; !box && type && n <= MAX_LINES; n++) {
+      const wrapped = wrapLabel(room.number, type, n, measure);
+      if (wrapped) box = tryLines(wrapped, false);
     }
-    // Nothing is free anywhere: at least keep clear of rooms, else sit on the anchor within the world.
-    rect ??= bestSpot(outsideCandidates(map, room, w, h, Infinity), anchor, onRock);
-    rect ??= clampToWorld(map, { x: anchor.x - w / 2, y: anchor.y - h / 2, w, h });
-    placed.push({ ...rect, roomId: room.id, text });
-    placedGrown.push(grow(rect, GAP));
+    const number = `${room.number}`;
+    const badge = type !== '';
+    box ??= tryLines([number], badge);
+    if (!box) {
+      const s = measure(number);
+      const w = badge ? Math.max(s.w, s.h) : s.w;
+      box = { x: room.x + (room.w - w) / 2, y: room.y + (room.h - s.h) / 2, w, h: s.h, roomId: room.id, text, lines: [number], badge };
+    }
+    placed.push(box);
   }
   return placed;
 }
 
-function clampToWorld(map: DungeonMap, r: Rect): Rect {
-  const x = Math.max(-1, Math.min(map.width + 1 - r.w, r.x));
-  const y = Math.max(-1, Math.min(map.height + 1 - r.h, r.y));
-  return { ...r, x, y };
-}
-
-/** The middle of the room's entry door, or the room's top-left corner area if it has none. */
-export function anchorPoint(map: DungeonMap, room: Room): { x: number; y: number } {
-  const door = map.doors.find((d) => d.id === room.entryDoorId);
-  if (!door) return { x: room.x + 0.5, y: room.y + 0.5 };
-  return door.side === 'N' ? { x: door.x + 0.5, y: door.y } : { x: door.x, y: door.y + 0.5 };
-}
-
-function insideCandidates(room: Room, w: number, h: number): Rect[] {
-  return grid(room.x + INSET, room.y + INSET, room.x + room.w - INSET - w, room.y + room.h - INSET - h, w, h);
-}
-
-function outsideCandidates(map: DungeonMap, room: Room, w: number, h: number, margin: number): Rect[] {
-  const minX = Math.max(-1, room.x - w - margin);
-  const minY = Math.max(-1, room.y - h - margin);
-  const maxX = Math.min(map.width + 1 - w, room.x + room.w + margin);
-  const maxY = Math.min(map.height + 1 - h, room.y + room.h + margin);
-  return grid(minX, minY, maxX, maxY, w, h);
-}
-
-function grid(x0: number, y0: number, x1: number, y1: number, w: number, h: number): Rect[] {
-  const out: Rect[] = [];
-  for (let y = y0; y <= y1 + 1e-9; y += STEP) {
-    for (let x = x0; x <= x1 + 1e-9; x += STEP) out.push({ x, y, w, h });
+/** Positions along one axis from lo to hi, stepping out from `centre` (clamped), edges included. */
+function axis(lo: number, hi: number, centre: number): number[] {
+  if (hi < lo - 1e-9) return [];
+  const c = Math.max(lo, Math.min(hi, centre));
+  const out = [c];
+  for (let k = 1; c - k * STEP >= lo - 1e-9 || c + k * STEP <= hi + 1e-9; k++) {
+    if (c - k * STEP >= lo - 1e-9) out.push(c - k * STEP);
+    if (c + k * STEP <= hi + 1e-9) out.push(c + k * STEP);
   }
+  out.push(lo, hi);
   return out;
 }
 
-function bestSpot(cands: Rect[], anchor: { x: number; y: number }, ok: (r: Rect) => boolean): Rect | null {
+/** The clear spot for a w×h box inside the room whose centre is nearest the room's centre. */
+function bestSpot(room: Room, w: number, h: number, ok: (r: Rect) => boolean): Rect | null {
+  const cx = room.x + room.w / 2;
+  const cy = room.y + room.h / 2;
+  const xs = axis(room.x + INSET, room.x + room.w - INSET - w, cx - w / 2);
+  const ys = axis(room.y + INSET, room.y + room.h - INSET - h, cy - h / 2);
   let best: Rect | null = null;
   let bestScore = Infinity;
-  for (const r of cands) {
-    if (!ok(r)) continue;
-    const nx = Math.max(r.x, Math.min(anchor.x, r.x + r.w));
-    const ny = Math.max(r.y, Math.min(anchor.y, r.y + r.h));
-    const edgeDist = Math.hypot(anchor.x - nx, anchor.y - ny);
-    const centreDist = Math.hypot(anchor.x - (r.x + r.w / 2), anchor.y - (r.y + r.h / 2));
-    const score = edgeDist * 10 + centreDist;
-    if (score < bestScore) {
-      bestScore = score;
-      best = r;
+  for (const y of ys) {
+    for (const x of xs) {
+      const r = { x, y, w, h };
+      const score = Math.hypot(x + w / 2 - cx, y + h / 2 - cy);
+      if (score < bestScore - 1e-9 && ok(r)) {
+        bestScore = score;
+        best = r;
+      }
     }
   }
   return best;
@@ -107,6 +136,10 @@ export function doorZone(d: { x: number; y: number; side: 'N' | 'W' }): Rect {
   return d.side === 'N' ? { x: d.x, y: d.y - 0.36, w: 1, h: 0.72 } : { x: d.x - 0.36, y: d.y, w: 0.72, h: 1 };
 }
 
-function grow(r: Rect, by: number): Rect {
-  return { x: r.x - by, y: r.y - by, w: r.w + by * 2, h: r.h + by * 2 };
+/** The drawn icon of a note pin or stairs (see drawFeatures), plus a hair of margin. */
+export function featureZone(f: Feature): Rect {
+  const m = 0.04;
+  return f.kind === 'stairs'
+    ? { x: f.x + 0.15 - m, y: f.y + 0.18 - m, w: 0.7 + m * 2, h: 0.64 + m * 2 }
+    : { x: f.x + 0.38 - m, y: f.y + 0.28 - m, w: 0.24 + m * 2, h: 0.5 + m * 2 };
 }

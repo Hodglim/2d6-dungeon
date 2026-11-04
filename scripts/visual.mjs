@@ -2827,6 +2827,191 @@ for (const reduced of [false, true]) {
   await ctx.close();
 }
 
+// Room labels: always inside their own room (wrapped, or the number alone as a badge), and a
+// mouse hover shows the room's full label in a tooltip that hides off rooms, on touch and while panning.
+{
+  const ctx = await browser.newContext({ viewport: { width: 1180, height: 820 }, deviceScaleFactor: 2, hasTouch: true });
+  await ctx.addInitScript(() => localStorage.setItem('2d6.installHintDismissed', '1'));
+  const p = await ctx.newPage();
+  p.on('pageerror', (e) => errors.push(e.message));
+  p.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
+  await p.goto(url, { waitUntil: 'load' });
+  await p.waitForTimeout(800);
+  const tag = 'room labels';
+  await p.click('header.toolbar button[aria-label="Menu"]');
+  await p.click('text=Load demo map');
+  await p.waitForTimeout(800);
+  const screenAt = (x, y) =>
+    p.$eval('canvas', (c, [wx, wy]) => {
+      const [cx, cy, sc] = (c.dataset.camera ?? '').split(',').map(Number);
+      const r = c.getBoundingClientRect();
+      return { x: r.left + (wx - cx) * sc, y: r.top + (wy - cy) * sc };
+    }, [x, y]);
+  const rooms = () =>
+    p.evaluate(
+      () =>
+        new Promise((resolve, reject) => {
+          const r = indexedDB.open('2d6-map-maker', 1);
+          r.onsuccess = () => {
+            const g = r.result.transaction('saves').objectStore('saves').get('current');
+            g.onsuccess = () => resolve(g.result.history.current.rooms.filter((o) => o.kind === 'room'));
+            g.onerror = () => reject(g.error);
+          };
+          r.onerror = () => reject(r.error);
+        }),
+    );
+  const centreOf = (o) => screenAt(o.x + o.w / 2, o.y + o.h / 2);
+  // Crowd it: give two small rooms long names through the room inspector.
+  const rename = async (from, to) => {
+    await p.waitForTimeout(1500); // autosave
+    const o = (await rooms()).find((r) => r.label.type === from);
+    if (!o) return problems.push(`${tag}: demo has no room "${from}"`);
+    const at = await centreOf(o);
+    await p.mouse.click(at.x, at.y);
+    await p.waitForTimeout(200);
+    await p.fill('aside.panel [data-editor="room"] input[type="text"]', to);
+    await p.click('aside.panel button:text-is("Save")');
+    await p.waitForTimeout(200);
+    await p.click('aside.panel button:text-is("Close")');
+  };
+  await rename('Store', 'Burrow of the Grey Hounds');
+  await rename('Vault', 'Ossuary of Forgotten Saints');
+  await rename('Shrine', 'Shrine of the Drowned Bell');
+  await p.waitForTimeout(1500);
+  await p.mouse.move(2, 2);
+  await shot('95-labels-crowded.png', p);
+  // No label covers a note pin or stairs (the demo has a note where the Crypt's label would centre).
+  {
+    const feats = await p.evaluate(
+      () =>
+        new Promise((resolve, reject) => {
+          const r = indexedDB.open('2d6-map-maker', 1);
+          r.onsuccess = () => {
+            const g = r.result.transaction('saves').objectStore('saves').get('current');
+            g.onsuccess = () => resolve(g.result.history.current.features);
+            g.onerror = () => reject(g.error);
+          };
+          r.onerror = () => reject(r.error);
+        }),
+    );
+    const zone = (f) => (f.kind === 'stairs' ? { x: f.x + 0.11, y: f.y + 0.14, w: 0.78, h: 0.72 } : { x: f.x + 0.34, y: f.y + 0.24, w: 0.32, h: 0.58 });
+    const hit = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+    const boxes = ((await p.getAttribute('canvas', 'data-labels')) ?? '').split(';').filter(Boolean).map((t) => {
+      const [x, y, w, h] = t.split(':')[1].split(',').map(Number);
+      return { id: t.split(':')[0], x, y, w, h };
+    });
+    let n = 0;
+    for (const f of feats) for (const b of boxes) if (hit(zone(f), b)) problems.push(`${tag}: label of ${b.id} covers the ${f.kind} at ${f.x},${f.y}`), n++;
+    console.log(`${tag}: ${boxes.length} labels, ${feats.length} features, ${n} covered`);
+    if (!feats.some((f) => f.kind === 'note')) problems.push(`${tag}: demo has no note to check against`);
+  }
+
+  const tip = async () => ((await p.isVisible('.room-tip')) ? (await p.textContent('.room-tip')).trim() : null);
+  const all = await rooms();
+  const armoury = all.find((r) => r.label.type === 'Collapsed Armoury');
+  const full = `${armoury.number} - Collapsed Armoury`;
+  const at = await centreOf(armoury);
+  await p.mouse.move(at.x, at.y, { steps: 4 });
+  await p.waitForTimeout(150);
+  console.log(`${tag}: hover over the 2×2 armoury → tooltip ${JSON.stringify(await tip())}`);
+  if ((await tip()) !== full) problems.push(`${tag}: hovering the armoury shows ${JSON.stringify(await tip())}, expected "${full}"`);
+  await shot('96-label-tooltip.png', p);
+  // Off the rooms (out on the rock left of the map): hidden.
+  const rock = await screenAt(1.5, 1.5);
+  await p.mouse.move(rock.x, rock.y, { steps: 4 });
+  await p.waitForTimeout(150);
+  if ((await tip()) !== null) problems.push(`${tag}: tooltip still shown off the rooms: ${await tip()}`);
+  // Every numbered room gets its full label.
+  for (const o of all) {
+    const c = await centreOf(o);
+    await p.mouse.move(c.x, c.y);
+    await p.waitForTimeout(60);
+    const want = o.label.type.trim() ? `${o.number} - ${o.label.type.trim()}` : `${o.number}`;
+    if ((await tip()) !== want) problems.push(`${tag}: room ${o.number} tooltip ${JSON.stringify(await tip())}, expected "${want}"`);
+  }
+  // Pressing to pan hides it, and it stays hidden while the mouse drags.
+  await p.mouse.move(at.x, at.y);
+  await p.waitForTimeout(60);
+  await p.mouse.down();
+  await p.mouse.move(at.x + 40, at.y + 30, { steps: 6 });
+  if ((await tip()) !== null) problems.push(`${tag}: tooltip shown while panning`);
+  await p.mouse.up();
+  // A touch pointer never shows it.
+  await p.mouse.move(2, 2);
+  const at2 = await centreOf(armoury);
+  await p.$eval('canvas', (c, pt) => {
+    c.dispatchEvent(new PointerEvent('pointermove', { pointerId: 9, pointerType: 'touch', bubbles: true, clientX: pt.x, clientY: pt.y, buttons: 0 }));
+  }, at2);
+  await p.waitForTimeout(100);
+  if ((await tip()) !== null) problems.push(`${tag}: tooltip shown for a touch pointer`);
+  console.log(`${tag}: tooltip hides off rooms, while panning and on touch`);
+
+  // Footprints never show through a label: a trail walked straight under a label leaves its
+  // pixels exactly as they are with no trail, while the trail beside it is visible.
+  await p.waitForTimeout(1500); // autosave
+  const labels = ((await p.getAttribute('canvas', 'data-labels')) ?? '').split(';').map((t) => {
+    const [roomId, r, badge] = t.split(':');
+    const [x, y, w, h] = r.split(',').map(Number);
+    return { roomId, x, y, w, h, badge: badge === 'badge' };
+  });
+  const roomsNow = await rooms();
+  const target = labels
+    .map((l) => ({ l, room: roomsNow.find((o) => o.id === l.roomId), row: Math.floor(l.y + l.h / 2) }))
+    .find(({ l, room, row }) => room && !l.badge && l.y <= row + 0.3 && l.y + l.h >= row + 0.7 && room.w >= 3);
+  if (!target) problems.push(`${tag}: no label suitable for the footprint check`);
+  else {
+    const { l, room, row } = target;
+    const trail = [];
+    for (let x = room.x; x < room.x + room.w; x++) trail.push({ x, y: row });
+    // The token waits in a corner square off the label's row.
+    const tokenAt = { x: room.x, y: row === room.y ? room.y + room.h - 1 : room.y };
+    const setTrail = (cells) =>
+      p.evaluate(
+        ([tok, cells]) =>
+          new Promise((resolve, reject) => {
+            const r = indexedDB.open('2d6-map-maker', 1);
+            r.onsuccess = () => {
+              const store = r.result.transaction('saves', 'readwrite').objectStore('saves');
+              const g = store.get('current');
+              g.onsuccess = () => {
+                const rec = g.result;
+                rec.history.current.token = { ...tok, trail: cells };
+                const put = store.put(rec, 'current');
+                put.onsuccess = () => resolve(null);
+                put.onerror = () => reject(put.error);
+              };
+              g.onerror = () => reject(g.error);
+            };
+            r.onerror = () => reject(r.error);
+          }),
+        [tokenAt, cells],
+      );
+    const clips = async () => {
+      await p.reload({ waitUntil: 'load' });
+      await p.waitForTimeout(1200);
+      await p.mouse.move(2, 2);
+      const a = await screenAt(l.x, l.y);
+      const b = await screenAt(l.x + l.w, l.y + l.h);
+      const label = { x: a.x + 2, y: a.y + 2, width: b.x - a.x - 4, height: b.y - a.y - 4 };
+      const ra = await screenAt(room.x, row);
+      const rb = await screenAt(room.x + room.w, row + 1);
+      const rowClip = { x: ra.x, y: ra.y, width: rb.x - ra.x, height: rb.y - ra.y };
+      return { label: await p.screenshot({ clip: label }), row: await p.screenshot({ clip: rowClip }) };
+    };
+    await setTrail([]);
+    const bare = await clips();
+    await setTrail(trail);
+    const walked = await clips();
+    await shot('97-label-over-footprints.png', p);
+    const labelSame = bare.label.equals(walked.label);
+    const rowDiffers = !bare.row.equals(walked.row);
+    console.log(`${tag}: trail under label of room ${room.number}: label pixels unchanged ${labelSame}, footprints visible beside it ${rowDiffers}`);
+    if (!rowDiffers) problems.push(`${tag}: the footprint trail did not show at all (check is not testing anything)`);
+    if (!labelSame) problems.push(`${tag}: footprints show through the label of room ${room.number}`);
+  }
+  await ctx.close();
+}
+
 await browser.close();
 if (errors.length) problems.push('page errors:\n' + errors.join('\n'));
 if (problems.length) {
