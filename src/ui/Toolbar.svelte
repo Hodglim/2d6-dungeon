@@ -32,7 +32,6 @@
     { id: 'door', label: 'Door' },
     { id: 'stairs', label: 'Stairs' },
     { id: 'note', label: 'Note' },
-    { id: 'select', label: 'Select' },
   ];
 </script>
 

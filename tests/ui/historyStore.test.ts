@@ -1,6 +1,6 @@
 import { addRoom } from '../../src/core/commands';
 import { History } from '../../src/core/history';
-import { historyStore, type HistoryView } from '../../src/ui/historyStore';
+import { historyStore, toolAfterClick, type HistoryView } from '../../src/ui/historyStore';
 import { emptyMap, room } from '../core/fixtures';
 
 describe('historyStore', () => {
@@ -47,5 +47,20 @@ describe('historyStore', () => {
     const fresh = emptyMap(20, 20);
     h.reset(fresh);
     expect(seen[1]).toEqual({ map: fresh, hero: null, encounter: null, canUndo: false, canRedo: false, undoLabel: null, redoLabel: null });
+  });
+});
+
+describe('toolAfterClick', () => {
+  it('a second click on the active editor tool goes back to Play; Play stays Play', () => {
+    expect(toolAfterClick('door', 'door')).toBe('play');
+    expect(toolAfterClick('stairs', 'stairs')).toBe('play');
+    expect(toolAfterClick('note', 'note')).toBe('play');
+    expect(toolAfterClick('play', 'play')).toBe('play');
+  });
+
+  it('a click on another tool picks it', () => {
+    expect(toolAfterClick('play', 'door')).toBe('door');
+    expect(toolAfterClick('door', 'note')).toBe('note');
+    expect(toolAfterClick('stairs', 'play')).toBe('play');
   });
 });

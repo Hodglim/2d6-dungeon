@@ -55,7 +55,7 @@ export function overlayFor(step: Step, map: DungeonMap): OverlayShape[] {
   }
 }
 
-/** Shapes marking what an editor tool (Door, Stairs, Note, Select) has selected. */
+/** Shapes marking what an editor tool (Door, Stairs, Note) or a Play tap has selected. */
 export function selectionOverlay(map: DungeonMap, sel: Selection | null): OverlayShape[] {
   if (!sel) return [];
   switch (sel.kind) {

@@ -32,7 +32,9 @@
   import type { DungeonTables } from '../systems/dungeon/tables';
   import { classicTheme } from '../systems/dungeon/classic';
   import { drawOverlay, overlayFor, selectionOverlay } from './overlay';
-  import { historyStore, type Tool } from './historyStore';
+  import { dragOverlay, dropTarget } from './tokenDrag';
+  import { drawToken } from '../render/draw';
+  import { historyStore, toolAfterClick, type Tool } from './historyStore';
   import UpdatePrompt from './UpdatePrompt.svelte';
   import MapView from './MapView.svelte';
   import InstallHint from './InstallHint.svelte';
@@ -193,8 +195,10 @@
   let notice = $state<string | null>(null);
   /** The next exit tap starts a gap corridor instead of a room. */
   let gapMode = $state(false);
-  /** What the Door, Stairs, Note or Select tool has picked for the panel to edit. */
+  /** What the Door, Stairs or Note tool, or a Play tap, has picked for the panel to edit. */
   let selection = $state.raw<Selection | null>(null);
+  /** The token is being dragged (Play, idle): the pointer's world point. */
+  let tokenDragAt = $state.raw<Point | null>(null);
   /** The selection against the committed map: gone after an Undo that removed its target. */
   const liveSelection = $derived(resolveSelection($view.map, selection));
 
@@ -207,6 +211,7 @@
       gapMode = false;
       panelCollapsed = false; // the steps live in the panel
       if (starting) {
+        selection = null; // a room, note or stairs shown in Play gives way to the steps
         // The flow takes the sidebar; the side panels come back (or stay as tabs) afterwards.
         if (sidebar === 'side') sideBeforeFlow = true;
         sidebar = 'steps';
@@ -269,11 +274,34 @@
     const renderer = mapView?.getRenderer();
     if (!renderer) return;
     void $view.map; // re-run on every committed change (idle exit highlights)
-    const shapes = tool === 'play' ? overlayFor(step, flow.draftMap) : selectionOverlay($view.map, liveSelection);
-    renderer.setOverlay(shapes.length ? (ctx) => drawOverlay(ctx, shapes, classicTheme) : null);
+    const idle = step.kind === 'idle';
+    const drag = tool === 'play' && idle ? tokenDragAt : null;
+    const shapes =
+      tool === 'play'
+        ? [
+            ...overlayFor(step, flow.draftMap),
+            ...(idle ? selectionOverlay($view.map, liveSelection) : []),
+            ...(drag ? dragOverlay($view.map, { x: Math.floor(drag.x), y: Math.floor(drag.y) }) : []),
+          ]
+        : selectionOverlay($view.map, liveSelection);
+    if (!shapes.length && !drag) {
+      renderer.setOverlay(null);
+      return;
+    }
+    renderer.setOverlay((ctx, time) => {
+      drawOverlay(ctx, shapes, classicTheme);
+      if (drag) {
+        // A ghost of the token under the pointer; the token itself stays put until the drop.
+        ctx.globalAlpha = 0.75;
+        drawToken(ctx, drag.x, drag.y, classicTheme, time);
+        ctx.globalAlpha = 1;
+      }
+    });
   });
 
-  function selectTool(t: Tool) {
+  function selectTool(clicked: Tool) {
+    const t = toolAfterClick(tool, clicked); // a second click on Door, Stairs or Note goes back to Play
+    if (t === tool) return; // Play while in Play: nothing to do
     // Switching tools used to cancel a half-placed room without asking; finish or cancel it first.
     if (t !== 'play' && step.kind !== 'idle') return; // the toolbar disables these while placing
     if (t !== 'play') {
@@ -686,8 +714,10 @@
         return flow.startFromExit(action.doorId);
       case 'startGap':
         return flow.startGap(action.doorId);
-      case 'walk':
-        return walkTo(action.cell);
+      case 'select':
+        selection = action.selection;
+        sidebar = 'steps';
+        return;
       case 'slideAndPlace':
         flow.slideTo(action.cell);
         if (flow.step.kind === 'position' && flow.step.placement.ok) flow.place();
@@ -695,6 +725,7 @@
       case 'toggleExit':
         return flow.toggleExit(action.edge);
       case 'hint':
+        selection = null;
         notice = action.text;
         sidebar = 'steps';
         return;
@@ -722,6 +753,21 @@
         sidebar = 'steps';
         return;
     }
+  }
+
+  /** The token can be dragged: Play, no room being placed, not in gap mode, nothing modal, a token on the map. */
+  const dragsToken = $derived(tool === 'play' && step.kind === 'idle' && !gapMode && !modalOpen && $view.map.token !== null);
+
+  /** The token was dropped: a square the walk accepts walks there; anywhere else nothing changes. */
+  function onTokenDrop(world: Point) {
+    tokenDragAt = null;
+    if (!dragsToken) return;
+    const target = dropTarget(history.map, { x: Math.floor(world.x), y: Math.floor(world.y) });
+    if (!target) return;
+    const renderer = mapView?.getRenderer();
+    if (renderer?.walking) renderer.cancelWalk(); // the model already holds the last walk's result
+    notice = null;
+    walkTo(target);
   }
 
   /** Runs an editor tool's command through History; a rejection's reason goes in the panel. */
@@ -854,6 +900,9 @@
   </div>
   <MapView bind:this={mapView} map={shownMap} {toggles} ontap={onTap}
     onhover={onHover}
+    {dragsToken}
+    ontokendrag={(w) => (tokenDragAt = dragsToken ? w : null)}
+    ontokendrop={onTokenDrop}
     dragsGhost={step.kind === 'position'}
     ghost={step.kind === 'position' ? step.placement.rect : null}
   />

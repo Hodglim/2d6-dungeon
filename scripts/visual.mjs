@@ -2,7 +2,7 @@
 // Drives the app in headless Firefox at the reference tablet viewport (1180×820, dpr 2,
 // touch), saves screenshots and asserts every toolbar and step-panel button is at least
 // 44×44 CSS px. Plays an entrance plus a second room by tapping the map and typing dice,
-// then uses the Door, Stairs, Note and Select tools on it.
+// then uses the Door, Stairs and Note tools on it, and taps a room in Play to inspect it.
 // Exits non-zero on undersized buttons, a wrong play-flow step, the panel overlapping the
 // map, or any page error.
 import { mkdirSync, readFileSync } from 'node:fs';
@@ -309,8 +309,8 @@ await page.fill('aside.panel textarea', 'Rats behind the crates');
 await panelButton('Add note');
 await expectUndo('Add note', 'adding a note');
 
-// Select: Room 2's details; nothing to move, resize or delete it.
-await useTool('Select');
+// A tap on a room in Play: Room 2's details; nothing to move, resize or delete it.
+await useTool('Play');
 await tapWorld(12.5, 16.5);
 const inspector = (await page.innerText('aside.panel [data-editor="room"]')).replace(/\s+/g, ' ').trim();
 console.log(`Inspector: ${inspector}`);
@@ -1169,7 +1169,7 @@ for (const reduced of [false, true]) {
   await checkPanelOn(p, tag);
   await shot('45-room-roll.png', p);
   // Picking another tool mid-placement must not drop the room.
-  for (const name of ['Door', 'Stairs', 'Note', 'Select']) {
+  for (const name of ['Door', 'Stairs', 'Note']) {
     if (!(await p.isDisabled(`header.toolbar button.tool:text-is("${name}")`))) problems.push(`${tag}: ${name} tool not disabled while placing a room`);
   }
   if (await p.isDisabled('header.toolbar button.tool:text-is("Play")')) problems.push(`${tag}: Play disabled while placing`);
@@ -1207,7 +1207,7 @@ for (const reduced of [false, true]) {
   await ctx.close();
 }
 
-// 14. Roll later: skip a room's roll, then roll for it from the Select inspector.
+// 14. Roll later: skip a room's roll, then roll for it from the room inspector (a tap in Play).
 {
   const ctx = await browser.newContext({ viewport: { width: 1180, height: 820 }, deviceScaleFactor: 2, hasTouch: true, reducedMotion: 'reduce' });
   await ctx.addInitScript(() => localStorage.setItem('2d6.installHintDismissed', '1'));
@@ -1236,7 +1236,7 @@ for (const reduced of [false, true]) {
     await tool('Door');
     await tap(x, y);
     const pressed = await p.$$eval('aside.panel [data-editor=door] button[aria-pressed=true]', (els) => els.map((e) => e.textContent?.trim()));
-    await tool('Select');
+    await tool('Play');
     return pressed.join('+');
   };
   await p.setInputFiles('input[data-extra="tables"]', { name: 'tables.json', mimeType: 'application/json', buffer: Buffer.from(readFileSync('tests/fixtures/dungeon-tables.fixture.json')) });
@@ -1262,7 +1262,7 @@ for (const reduced of [false, true]) {
   await p.waitForTimeout(1500);
   const level = (await p.textContent('[data-testid=level-indicator]'))?.trim();
   if (level !== 'Level 1 · Test Halls') problems.push(`${tag}: level indicator is "${level}"`);
-  await tool('Select');
+  await tool('Play');
   const roomAt = [12.5, 18.5];
   const entry = [12.5, 20.5];
   const exitE = [14, 17.5];
@@ -1949,13 +1949,12 @@ for (const reduced of [false, true]) {
   await shot('60-encounter-roll-twice.png', p);
   const beforeFight = (await foes()).length; // while the pane shows
 
-  // Finish the room; the Select tool's inspector shows the same buttons.
+  // Finish the room; the room inspector (a tap in Play) shows the same buttons.
   await p.click('#side-tab-room');
   await btn('Done');
   await p.waitForTimeout(300);
   if (await p.isVisible('aside.panel button:text-is("Done")')) await btn('Done');
   await p.waitForTimeout(800);
-  await p.click('header.toolbar button.tool:text-is("Select")');
   if (await p.isVisible('#side-tab-room')) await p.click('#side-tab-room');
   await p.click('header.toolbar button.encounter');
   await p.waitForTimeout(200);
@@ -2588,6 +2587,243 @@ for (const reduced of [false, true]) {
   await shot('83-table-opened-from-victory.png', p);
   await p.click('#side-tab-encounter');
   await p.waitForSelector(`${enc} .victory`);
+  await ctx.close();
+}
+
+// 21. Token drag: the token moves only by dragging it; taps on rooms and notes in Play show them.
+// Entrance room x11–13 y21–24 (token at 12,22), open exits north (12,20), west and east.
+{
+  const ctx = await browser.newContext({ viewport: { width: 1180, height: 820 }, deviceScaleFactor: 2, hasTouch: true, reducedMotion: 'reduce' });
+  await ctx.addInitScript(() => localStorage.setItem('2d6.installHintDismissed', '1'));
+  const p = await ctx.newPage();
+  p.on('pageerror', (e) => errors.push(e.message));
+  p.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
+  await p.goto(url, { waitUntil: 'load' });
+  await p.waitForTimeout(800);
+  const tag = 'token drag';
+  const screenAt = (x, y) =>
+    p.$eval('canvas', (c, [wx, wy]) => {
+      const [cx, cy, sc] = (c.dataset.camera ?? '').split(',').map(Number);
+      const r = c.getBoundingClientRect();
+      return { x: r.left + (wx - cx) * sc, y: r.top + (wy - cy) * sc };
+    }, [x, y]);
+  const tap = async (x, y) => {
+    const at = await screenAt(x, y);
+    await p.mouse.click(at.x, at.y);
+    await p.waitForTimeout(150);
+  };
+  const btn = (name) => p.click(`aside.panel button:text-is("${name}")`);
+  const tool = (name) => p.click(`header.toolbar button.tool:text-is("${name}")`);
+  const undo = async () => (await p.textContent('header.toolbar button.history'))?.replace(/\s+/g, ' ').trim() ?? '';
+  const token = () => p.getAttribute('canvas', 'data-token');
+  const dragCell = () => p.getAttribute('canvas', 'data-token-drag');
+  const dice = async (...v) => {
+    const ins = await p.$$('aside.panel form.dice input');
+    for (let i = 0; i < v.length; i++) await ins[i].fill(v[i]);
+  };
+  /** Press at one world point and move (mouse) to another; the caller releases. */
+  const pressAndMove = async (from, to) => {
+    const a = await screenAt(...from);
+    const b = await screenAt(...to);
+    await p.mouse.move(a.x, a.y);
+    await p.mouse.down();
+    await p.mouse.move(b.x, b.y, { steps: 8 });
+    await p.waitForTimeout(100);
+  };
+
+  // No Select tool any more.
+  const tools = await p.$$eval('header.toolbar button.tool', (els) => els.map((e) => e.textContent.trim()));
+  console.log(`${tag}: tools ${tools.join(', ')}`);
+  if (tools.join() !== 'Play,Door,Stairs,Note') problems.push(`${tag}: toolbar tools are ${tools.join(', ')}`);
+  // A second click on Door, Stairs or Note goes back to Play; Play stays Play.
+  const pressed = () => p.$$eval('header.toolbar button.tool[aria-pressed=true]', (els) => els.map((e) => e.textContent.trim()).join());
+  for (const name of ['Door', 'Stairs', 'Note']) {
+    await tool(name);
+    if ((await pressed()) !== name) problems.push(`${tag}: after one click on ${name} the pressed tool is ${await pressed()}`);
+    await tool(name);
+    if ((await pressed()) !== 'Play') problems.push(`${tag}: a second click on ${name} left ${await pressed()} pressed`);
+  }
+  await tool('Play');
+  if ((await pressed()) !== 'Play') problems.push(`${tag}: clicking Play in Play left ${await pressed()} pressed`);
+
+  await tap(12.5, 25.5);
+  await dice('3', '4');
+  await btn('Use these');
+  await btn('Place');
+  await btn('Done');
+  await btn('Done');
+  await p.waitForTimeout(1500);
+  const start = await token();
+  const undo0 = await undo();
+  console.log(`${tag}: token at ${start}, ${undo0}`);
+  if (start !== '12,22') problems.push(`${tag}: token starts at ${start}, expected 12,22`);
+
+  // A plain click on a floor square opens the room inspector; the token stays put.
+  await tap(12.5, 23.5);
+  if (!(await p.isVisible('aside.panel [data-editor="room"]'))) problems.push(`${tag}: a floor click did not open the room inspector`);
+  if ((await token()) !== start) problems.push(`${tag}: a floor click moved the token to ${await token()}`);
+  if ((await undo()) !== undo0) problems.push(`${tag}: a floor click added an undo step: ${await undo()}`);
+  await checkPanelOn(p, `${tag} inspector`);
+  await shot('90-play-tap-room.png', p);
+  await btn('Close');
+  if (await p.isVisible('aside.panel [data-editor="room"]')) problems.push(`${tag}: Close left the inspector open`);
+  if (!(await p.isVisible('aside.panel .hint'))) problems.push(`${tag}: Close did not bring back the step panel`);
+
+  // A click on the token's own square is still a tap: the room inspector, no ghost, no move.
+  await tap(12.5, 22.5);
+  if (!(await p.isVisible('aside.panel [data-editor="room"]'))) problems.push(`${tag}: a click on the token did not open the room inspector`);
+  if ((await token()) !== start || (await undo()) !== undo0) problems.push(`${tag}: a click on the token changed something (${await token()}, ${await undo()})`);
+  await btn('Close');
+  // A note on the token's square opens on a tap.
+  await tool('Note');
+  await tap(12.5, 22.5);
+  await p.fill('aside.panel textarea', 'Invented footprints');
+  await btn('Add note');
+  await tool('Play');
+  await tap(12.5, 22.5);
+  if (!(await p.isVisible('aside.panel [data-editor="note"]'))) problems.push(`${tag}: a tap on a note under the token did not open the note editor`);
+  await p.click('header.toolbar button.history'); // the note goes again
+  await p.waitForTimeout(300);
+  // An open exit right beside the token: stand on the west exit square (10,22) and tap the exit edge.
+  {
+    const a = await screenAt(12.5, 22.5);
+    const b = await screenAt(10.5, 22.5);
+    await p.mouse.move(a.x, a.y);
+    await p.mouse.down();
+    await p.mouse.move(b.x, b.y, { steps: 8 });
+    await p.mouse.up();
+    await p.waitForTimeout(800);
+  }
+  if ((await token()) !== '10,22') problems.push(`${tag}: token did not walk onto the west exit square (${await token()})`);
+  await tap(10.15, 22.5);
+  const exitStep = await p.getAttribute('aside.panel .body', 'data-step');
+  if (exitStep !== 'size') problems.push(`${tag}: a tap on the exit beside the token gave step ${exitStep}`);
+  await shot('95-exit-tap-beside-token.png', p);
+  if (exitStep === 'size') await btn('Cancel');
+  await p.waitForTimeout(200);
+  await p.click('header.toolbar button.history'); // back to 12,22
+  await p.waitForTimeout(300);
+  if ((await token()) !== start || (await undo()) !== undo0) problems.push(`${tag}: undoing the exit-square walk gave ${await token()} / ${await undo()}`);
+  // Gap mode: the token can't be dragged.
+  await btn('Fill gap with corridor');
+  {
+    const a = await screenAt(12.5, 22.5);
+    const b = await screenAt(12.5, 24.5);
+    await p.mouse.move(a.x, a.y);
+    await p.mouse.down();
+    await p.mouse.move(b.x, b.y, { steps: 8 });
+    if (await dragCell()) problems.push(`${tag}: token drag started in gap mode`);
+    await p.mouse.up();
+    await p.waitForTimeout(300);
+  }
+  if ((await token()) !== start) problems.push(`${tag}: gap-mode drag moved the token to ${await token()}`);
+  await btn('Cancel corridor');
+
+  // Mouse drag to a valid square: highlighted ok while dragging, walks on release.
+  await pressAndMove([12.5, 22.5], [13.5, 24.5]);
+  if ((await dragCell()) !== '13,24') problems.push(`${tag}: dragging over 13,24 reports ${await dragCell()}`);
+  await shot('91-token-drag-valid.png', p);
+  await p.mouse.up();
+  await p.waitForTimeout(800);
+  console.log(`${tag}: after valid drop token ${await token()}, ${await undo()}`);
+  if ((await token()) !== '13,24') problems.push(`${tag}: valid drop left the token at ${await token()}`);
+  if (!(await undo()).includes('Move token')) problems.push(`${tag}: undo after the walk reads "${await undo()}"`);
+  if (await dragCell()) problems.push(`${tag}: drag highlight still set after the drop`);
+
+  // Drop on empty space: highlighted bad, nothing changes (one Undo still goes back to the entrance).
+  await pressAndMove([13.5, 24.5], [5.5, 5.5]);
+  await shot('92-token-drag-invalid.png', p);
+  await p.mouse.up();
+  await p.waitForTimeout(500);
+  if ((await token()) !== '13,24') problems.push(`${tag}: invalid drop moved the token to ${await token()}`);
+  // Off the map entirely, and onto the token's own square: nothing either.
+  await pressAndMove([13.5, 24.5], [40, 40]);
+  await p.mouse.up();
+  await pressAndMove([13.5, 24.5], [13.6, 24.6]);
+  await p.mouse.up();
+  await p.waitForTimeout(300);
+  if ((await token()) !== '13,24') problems.push(`${tag}: off-map or same-square drop moved the token to ${await token()}`);
+  if (!(await undo()).includes('Move token')) problems.push(`${tag}: undo label after invalid drops "${await undo()}"`);
+
+  // Escape mid-drag cancels: releasing over a valid square afterwards does nothing.
+  await pressAndMove([13.5, 24.5], [11.5, 24.5]);
+  await p.keyboard.press('Escape');
+  await p.waitForTimeout(100);
+  if (await dragCell()) problems.push(`${tag}: Escape did not end the drag`);
+  await p.mouse.up();
+  await p.waitForTimeout(300);
+  if ((await token()) !== '13,24') problems.push(`${tag}: Escape then release moved the token to ${await token()}`);
+
+  // Exactly one undo step from all of the above.
+  await p.click('header.toolbar button.history');
+  await p.waitForTimeout(300);
+  if ((await token()) !== start || (await undo()) !== undo0) problems.push(`${tag}: one Undo gives token ${await token()} / "${await undo()}"`);
+  await p.click('header.toolbar button.history >> nth=1');
+  await p.waitForTimeout(300);
+  if ((await token()) !== '13,24') problems.push(`${tag}: Redo gives token ${await token()}`);
+
+  // A drag from empty floor still pans; the token stays put.
+  const cam0 = await p.getAttribute('canvas', 'data-camera');
+  await pressAndMove([11.5, 21.5], [6.5, 16.5]);
+  await p.mouse.up();
+  await p.waitForTimeout(200);
+  if ((await p.getAttribute('canvas', 'data-camera')) === cam0) problems.push(`${tag}: dragging empty floor did not pan`);
+  if ((await token()) !== '13,24') problems.push(`${tag}: panning moved the token`);
+
+  // A note pin tapped in Play opens the note editor; Undo removes the note and the panel goes back.
+  await tool('Note');
+  await tap(11.5, 24.5);
+  await p.fill('aside.panel textarea', 'Half-written');
+  await tool('Note'); // second click: back to Play, the draft goes
+  if (await p.isVisible('aside.panel [data-editor="note"]')) problems.push(`${tag}: second Note click left the note draft open`);
+  if ((await pressed()) !== 'Play') problems.push(`${tag}: second Note click with a draft left ${await pressed()} pressed`);
+  await tool('Note');
+  await tap(11.5, 24.5);
+  await p.fill('aside.panel textarea', 'Invented scratches');
+  await btn('Add note');
+  await tool('Play');
+  await tap(11.5, 24.5);
+  if (!(await p.isVisible('aside.panel [data-editor="note"]'))) problems.push(`${tag}: a note tap in Play did not open the note editor`);
+  await checkPanelOn(p, `${tag} note`);
+  await shot('93-play-tap-note.png', p);
+  await p.click('header.toolbar button.history');
+  await p.waitForTimeout(300);
+  if (await p.isVisible('aside.panel [data-editor="note"]')) problems.push(`${tag}: note editor still open after undoing the note`);
+
+  // Starting a room while the inspector shows: the steps take the panel.
+  await tap(12.5, 23.5);
+  await tap(12.5, 20);
+  const stepNow = await p.getAttribute('aside.panel .body', 'data-step');
+  if (stepNow !== 'size') problems.push(`${tag}: exit tap with the inspector open gave step ${stepNow}`);
+  if (await p.isVisible('aside.panel [data-editor="room"]')) problems.push(`${tag}: inspector still shown while placing a room`);
+  // While a room is placed, the token can't be dragged.
+  await pressAndMove([13.5, 24.5], [11.5, 23.5]);
+  if (await dragCell()) problems.push(`${tag}: token drag started while placing a room`);
+  await p.mouse.up();
+  await btn('Cancel');
+  await p.waitForTimeout(200);
+
+  // Touch: a one-finger drag walks; a second finger mid-drag cancels.
+  const touch = async (steps) => {
+    await p.$eval('canvas', (c, st) => {
+      c.setPointerCapture = () => {};
+      for (const [type, id, pt] of st) {
+        c.dispatchEvent(new PointerEvent(type, { pointerId: id, pointerType: 'touch', isPrimary: id === 7, bubbles: true, clientX: pt.x, clientY: pt.y, buttons: type === 'pointerup' ? 0 : 1, button: 0 }));
+      }
+    }, steps);
+    await p.waitForTimeout(600);
+  };
+  const t0 = await screenAt(13.5, 24.5);
+  const t1 = await screenAt(12.5, 23.5);
+  const mid = { x: (t0.x + t1.x) / 2, y: (t0.y + t1.y) / 2 };
+  await touch([['pointerdown', 7, t0], ['pointermove', 7, mid], ['pointermove', 7, t1], ['pointerup', 7, t1]]);
+  if ((await token()) !== '12,23') problems.push(`${tag}: touch drag left the token at ${await token()}`);
+  const t2 = await screenAt(12.5, 23.5);
+  const t3 = await screenAt(11.5, 21.5);
+  const far = await screenAt(16.5, 16.5);
+  await touch([['pointerdown', 7, t2], ['pointermove', 7, t3], ['pointerdown', 8, far], ['pointermove', 8, { x: far.x + 30, y: far.y }], ['pointerup', 8, far], ['pointerup', 7, t3]]);
+  if ((await token()) !== '12,23') problems.push(`${tag}: a second finger did not cancel the drag (token ${await token()})`);
+  await shot('94-token-touch.png', p);
   await ctx.close();
 }
 

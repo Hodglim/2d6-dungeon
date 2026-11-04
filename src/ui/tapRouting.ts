@@ -10,7 +10,7 @@ import type { Point } from '../render/camera';
 import type { Pick } from '../render/hit';
 import type { Tool } from './historyStore';
 
-/** What an editor tool (Door, Stairs, Note, Select) has picked for the panel to edit. */
+/** What an editor tool (Door, Stairs, Note) or a Play tap has picked for the panel to edit. */
 export type Selection =
   | { kind: 'door'; doorId: string }
   /** A bare edge for the Door tool; the editor checks it with checkDoorTool. */
@@ -31,7 +31,8 @@ export type PlayTap =
   | { kind: 'startEntrance'; cell: Cell }
   | { kind: 'startExit'; doorId: string }
   | { kind: 'startGap'; doorId: string }
-  | { kind: 'walk'; cell: Cell }
+  /** A note, stairs or room tapped while idle: show it in the panel (the token moves by dragging). */
+  | { kind: 'select'; selection: Selection }
   | { kind: 'slideAndPlace'; cell: Cell }
   | { kind: 'toggleExit'; edge: Edge }
   | { kind: 'hint'; text: string }
@@ -56,6 +57,8 @@ export function nearestEdge<E extends Edge>(edges: E[], w: Point): E | null {
   return best;
 }
 
+const sameCell = (a: Cell, b: Cell) => a.x === b.x && a.y === b.y;
+
 export function routePlayTap(
   step: Step,
   map: DungeonMap,
@@ -68,8 +71,11 @@ export function routePlayTap(
       if (map.rooms.length === 0) return { kind: 'startEntrance', cell: p.cell }; // the flow explains a bad square
       const exit = nearestEdge(openExits(map), world);
       if (exit) return { kind: opts.gapMode ? 'startGap' : 'startExit', doorId: exit.id };
-      if (p.room && !opts.gapMode) return { kind: 'walk', cell: p.cell };
-      return { kind: 'hint', text: opts.gapMode ? 'Tap an open exit (highlighted)' : 'Tap an open exit, or a floor square to walk there' };
+      if (opts.gapMode) return { kind: 'hint', text: 'Tap an open exit (highlighted)' };
+      const f = map.features.find((x) => sameCell(x, p.cell));
+      if (f) return { kind: 'select', selection: { kind: 'feature', featureId: f.id } };
+      if (p.room) return { kind: 'select', selection: { kind: 'room', roomId: p.room.id } };
+      return { kind: 'hint', text: 'Tap an open exit to start a room, or drag the token to move it' };
     }
     case 'position':
       return { kind: 'slideAndPlace', cell: p.cell };
@@ -81,8 +87,6 @@ export function routePlayTap(
       return { kind: 'ignore' };
   }
 }
-
-const sameCell = (a: Cell, b: Cell) => a.x === b.x && a.y === b.y;
 
 export function routeEditorTap(tool: Exclude<Tool, 'play'>, map: DungeonMap, p: Pick, world: Point): EditorTap {
   switch (tool) {
@@ -108,9 +112,6 @@ export function routeEditorTap(tool: Exclude<Tool, 'play'>, map: DungeonMap, p: 
       if (p.room) return { kind: 'select', selection: { kind: 'newNote', cell: p.cell } };
       return { kind: 'hint', text: 'Notes go on a floor square' };
     }
-    case 'select':
-      if (p.room) return { kind: 'select', selection: { kind: 'room', roomId: p.room.id } };
-      return { kind: 'hint', text: 'Tap a room to see its details' };
   }
 }
 

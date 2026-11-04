@@ -76,15 +76,6 @@ describe('routeEditorTap: stairs and notes', () => {
   });
 });
 
-describe('routeEditorTap: select', () => {
-  it('a tap on a room or passage selects it; empty space gives a hint', () => {
-    const m = sample();
-    expect(routeEditorTap('select', m, tap(m, 3.5, 3.5), { x: 3.5, y: 3.5 })).toEqual({ kind: 'select', selection: { kind: 'room', roomId: 'r1' } });
-    expect(routeEditorTap('select', m, tap(m, 3.5, 5.5), { x: 3.5, y: 5.5 })).toEqual({ kind: 'select', selection: { kind: 'room', roomId: 'p1' } });
-    expect(routeEditorTap('select', m, tap(m, 8.5, 8.5), { x: 8.5, y: 8.5 })).toEqual({ kind: 'hint', text: 'Tap a room to see its details' });
-  });
-});
-
 describe('resolveSelection', () => {
   it('keeps a selection whose target still exists and drops one that is gone (e.g. after Undo)', () => {
     const m = sample();
@@ -134,16 +125,30 @@ describe('routePlayTap', () => {
     expect(routePlayTap(IDLE, m, tap(m, w.x, w.y), w, { ...opts, gapMode: true })).toEqual({ kind: 'startGap', doorId: 'd-out' });
   });
 
-  it('idle: a floor square walks there, anything else is a hint', () => {
+  it('idle: a note or stairs on the tapped square selects that feature', () => {
     const m = sample();
-    expect(routePlayTap(IDLE, m, tap(m, 2.5, 3.5), { x: 2.5, y: 3.5 }, opts)).toEqual({ kind: 'walk', cell: { x: 2, y: 3 } });
-    expect(routePlayTap(IDLE, m, tap(m, 8.5, 8.5), { x: 8.5, y: 8.5 }, opts)).toEqual({ kind: 'hint', text: 'Tap an open exit, or a floor square to walk there' });
+    expect(routePlayTap(IDLE, m, tap(m, 4.5, 4.5), { x: 4.5, y: 4.5 }, opts)).toEqual({ kind: 'select', selection: { kind: 'feature', featureId: 'n1' } });
+    expect(routePlayTap(IDLE, m, tap(m, 2.5, 2.5), { x: 2.5, y: 2.5 }, opts)).toEqual({ kind: 'select', selection: { kind: 'feature', featureId: 's1' } });
+  });
+
+  it('idle: any other floor square selects its room (or passage); it never walks', () => {
+    const m = sample();
+    expect(routePlayTap(IDLE, m, tap(m, 2.5, 3.5), { x: 2.5, y: 3.5 }, opts)).toEqual({ kind: 'select', selection: { kind: 'room', roomId: 'r1' } });
+    expect(routePlayTap(IDLE, m, tap(m, 3.9, 3.1), { x: 3.9, y: 3.1 }, opts)).toEqual({ kind: 'select', selection: { kind: 'room', roomId: 'r1' } });
+    // The 1×1 passage's square is within reach of its open exit, which still wins.
+    expect(routePlayTap(IDLE, m, tap(m, 3.5, 5.5), { x: 3.5, y: 5.5 }, opts)).toEqual({ kind: 'startExit', doorId: 'd-far' });
+  });
+
+  it('idle: empty space is a gentle hint about dragging the token', () => {
+    const m = sample();
+    expect(routePlayTap(IDLE, m, tap(m, 8.5, 8.5), { x: 8.5, y: 8.5 }, opts)).toEqual({ kind: 'hint', text: 'Tap an open exit to start a room, or drag the token to move it' });
     expect(routePlayTap(IDLE, m, tap(m, 8.5, 8.5), { x: 8.5, y: 8.5 }, { ...opts, gapMode: true })).toEqual({ kind: 'hint', text: 'Tap an open exit (highlighted)' });
   });
 
-  it('idle in gap mode: a floor square does not walk the token', () => {
+  it('idle in gap mode: a floor square neither walks nor selects', () => {
     const m = sample();
     expect(routePlayTap(IDLE, m, tap(m, 2.5, 3.5), { x: 2.5, y: 3.5 }, { ...opts, gapMode: true })).toEqual({ kind: 'hint', text: 'Tap an open exit (highlighted)' });
+    expect(routePlayTap(IDLE, m, tap(m, 4.5, 4.5), { x: 4.5, y: 4.5 }, { ...opts, gapMode: true })).toEqual({ kind: 'hint', text: 'Tap an open exit (highlighted)' });
   });
 
   it('position slides the ghost and places it (slideAndPlace); exits toggles the nearest allowed or chosen edge; other steps ignore taps', () => {

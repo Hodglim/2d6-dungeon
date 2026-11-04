@@ -1,5 +1,5 @@
 <script lang="ts">
-  // The Select tool's panel: a room's details. Its label (type, unique, narrative) is
+  // A room tapped in Play: its details. Its label (type, unique, narrative) is
   // editable; size, class and exit count are read-only. Rooms are never moved, resized or
   // deleted, so there are no controls for that (mistakes are fixed with Undo).
   import { type Command, updateRoom } from '../../core/commands';

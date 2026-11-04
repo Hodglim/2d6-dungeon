@@ -1,7 +1,12 @@
 import type { History } from '../core/history';
 import type { DungeonMap } from '../core/types';
 
-export type Tool = 'play' | 'door' | 'stairs' | 'note' | 'select';
+export type Tool = 'play' | 'door' | 'stairs' | 'note';
+
+/** The tool after a toolbar click: clicking the active Door, Stairs or Note tool again goes back to Play. */
+export function toolAfterClick(current: Tool, clicked: Tool): Tool {
+  return clicked === current ? 'play' : clicked;
+}
 
 /** What the UI needs from a History, as one immutable snapshot. */
 export interface HistoryView {

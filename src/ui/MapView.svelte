@@ -1,10 +1,11 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import type { DungeonMap } from '../core/types';
+  import type { Cell, DungeonMap } from '../core/types';
   import { type Camera, clampCamera, panBy, pinchCamera, type Point, wheelFactor, worldBounds, zoomAt } from '../render/camera';
   import { type Pick, pick } from '../render/hit';
   import { type DisplayToggles, MapRenderer } from '../render/renderer';
   import { classicTheme } from '../systems/dungeon/classic';
+  import { onToken } from './tokenDrag';
 
   interface Props {
     map: DungeonMap;
@@ -17,9 +18,15 @@
     dragsGhost?: boolean;
     /** The draft room's rect, exposed as `data-ghost` for scripts/visual.mjs. */
     ghost?: { x: number; y: number; w: number; h: number } | null;
+    /** When true, pressing on the token (`map.token`) and moving past the tap slop drags it instead of panning; a press that doesn't move is still a tap. */
+    dragsToken?: boolean;
+    /** The token is being dragged: the pointer's world point, or null when the drag ends or is cancelled. */
+    ontokendrag?: (world: Point | null) => void;
+    /** The token was released at this world point (an Escape, a second finger or pointercancel never drops). */
+    ontokendrop?: (world: Point) => void;
   }
 
-  let { map, toggles, ontap, onhover, dragsGhost = false, ghost = null }: Props = $props();
+  let { map, toggles, ontap, onhover, dragsGhost = false, ghost = null, dragsToken = false, ontokendrag, ontokendrop }: Props = $props();
 
   /** A primary pointer that moves less than this (CSS px) before lifting is a tap. */
   const TAP_SLOP = 8;
@@ -35,8 +42,39 @@
 
   /** Active pointers by pointerId, in canvas-local CSS px. At most two are tracked. */
   const pointers = new Map<number, Point>();
-  /** The gesture in progress: a possible tap (until it moves past TAP_SLOP), a pan, or a pinch. */
-  let gesture: { start: Point; moved: boolean; tap: boolean; ignore: boolean } | null = null;
+  /** The gesture in progress: a possible tap (until it moves past TAP_SLOP), a pan, a pinch, or a token drag. */
+  let gesture: { start: Point; moved: boolean; tap: boolean; ignore: boolean; token: boolean } | null = null;
+  /** The square the dragged token is over, exposed as `data-token-drag` (and the token's as `data-token`) for scripts/visual.mjs. */
+  let dragCell = $state<Cell | null>(null);
+  /** The mouse is over the token while it can be dragged: show a grab cursor. */
+  let overToken = $state(false);
+
+  function tokenDrag(world: Point | null): void {
+    dragCell = world ? { x: Math.floor(world.x), y: Math.floor(world.y) } : null;
+    ontokendrag?.(world);
+  }
+
+  /** Stop a token drag (or a press on the token) without dropping or tapping; the pointer then does nothing until it lifts. */
+  function cancelTokenDrag(): void {
+    if (!gesture?.token) return;
+    const shown = gesture.moved;
+    gesture.token = false;
+    gesture.tap = false;
+    gesture.ignore = true;
+    if (shown) tokenDrag(null);
+  }
+
+  function onKeyDown(e: KeyboardEvent) {
+    if (e.key === 'Escape' && gesture?.token) {
+      e.preventDefault();
+      cancelTokenDrag();
+    }
+  }
+
+  function grabsToken(e: PointerEvent): boolean {
+    if (!dragsToken || !renderer) return false;
+    return onToken(map.token, renderer.screenToWorldPoint(e.clientX, e.clientY), renderer.camera.scale);
+  }
 
   /** The renderer, for later overlay / token-walk wiring. */
   export function getRenderer(): MapRenderer | null {
@@ -138,15 +176,27 @@
     canvas.setPointerCapture(e.pointerId);
     const p = local(e);
     pointers.set(e.pointerId, p);
-    if (pointers.size === 1) gesture = { start: p, moved: false, tap: true, ignore: false };
-    else if (gesture) gesture.tap = false; // a second finger makes it a pinch, never a tap
+    if (pointers.size === 1) {
+      const token = grabsToken(e);
+      // A press on the token stays a tap until it moves past TAP_SLOP; only then does the drag (and its ghost) start.
+      gesture = { start: p, moved: false, tap: true, ignore: false, token };
+    } else if (gesture) {
+      gesture.tap = false; // a second finger makes it a pinch, never a tap
+      if (gesture.token) {
+        // ...and cancels a token drag; the two fingers pinch as usual.
+        const shown = gesture.moved;
+        gesture.token = false;
+        if (shown) tokenDrag(null);
+      }
+    }
   }
 
   function onPointerMove(e: PointerEvent) {
     const prev = pointers.get(e.pointerId);
     if (!prev) {
-      if (e.pointerType === 'mouse' && e.buttons === 0 && renderer && onhover) {
-        onhover(renderer.screenToWorldPoint(e.clientX, e.clientY));
+      if (e.pointerType === 'mouse' && e.buttons === 0 && renderer) {
+        overToken = grabsToken(e);
+        onhover?.(renderer.screenToWorldPoint(e.clientX, e.clientY));
       }
       return;
     }
@@ -154,7 +204,16 @@
     const p = local(e);
     if (pointers.size === 1) {
       if (gesture.ignore) {
-        pointers.set(e.pointerId, p); // the finger left over from a pinch does nothing until it lifts
+        pointers.set(e.pointerId, p); // the finger left over from a pinch (or a cancelled drag) does nothing until it lifts
+        return;
+      }
+      if (gesture.token) {
+        pointers.set(e.pointerId, p);
+        if (!gesture.moved && Math.hypot(p.x - gesture.start.x, p.y - gesture.start.y) >= TAP_SLOP) {
+          gesture.moved = true;
+          gesture.tap = false;
+        }
+        if (gesture.moved) tokenDrag(renderer.screenToWorldPoint(e.clientX, e.clientY));
         return;
       }
       if (!gesture.moved && Math.hypot(p.x - gesture.start.x, p.y - gesture.start.y) >= TAP_SLOP) {
@@ -177,6 +236,14 @@
   function onPointerUp(e: PointerEvent) {
     if (!pointers.has(e.pointerId)) return;
     const wasTap = e.type === 'pointerup' && pointers.size === 1 && gesture?.tap === true;
+    if (gesture?.token) {
+      // Never past TAP_SLOP: no drag happened, so it falls through to the tap below (exit, note, room).
+      const dragged = gesture.moved;
+      const drop = dragged && e.type === 'pointerup' && renderer ? renderer.screenToWorldPoint(e.clientX, e.clientY) : null;
+      gesture.token = false;
+      if (dragged) tokenDrag(null);
+      if (drop) ontokendrop?.(drop);
+    }
     pointers.delete(e.pointerId);
     if (pointers.size === 0) gesture = null;
     else if (gesture) {
@@ -190,14 +257,20 @@
   }
 </script>
 
+<svelte:window onkeydown={onKeyDown} />
+
 <div class="map-view" bind:this={host}>
   <canvas
+    class:grab={dragsToken && overToken}
+    class:grabbing={dragCell !== null}
     bind:this={canvas}
     onpointerdown={onPointerDown}
     onpointermove={onPointerMove}
     onpointerup={onPointerUp}
     onpointercancel={onPointerUp}
     data-ghost={ghost ? `${ghost.x},${ghost.y},${ghost.w},${ghost.h}` : undefined}
+    data-token-drag={dragCell ? `${dragCell.x},${dragCell.y}` : undefined}
+    data-token={map.token ? `${map.token.x},${map.token.y}` : undefined}
     aria-label="Map"
   ></canvas>
 </div>
@@ -216,5 +289,11 @@
     height: 100%;
     display: block;
     touch-action: none;
+  }
+  canvas.grab {
+    cursor: grab;
+  }
+  canvas.grabbing {
+    cursor: grabbing;
   }
 </style>

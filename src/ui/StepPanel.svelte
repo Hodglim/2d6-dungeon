@@ -31,7 +31,7 @@
     gapMode: boolean;
     ongapmode: (on: boolean) => void;
     oncommit: (run: () => ExecResult | null) => void;
-    /** What an editor tool (Door, Stairs, Note, Select) has selected, resolved against `map`. */
+    /** What an editor tool (Door, Stairs, Note) or a Play tap has selected, resolved against `map`. */
     selection: Selection | null;
     /** Runs an editor's command through History; false (reason in the notice) when rejected. */
     onexec: (cmd: Command | null) => boolean;
@@ -73,7 +73,6 @@
     door: 'Door',
     stairs: 'Stairs',
     note: 'Note',
-    select: 'Select',
   };
 
   function hintFor(t: Tool, m: DungeonMap): string {
@@ -81,15 +80,13 @@
       case 'play':
         if (m.rooms.length === 0) return 'Tap a square on the bottom edge to place the entrance';
         if (gapMode) return 'Tap the exit the corridor starts from';
-        return 'Tap an open exit to start a room, or a floor square to walk there';
+        return 'Tap an open exit to start a room, drag the token to move it, or tap a room or note to see it';
       case 'door':
         return 'Tap a door to edit it, or a bare wall facing open space to add an exit';
       case 'stairs':
         return 'Tap a floor square to add stairs, or tap stairs to edit them';
       case 'note':
         return 'Tap a floor square to add a note, or tap a note to edit it';
-      case 'select':
-        return 'Tap a room to see its details';
     }
   }
 
@@ -99,6 +96,10 @@
   const hasStairsDown = $derived(map.features.some((f) => f.kind === 'stairs' && f.dir === 'down'));
   const canGoDown = $derived(hasStairsDown && map.level < 10 && !!ongodown);
   const readyHint = $derived(!hasStairsDown && coverage(map) >= 0.75);
+  /** In Play, a tapped room, note or stairs takes the panel until it is closed. */
+  const playSelection = $derived(tool === 'play' && !playing ? selection : null);
+  /** The kind of a selected feature (stairs or note), for picking its editor in Play. */
+  const featureKind = $derived(selection?.kind === 'feature' ? map.features.find((f) => f.id === selection.featureId)?.kind : undefined);
   const canGap = $derived(tool === 'play' && map.rooms.length > 0 && openExits(map).length > 0);
 </script>
 
@@ -131,6 +132,20 @@
         <div class="row cancel">
           <button onclick={() => flow.cancel()}>Cancel</button>
         </div>
+      {:else if playSelection}
+        {#key selectionKey(playSelection)}
+          {#if playSelection.kind === 'room'}
+            <RoomInspector {map} roomId={playSelection.roomId} {onexec} {tables} {encounter} />
+          {:else if playSelection.kind === 'feature' && featureKind === 'stairs'}
+            <StairsEditor {map} featureId={playSelection.featureId} {onexec} {onselect} />
+          {:else if playSelection.kind === 'feature' && featureKind === 'note'}
+            <NoteEditor {map} selection={playSelection} {onexec} {onselect} />
+          {/if}
+        {/key}
+        {#if notice}<p class="notice" role="status">{notice}</p>{/if}
+        <div class="row cancel">
+          <button data-testid="close-selection" onclick={() => onselect(null)}>Close</button>
+        </div>
       {:else}
         <h2>{titles[tool]}</h2>
         <p class="hint">{hint}</p>
@@ -143,8 +158,6 @@
               <StairsEditor {map} featureId={selection.featureId} {onexec} {onselect} />
             {:else if tool === 'note' && (selection.kind === 'feature' || selection.kind === 'newNote')}
               <NoteEditor {map} {selection} {onexec} {onselect} />
-            {:else if tool === 'select' && selection.kind === 'room'}
-              <RoomInspector {map} roomId={selection.roomId} {onexec} {tables} {encounter} />
             {/if}
           {/key}
         {/if}
