@@ -45,6 +45,9 @@ export interface LevelTables {
   largeRooms: Record<string, RoomEntry>;
 }
 
+export type CreatureTableEntry = { creatures: string[] } | { text: string };
+export interface CreatureStats { level: number; hp: number; xp: number; shift: number; treasure: string }
+
 export interface DungeonTables {
   format: 1;
   systemId: 'dungeon';
@@ -71,6 +74,10 @@ export interface DungeonTables {
     dungeonLevels?: LevelTables[];
     /** Exit Type tables, each keyed "11".."66". */
     exitTables?: Record<string, Record<string, Exclude<ExitSpec, 'random'>>>;
+    /** Creature tables, each keyed "1".."6" (optional). */
+    creatureTables?: Record<string, Record<string, CreatureTableEntry>>;
+    /** Creature stats keyed by printed name (optional). */
+    creatures?: Record<string, CreatureStats>;
   };
 }
 
@@ -199,6 +206,41 @@ const roomEntry = (r: Record<string, unknown>, at: string, hasExit: boolean, has
   (typeof r.unique === 'boolean' ? null : `${at} unique`) ??
   (hasExit ? exitProblem(at, r.exit, true) : null);
 
+const SIX_KEYS = ['1', '2', '3', '4', '5', '6'];
+
+/** `creatures` is checked first so the names in `creatureTables` have something to match. */
+function creatureProblem(t: Record<string, unknown>): string | null {
+  const known = new Set<string>();
+  if (t.creatures !== undefined) {
+    if (!isObj(t.creatures)) return 'Creatures';
+    for (const [name, c] of Object.entries(t.creatures)) {
+      if (name.trim() === '') return 'Creatures (a creature name is empty)';
+      const at = `Creatures ${name}`;
+      if (!isObj(c)) return at;
+      if (!isInt(c.level) || c.level < 1 || c.level > 10) return `${at} level (must be a whole number from 1 to 10)`;
+      const p = field(c, at, ['hp', 'xp'], isCount) ?? field(c, at, ['shift'], isInt) ?? field(c, at, ['treasure'], isStr);
+      if (p) return p;
+      known.add(name.toLowerCase());
+    }
+  }
+  if (t.creatureTables === undefined) return null;
+  if (!isObj(t.creatureTables)) return 'Creature Tables';
+  for (const [name, table] of Object.entries(t.creatureTables)) {
+    const p = keyed(`Creature Tables ${name}`, table, SIX_KEYS, (e, at) => {
+      if (e.creatures !== undefined) {
+        if (Array.isArray(e.creatures) && e.creatures.length === 0) return `${at} creatures (empty)`;
+        const bad = strsAt(`${at} creatures`, e.creatures);
+        if (bad) return bad;
+        const missing = (e.creatures as string[]).find((c) => !known.has(c.toLowerCase()));
+        return missing === undefined ? null : `${at} (no creature named ${missing} in Creatures)`;
+      }
+      return isStr(e.text) ? null : at;
+    });
+    if (p) return p;
+  }
+  return null;
+}
+
 function roomTablesProblem(t: Record<string, unknown>): string | null {
   const exitTables = t.exitTables;
   if (exitTables !== undefined) {
@@ -209,7 +251,11 @@ function roomTablesProblem(t: Record<string, unknown>): string | null {
     }
   }
   const dl = t.dungeonLevels;
-  if (dl === undefined) return null;
+  const roomP = dl === undefined ? null : roomLevelsProblem(dl, exitTables);
+  return roomP ?? creatureProblem(t);
+}
+
+function roomLevelsProblem(dl: unknown, exitTables: unknown): string | null {
   const seen = new Set<number>();
   return rows('Dungeon Levels', dl, false, (l, at) => {
     const p = field(l, at, ['name', 'exitTable'], isStr);

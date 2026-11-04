@@ -7,6 +7,7 @@ export type Tool = 'play' | 'door' | 'stairs' | 'note' | 'select';
 export interface HistoryView {
   map: DungeonMap;
   hero: unknown | null;
+  encounter: unknown | null;
   canUndo: boolean;
   canRedo: boolean;
   undoLabel: string | null;
@@ -14,7 +15,7 @@ export interface HistoryView {
 }
 
 function viewOf(h: History): HistoryView {
-  return { map: h.map, hero: h.hero, canUndo: h.canUndo, canRedo: h.canRedo, undoLabel: h.undoLabel, redoLabel: h.redoLabel };
+  return { map: h.map, hero: h.hero, encounter: h.encounter, canUndo: h.canUndo, canRedo: h.canRedo, undoLabel: h.undoLabel, redoLabel: h.redoLabel };
 }
 
 /** A Svelte store (subscribe contract) over a History: emits now, then on every change. */

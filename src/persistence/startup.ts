@@ -1,5 +1,5 @@
 import type { HistoryState } from '../core/history';
-import { parseCampaign, serializeCampaign, type HeroProblem } from '../core/serialize';
+import { parseCampaign, serializeCampaign, type EncounterProblem, type HeroProblem } from '../core/serialize';
 import { campaignFrom, decodeSave, type CampaignMeta } from './record';
 
 export type StartupDecision =
@@ -8,13 +8,13 @@ export type StartupDecision =
   | { kind: 'error'; error: string };
 
 /** What to do with whatever the store returned on launch. Nothing here writes; an `error` record must stay untouched. */
-export function decideStartup(raw: unknown | null, heroProblem?: HeroProblem): StartupDecision {
+export function decideStartup(raw: unknown | null, heroProblem?: HeroProblem, encounterProblem?: EncounterProblem): StartupDecision {
   if (raw === null || raw === undefined) return { kind: 'fresh' };
-  const res = decodeSave(raw, heroProblem);
+  const res = decodeSave(raw, heroProblem, encounterProblem);
   if (!res.ok) return { kind: 'error', error: res.error };
   // The restored current state must also pass the same check an imported file does.
   const h = res.history;
-  const whole = parseCampaign(serializeCampaign(campaignFrom(res.meta, h.current, h.hero)), heroProblem);
+  const whole = parseCampaign(serializeCampaign(campaignFrom(res.meta, h.current, h.hero, h.encounter)), heroProblem, encounterProblem);
   if (!whole.ok) return { kind: 'error', error: whole.error };
   return { kind: 'restore', meta: res.meta, history: h };
 }

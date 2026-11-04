@@ -600,7 +600,7 @@ export class PlayFlow {
       contents = s.result.contents;
       exitType = contents.door;
       locked = contents.locked;
-      label = { type: contents.type, unique: s.result.entry.unique, narrative: contents.description };
+      label = { type: contents.type, unique: s.result.entry.unique, narrative: label?.narrative ?? '' };
     }
     const map = this.history.map;
     let result: { command: Command; path: Cell[] | null };

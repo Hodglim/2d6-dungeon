@@ -121,6 +121,29 @@
         }
       }
     ],
+    "creatureTables": {
+      "PRAC1": {
+        "1": {"creatures":["Moss Lurker"]},
+        "2": {"creatures":["Grumbler","Moss Lurker"]},
+        "3": {"creatures":["Dust Wisp"]},
+        "4": {"text":"Made-up: roll twice on this table."},
+        "5": {"creatures":["Dust Wisp"]},
+        "6": {"creatures":["Grumbler"]}
+      },
+      "PRAC2": {
+        "1": {"creatures":["Dust Wisp"]},
+        "2": {"creatures":["Moss Lurker"]},
+        "3": {"creatures":["Grumbler"]},
+        "4": {"creatures":["Dust Wisp","Dust Wisp"]},
+        "5": {"text":"Made-up: nothing here but echoes."},
+        "6": {"creatures":["Moss Lurker"]}
+      }
+    },
+    "creatures": {
+      "Grumbler": {"level":1,"hp":4,"xp":2,"shift":0,"treasure":"Made-up: a pouch of pebbles."},
+      "Moss Lurker": {"level":1,"hp":6,"xp":3,"shift":-1,"treasure":""},
+      "Dust Wisp": {"level":2,"hp":3,"xp":1,"shift":1,"treasure":"Made-up: a glass bead."}
+    },
     "exitTables": {
       "EXT1": {
           "11": {"door":"archway","locked":true},

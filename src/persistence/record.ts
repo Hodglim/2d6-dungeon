@@ -1,10 +1,10 @@
 import { CURRENT_SCHEMA_VERSION } from '../core/campaign';
 import type { HistoryState } from '../core/history';
 import { checkInvariants } from '../core/invariants';
-import { mapProblem, parseHistoryState, type HeroProblem } from '../core/serialize';
+import { mapProblem, parseHistoryState, type EncounterProblem, type HeroProblem } from '../core/serialize';
 import type { Campaign, DungeonMap } from '../core/types';
 
-export const SAVE_FORMAT = 3;
+export const SAVE_FORMAT = 4;
 
 /** Everything about the campaign except the active map, which lives only in the history's `current`. */
 export interface CampaignMeta {
@@ -13,6 +13,13 @@ export interface CampaignMeta {
   systemId: string;
   /** Maps of the levels above the active one, oldest first, read-only. */
   earlierLevels: DungeonMap[];
+  /** Set when the hero's death was confirmed: the app opens to Game Over. Kept outside History, so no Undo. */
+  gameOver: GameOver | null;
+}
+
+export interface GameOver {
+  heroName: string;
+  heroLevel: number;
 }
 
 export interface SaveRecord {
@@ -30,7 +37,7 @@ export type SaveDecode = { ok: true; meta: CampaignMeta; history: HistoryState }
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 
-export function decodeSave(raw: unknown, heroProblem?: HeroProblem): SaveDecode {
+export function decodeSave(raw: unknown, heroProblem?: HeroProblem, encounterProblem?: EncounterProblem): SaveDecode {
   if (!isObj(raw)) return { ok: false, error: 'The saved game is not a valid record.' };
   const { format, meta } = raw;
   if (typeof format !== 'number' || !Number.isInteger(format) || format < 1) {
@@ -51,16 +58,25 @@ export function decodeSave(raw: unknown, heroProblem?: HeroProblem): SaveDecode 
     const bad = mapProblem(earlierLevels[i]) ?? checkInvariants(earlierLevels[i]!);
     if (bad) return { ok: false, error: `The saved game is damaged: earlier level ${i + 1}: ${bad}.` };
   }
-  const parsed = parseHistoryState(raw.history, heroProblem);
+  // A meta without gameOver reads as a game still going (meta lives outside History).
+  const go = meta.gameOver;
+  let gameOver: GameOver | null = null;
+  if (go !== undefined && go !== null) {
+    if (!isObj(go) || typeof go.heroName !== 'string' || typeof go.heroLevel !== 'number' || !Number.isInteger(go.heroLevel)) {
+      return { ok: false, error: 'The saved game is damaged: its game-over record is not valid.' };
+    }
+    gameOver = { heroName: go.heroName, heroLevel: go.heroLevel };
+  }
+  const parsed = parseHistoryState(raw.history, heroProblem, encounterProblem);
   if (!parsed.ok) return parsed;
   return {
     ok: true,
-    meta: { id: meta.id, name: meta.name, systemId: meta.systemId, earlierLevels },
+    meta: { id: meta.id, name: meta.name, systemId: meta.systemId, earlierLevels, gameOver },
     history: parsed.state,
   };
 }
 
-export function campaignFrom(meta: CampaignMeta, map: DungeonMap, hero: unknown | null): Campaign {
+export function campaignFrom(meta: CampaignMeta, map: DungeonMap, hero: unknown | null, encounter: unknown | null): Campaign {
   return {
     schemaVersion: CURRENT_SCHEMA_VERSION,
     id: meta.id,
@@ -69,9 +85,10 @@ export function campaignFrom(meta: CampaignMeta, map: DungeonMap, hero: unknown 
     maps: [...meta.earlierLevels, map],
     activeMapId: map.id,
     hero,
+    encounter,
   };
 }
 
 export function metaFrom(c: Campaign): CampaignMeta {
-  return { id: c.id, name: c.name, systemId: c.systemId, earlierLevels: c.maps.filter((m) => m.id !== c.activeMapId) };
+  return { id: c.id, name: c.name, systemId: c.systemId, earlierLevels: c.maps.filter((m) => m.id !== c.activeMapId), gameOver: null };
 }

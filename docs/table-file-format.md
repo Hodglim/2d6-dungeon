@@ -159,7 +159,7 @@ A short, complete, valid example (copy it and replace the made-up values with yo
 - `format`: always `1`. A higher number is refused as made by a newer version of the app.
 - `systemId`: always `"dungeon"`.
 - `name`: any label for your own use.
-- `tables`: the tables below. Every one is required except `dungeonLevels` and `exitTables`.
+- `tables`: the tables below. Every one is required except `dungeonLevels`, `exitTables`, `creatureTables` and `creatures`.
 
 Dice are lists of faces, each a whole number 1 to 6, in printed order with the primary (red) die first.
 
@@ -296,6 +296,39 @@ The snippet below is NOT a complete file and would be refused as it stands. It i
                            "exit": { "door": "archway" }, "unique": false }, ... } } ],
 "exitTables": {
   "EXT1": { "11": { "door": "archway" }, "12": { "door": "curtain", "locked": true }, ... }
+}
+```
+
+## creatureTables and creatures (optional)
+
+Where to find them: Codex p. 38 for Level 1; the creature cards for the stats. Both keys are optional: a file without them still loads, and the encounter step then has nothing to roll on.
+
+`creatureTables` maps a table name (such as `PRAC1`) to a table with exactly six keys, `1` to `6`. Each entry is either:
+
+- `{ "creatures": [ ... ] }`: one or more creature names, none left blank. Every name must match a key in `creatures` (capitals don't matter).
+- `{ "text": "..." }`: for a result that is not a creature, such as an instruction.
+
+`creatures` maps each creature's printed name to its stats:
+
+- `level`: a whole number from 1 to 10.
+- `hp` and `xp`: whole numbers, 0 or more.
+- `shift`: a whole number. It may be negative.
+- `treasure`: text (may be empty).
+
+A made-up example:
+
+```text
+"creatureTables": {
+  "PRAC1": {
+    "1": { "creatures": ["Grumbler"] },
+    "2": { "creatures": ["Grumbler", "Moss Lurker"] },
+    "3": { "text": "Made-up: roll twice on this table." },
+    ...
+  }
+},
+"creatures": {
+  "Grumbler": { "level": 1, "hp": 4, "xp": 2, "shift": 0, "treasure": "Made-up: a pouch of pebbles." },
+  "Moss Lurker": { "level": 1, "hp": 6, "xp": 3, "shift": -1, "treasure": "" }
 }
 ```
 

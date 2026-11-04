@@ -170,6 +170,54 @@ describe('room and exit tables', () => {
   });
 });
 
+describe('creature tables and creatures', () => {
+  const D = 'The table file is damaged: ';
+  it("parses the fixture's creature tables", () => {
+    const r = parse(clone());
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(Object.keys(r.tables.tables.creatureTables!.PRAC1!)).toEqual(['1', '2', '3', '4', '5', '6']);
+  });
+  it('refuses a missing key', () => {
+    const o = clone(); delete o.tables.creatureTables.PRAC1['4'];
+    expect(err(parse(o))).toBe(D + 'Creature Tables PRAC1 4');
+  });
+  it('refuses an extra key', () => {
+    const o = clone(); o.tables.creatureTables.PRAC1['7'] = { text: 'x' };
+    expect(err(parse(o))).toBe(D + 'Creature Tables PRAC1 7 (not a valid key)');
+  });
+  it('refuses an entry with neither creatures nor text', () => {
+    const o = clone(); o.tables.creatureTables.PRAC1['2'] = {};
+    expect(err(parse(o))).toBe(D + 'Creature Tables PRAC1 2');
+  });
+  it('refuses an empty creatures list', () => {
+    const o = clone(); o.tables.creatureTables.PRAC1['2'] = { creatures: [] };
+    expect(err(parse(o))).toBe(D + 'Creature Tables PRAC1 2 creatures (empty)');
+  });
+  it('refuses a creature not in Creatures, ignoring case', () => {
+    const o = clone(); delete o.tables.creatures.Grumbler;
+    expect(err(parse(o))).toBe(D + 'Creature Tables PRAC1 2 (no creature named Grumbler in Creatures)');
+    const p = clone(); p.tables.creatureTables.PRAC1['2'] = { creatures: ['Grumbler', 'moss lurker'] };
+    expect(parse(p).ok).toBe(true);
+    const q = clone(); q.tables.creatureTables.PRAC1['2'] = { creatures: ['Grumbler'] };
+    q.tables.creatureTables.PRAC1['1'] = { creatures: ['Zorp'] };
+    expect(err(parse(q))).toBe(D + 'Creature Tables PRAC1 1 (no creature named Zorp in Creatures)');
+  });
+  it('checks creature stats', () => {
+    const a = clone(); a.tables.creatures.Grumbler.hp = -1;
+    expect(err(parse(a))).toBe(D + 'Creatures Grumbler hp');
+    const b = clone(); b.tables.creatures.Grumbler.shift = -1;
+    expect(parse(b).ok).toBe(true);
+    const c = clone(); c.tables.creatures.Grumbler.level = 11;
+    expect(err(parse(c))).toBe(D + 'Creatures Grumbler level (must be a whole number from 1 to 10)');
+    const d = clone(); d.tables.creatures.Grumbler.treasure = 3;
+    expect(err(parse(d))).toBe(D + 'Creatures Grumbler treasure');
+  });
+  it('still parses a file with neither key', () => {
+    const o = clone(); delete o.tables.creatureTables; delete o.tables.creatures;
+    expect(parse(o).ok).toBe(true);
+  });
+});
+
 describe('docs/table-file-format.md', () => {
   it('the inline example is a valid table file', () => {
     const doc = readFileSync('docs/table-file-format.md', 'utf8');

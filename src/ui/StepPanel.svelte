@@ -5,6 +5,7 @@
   import type { DungeonMap } from '../core/types';
   import type { PlayFlow, Step } from '../interaction/playflow';
   import type { DungeonTables } from '../systems/dungeon/tables';
+  import type { EncounterHooks } from './encounter/encounterActions';
   import type { Tool } from './historyStore';
   import ExitCountStep from './steps/ExitCountStep.svelte';
   import ExitsStep from './steps/ExitsStep.svelte';
@@ -41,11 +42,15 @@
     levelText?: string;
     /** Opens the stairs dialog; the Go down button shows only while this is given. */
     ongodown?: () => void;
+    /** A fight is open: Go down waits until it is finished or ended. */
+    fighting?: boolean;
     collapsed: boolean;
     ontoggle: () => void;
+    /** Roll and Fight buttons in a room's encounter text. */
+    encounter?: EncounterHooks | null;
   }
 
-  let { tool, map, flow, step, notice, gapMode, ongapmode, oncommit, selection, onexec, onselect, tables = null, levelText = '', ongodown, collapsed, ontoggle }: Props = $props();
+  let { tool, map, flow, step, notice, gapMode, ongapmode, oncommit, selection, onexec, onselect, tables = null, levelText = '', ongodown, fighting = false, collapsed, ontoggle, encounter = null }: Props = $props();
 
   /** Remounts an editor (fresh drafts) when a different thing is selected. */
   function selectionKey(s: Selection): string {
@@ -117,7 +122,7 @@
           <ExitsStep {flow} {step} {oncommit} />
         {:else if step.kind === 'label'}
           {#key step.draft.room.id}
-            <LabelStep {flow} {step} {oncommit} />
+            <LabelStep {flow} {step} {oncommit} {tables} {encounter} />
           {/key}
         {:else if step.kind === 'gap'}
           <GapStep {flow} {step} {oncommit} />
@@ -139,14 +144,15 @@
             {:else if tool === 'note' && (selection.kind === 'feature' || selection.kind === 'newNote')}
               <NoteEditor {map} {selection} {onexec} {onselect} />
             {:else if tool === 'select' && selection.kind === 'room'}
-              <RoomInspector {map} roomId={selection.roomId} {onexec} {tables} />
+              <RoomInspector {map} roomId={selection.roomId} {onexec} {tables} {encounter} />
             {/if}
           {/key}
         {/if}
         {#if canGoDown}
           <div class="row">
-            <button class="primary" data-testid="go-down" onclick={ongodown}>Go down to Level {map.level + 1}</button>
+            <button class="primary" data-testid="go-down" disabled={fighting} aria-describedby={fighting ? 'go-down-note' : undefined} onclick={ongodown}>Go down to Level {map.level + 1}</button>
           </div>
+          {#if fighting}<p class="notice" id="go-down-note" data-testid="go-down-note">Finish or end the encounter first.</p>{/if}
         {:else if readyHint}
           <p class="notice" data-testid="finish-hint">Ready to finish this level? Place the stairs down in the final room.</p>
         {/if}

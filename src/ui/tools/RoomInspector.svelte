@@ -7,6 +7,8 @@
   import { applyRoomRoll } from '../../systems/dungeon/roomTables';
   import type { DungeonTables } from '../../systems/dungeon/tables';
   import RoomRoll from '../RoomRoll.svelte';
+  import EncounterText from '../encounter/EncounterText.svelte';
+  import type { EncounterHooks } from '../encounter/encounterActions';
   import { roomExitCount } from '../tapRouting';
 
   interface Props {
@@ -15,9 +17,11 @@
     onexec: (cmd: Command | null) => boolean;
     /** The loaded table file, if any: "Roll for this room" needs it. */
     tables?: DungeonTables | null;
+    /** Roll and Fight buttons in the room's encounter text. */
+    encounter?: EncounterHooks | null;
   }
 
-  let { map, roomId, onexec, tables = null }: Props = $props();
+  let { map, roomId, onexec, tables = null, encounter = null }: Props = $props();
 
   const room = $derived(map.rooms.find((r) => r.id === roomId));
 
@@ -76,11 +80,11 @@
           <dd>{room.contents.description}</dd>
           {#if room.contents.encounter}
             <dt>Encounter</dt>
-            <dd>{room.contents.encounter}</dd>
+            <dd data-testid="encounter-text">{#if encounter}<EncounterText text={room.contents.encounter} {tables} {...encounter} />{:else}{room.contents.encounter}{/if}</dd>
           {/if}
         </dl>
       {:else if rolling}
-        <RoomRoll {map} {room} {tables} onapply={(c, u) => applyRoll(room, c, u)} oncancel={() => (rolling = false)} />
+        <RoomRoll {map} {room} {tables} {encounter} onapply={(c, u) => applyRoll(room, c, u)} oncancel={() => (rolling = false)} />
       {:else if tables}
         <div class="row">
           <button type="button" onclick={() => (rolling = true)}>Roll for this room</button>

@@ -1,4 +1,4 @@
-import { addRoom, setHero } from '../../src/core/commands';
+import { addRoom, setHero, setPlay } from '../../src/core/commands';
 import { HISTORY_CAP, History, MERGE_WINDOW_MS, type HistoryState } from '../../src/core/history';
 import type { DungeonMap } from '../../src/core/types';
 import { emptyMap, room } from './fixtures';
@@ -179,11 +179,85 @@ describe('History snapshots', () => {
   it('exportState returns copies of the arrays', () => {
     const h = new History(emptyMap());
     const state = h.exportState();
-    state.past.push({ label: 'x', map: emptyMap(), hero: null });
-    state.future.push({ label: 'y', map: emptyMap(), hero: null });
+    state.past.push({ label: 'x', map: emptyMap(), hero: null, encounter: null });
+    state.future.push({ label: 'y', map: emptyMap(), hero: null, encounter: null });
     expect(h.canUndo).toBe(false);
     expect(h.canRedo).toBe(false);
     expect(h.exportState().past).toHaveLength(0);
+  });
+
+  describe('encounter', () => {
+    it('a play command is one undo step that restores hero and encounter, and redo reapplies', () => {
+      const h = new History(emptyMap(), 20, { hp: 5 }, undefined, { round: 1 });
+      h.execute(setPlay({ hero: { hp: 3 }, encounter: { round: 2 } }, 'Round'));
+      expect(h.hero).toEqual({ hp: 3 });
+      expect(h.encounter).toEqual({ round: 2 });
+      expect(h.undoLabel).toBe('Round');
+      h.undo();
+      expect(h.hero).toEqual({ hp: 5 });
+      expect(h.encounter).toEqual({ round: 1 });
+      expect(h.canUndo).toBe(false);
+      h.redo();
+      expect(h.hero).toEqual({ hp: 3 });
+      expect(h.encounter).toEqual({ round: 2 });
+    });
+
+    it('a play command returning the same values is not a step', () => {
+      const h = new History(emptyMap(), 20, { hp: 5 }, undefined, { round: 1 });
+      h.execute({ label: 'Nothing', applyPlay: (s) => s });
+      expect(h.canUndo).toBe(false);
+    });
+
+    it('merges play commands by mergeKey', () => {
+      let t = 0;
+      const h = new History(emptyMap(), 20, null, () => t, { hp: 9 });
+      h.execute(setPlay({ hero: null, encounter: { hp: 8 } }, 'HP -1'), { mergeKey: 'hp' });
+      t += 100;
+      h.execute(setPlay({ hero: null, encounter: { hp: 7 } }, 'HP -2'), { mergeKey: 'hp' });
+      expect(h.exportState().past).toHaveLength(1);
+      h.undo();
+      expect(h.encounter).toEqual({ hp: 9 });
+    });
+
+    it('hero and map commands leave the encounter alone', () => {
+      const enc = { round: 1 };
+      const h = new History(emptyMap(), 20, null, undefined, enc);
+      h.execute(setHero({ name: 'T' }, 'Hero'));
+      h.execute(addRoom(room('a', 1, 1, 2, 2)));
+      expect(h.encounter).toBe(enc);
+      h.undo();
+      h.undo();
+      expect(h.encounter).toBe(enc);
+    });
+
+    it('reset clears the timeline and takes an encounter; dropLast restores it', () => {
+      const h = new History(emptyMap(), 20, null, undefined, { round: 1 });
+      h.execute(setPlay({ hero: null, encounter: { round: 2 } }, 'Round'));
+      h.dropLast();
+      expect(h.encounter).toEqual({ round: 1 });
+      expect(h.canRedo).toBe(false);
+      h.execute(setPlay({ hero: null, encounter: { round: 2 } }, 'Round'));
+      h.undo();
+      h.reset(emptyMap(), null, { round: 7 });
+      expect(h.encounter).toEqual({ round: 7 });
+      expect(h.canUndo).toBe(false);
+      expect(h.canRedo).toBe(false);
+      h.reset(emptyMap());
+      expect(h.encounter).toBeNull();
+    });
+
+    it('exportState / fromState carry the encounter, and entries without one read as null', () => {
+      const h = new History(emptyMap(), 20, null, undefined, { round: 1 });
+      h.execute(setPlay({ hero: null, encounter: { round: 2 } }, 'Round'));
+      const back = History.fromState(JSON.parse(JSON.stringify(h.exportState())));
+      expect(back.encounter).toEqual({ round: 2 });
+      back.undo();
+      expect(back.encounter).toEqual({ round: 1 });
+      const old = { label: 'x', map: emptyMap(), hero: null } as unknown as HistoryState['past'][number];
+      const s = History.fromState({ current: emptyMap(), hero: null, encounter: null, past: [old], future: [] });
+      s.undo();
+      expect(s.encounter).toBeNull();
+    });
   });
 
   describe('restore', () => {
@@ -214,9 +288,9 @@ describe('History snapshots', () => {
     it('keeps the newest 20 past entries; the cap is 20', () => {
       expect(HISTORY_CAP).toBe(20);
       const m = emptyMap();
-      const past = Array.from({ length: 30 }, (_, i) => ({ label: `L${i}`, map: m, hero: null }));
+      const past = Array.from({ length: 30 }, (_, i) => ({ label: `L${i}`, map: m, hero: null, encounter: null }));
       const b = new History(emptyMap());
-      b.restore({ current: m, hero: null, past, future: [] });
+      b.restore({ current: m, hero: null, encounter: null, past, future: [] });
       expect(b.exportState().past).toHaveLength(20);
       expect(b.undoLabel).toBe('L29');
       expect(b.exportState().past[0]!.label).toBe('L10');
@@ -277,6 +351,17 @@ describe('History carries the hero', () => {
       hp(h, 6);
       expect(h.exportState().past).toHaveLength(base + 2);
       expect(MERGE_WINDOW_MS).toBe(1500);
+    });
+
+    it('encounterBeforeLast is the encounter before the newest step', () => {
+      const { h, at } = timed();
+      expect(h.encounterBeforeLast).toBeNull();
+      h.execute(setPlay({ hero: null, encounter: { round: 1 } }, 'Start'));
+      at(100);
+      h.execute(setPlay({ hero: null, encounter: { round: 2 } }, 'R2'), { mergeKey: 'r' });
+      at(200);
+      h.execute(setPlay({ hero: null, encounter: { round: 3 } }, 'R3'), { mergeKey: 'r' });
+      expect(h.encounterBeforeLast).toEqual({ round: 1 });
     });
 
     it('does not merge across an undo or a different key', () => {

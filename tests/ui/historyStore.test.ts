@@ -8,7 +8,7 @@ describe('historyStore', () => {
     const h = new History(emptyMap());
     const seen: HistoryView[] = [];
     historyStore(h).subscribe((v) => seen.push(v));
-    expect(seen).toEqual([{ map: h.map, hero: null, canUndo: false, canRedo: false, undoLabel: null, redoLabel: null }]);
+    expect(seen).toEqual([{ map: h.map, hero: null, encounter: null, canUndo: false, canRedo: false, undoLabel: null, redoLabel: null }]);
   });
 
   it('emits a new view on execute, undo and redo with the right labels', () => {
@@ -46,6 +46,6 @@ describe('historyStore', () => {
     historyStore(h).subscribe((v) => seen.push(v));
     const fresh = emptyMap(20, 20);
     h.reset(fresh);
-    expect(seen[1]).toEqual({ map: fresh, hero: null, canUndo: false, canRedo: false, undoLabel: null, redoLabel: null });
+    expect(seen[1]).toEqual({ map: fresh, hero: null, encounter: null, canUndo: false, canRedo: false, undoLabel: null, redoLabel: null });
   });
 });

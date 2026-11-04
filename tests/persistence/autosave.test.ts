@@ -1,13 +1,13 @@
 import { vi } from 'vitest';
 import { History } from '../../src/core/history';
 import { addRoom } from '../../src/core/commands';
-import { encodeSave } from '../../src/persistence/record';
+import { encodeSave, type CampaignMeta } from '../../src/persistence/record';
 import { Autosaver, type AutosaveStatus } from '../../src/persistence/autosave';
 import 'fake-indexeddb/auto';
 import { IdbSaveStore, MemorySaveStore } from '../../src/persistence/store';
 import { emptyMap, room } from '../core/fixtures';
 
-const meta = { id: 'c1', name: 'Camp', systemId: 'dungeon', hero: null, earlierLevels: [] };
+const meta = { id: 'c1', name: 'Camp', systemId: 'dungeon', hero: null, earlierLevels: [], gameOver: null };
 
 function setup() {
   const history = new History(emptyMap(30, 30));
@@ -48,6 +48,24 @@ describe('Autosaver', () => {
     await auto.flush();
     await vi.advanceTimersByTimeAsync(5000);
     expect(save).toHaveBeenCalledTimes(1);
+  });
+
+  it('saveNow writes a meta-only change straight away, with no history change', async () => {
+    const history = new History(emptyMap(30, 30));
+    const store = new MemorySaveStore();
+    let m: CampaignMeta = { ...meta };
+    const auto = new Autosaver(history, store, () => m);
+    auto.start();
+    m = { ...m, gameOver: { heroName: 'Pip', heroLevel: 2 } };
+    await auto.saveNow();
+    expect(store.saved!.meta.gameOver).toEqual({ heroName: 'Pip', heroLevel: 2 });
+  });
+
+  it('saveNow writes nothing while paused', async () => {
+    const { save, auto } = setup();
+    auto.pause();
+    await auto.saveNow();
+    expect(save).toHaveBeenCalledTimes(0);
   });
 
   it('a failed save sets failing; a later successful save clears it', async () => {

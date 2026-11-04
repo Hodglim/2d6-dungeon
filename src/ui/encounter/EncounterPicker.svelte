@@ -1,39 +1,72 @@
 <script lang="ts">
-  import { searchCards, type CardPack, type CreatureCard } from '../../systems/dungeon/cards';
+  import { searchCards, type CardPack } from '../../systems/dungeon/cards';
+  import type { DungeonTables } from '../../systems/dungeon/tables';
 
   interface Props {
-    pack: CardPack;
-    onpick: (card: CreatureCard) => void;
+    /** Without a pack there are no pictures to search; table creatures and typed names still work. */
+    pack: CardPack | null;
+    tables: DungeonTables | null;
+    /** A stored card pack exists but could not be read. */
+    cardsUnreadable?: boolean;
+    onpick: (name: string) => void;
     onclose: () => void;
   }
-  let { pack, onpick, onclose }: Props = $props();
+  let { pack, tables, cardsUnreadable = false, onpick, onclose }: Props = $props();
 
   let query = $state('');
   let level = $state('all');
-  const levels = $derived([...new Set(pack.cards.map((c) => c.level))].sort((a, b) => a - b));
-  const results = $derived(searchCards(pack, query, level === 'all' ? null : Number(level)));
+  const levels = $derived(
+    [...new Set([...(pack?.cards ?? []).map((c) => c.level), ...Object.values(tables?.tables.creatures ?? {}).map((c) => c.level)])].sort((a, b) => a - b),
+  );
+  const want = $derived(level === 'all' ? null : Number(level));
+  const cardHits = $derived(pack ? searchCards(pack, query, want) : []);
+  /** Creatures in the table file that have no card of their own. */
+  const tableHits = $derived.by(() => {
+    const q = query.trim().toLowerCase();
+    const carded = new Set((pack?.cards ?? []).map((c) => c.name.toLowerCase()));
+    return Object.entries(tables?.tables.creatures ?? {})
+      .filter(([n, c]) => !carded.has(n.toLowerCase()) && (!q || n.toLowerCase().includes(q)) && (want === null || c.level === want))
+      .map(([n, c]) => ({ name: n, level: c.level }))
+      .sort((a, b) => a.level - b.level || a.name.localeCompare(b.name));
+  });
+  const typed = $derived(query.trim());
+  const exact = $derived(
+    [...cardHits.map((c) => c.name), ...tableHits.map((c) => c.name)].some((n) => n.toLowerCase() === typed.toLowerCase()),
+  );
 </script>
 
-<aside class="encounter-picker" aria-label="Encounter search">
+<section class="encounter-picker" aria-label="Add creature">
   <header>
-    <h2>Encounter</h2>
-    <button class="close" onclick={onclose} aria-label="Close encounter search">Close</button>
+    <h2>Add creature</h2>
+    <button class="close" onclick={onclose} aria-label="Close creature search">Close</button>
   </header>
+  {#if !pack}
+    <p class="note">{cardsUnreadable ? "Couldn't read your stored creature cards — try loading them again to search by picture." : 'Load creature cards to search by picture.'}</p>
+  {/if}
   <div class="filters">
-    <input type="search" aria-label="Search creatures" placeholder="Search by name" bind:value={query} autocomplete="off" />
-    <select aria-label="Dungeon level" bind:value={level}>
-      <option value="all">All</option>
-      {#each levels as l (l)}<option value={String(l)}>Level {l}</option>{/each}
-    </select>
+    <input type="search" aria-label="Search creatures" placeholder="Search or type a name" bind:value={query} autocomplete="off" />
+    {#if levels.length > 0}
+      <select aria-label="Dungeon level" bind:value={level}>
+        <option value="all">All</option>
+        {#each levels as l (l)}<option value={String(l)}>Level {l}</option>{/each}
+      </select>
+    {/if}
   </div>
   <ul class="results">
-    {#each results as c (c.id)}
-      <li><button class="pick" onclick={() => onpick(c)}><span class="name">{c.name}</span><span class="lvl">Level {c.level}</span></button></li>
-    {:else}
-      <li class="none">No creature matches.</li>
+    {#if typed && !exact}
+      <li><button class="pick add" onclick={() => onpick(typed)}><span class="name">Add “{typed}”</span></button></li>
+    {/if}
+    {#each cardHits as c (c.id)}
+      <li><button class="pick" onclick={() => onpick(c.name)}><span class="name">{c.name}</span><span class="lvl">Level {c.level}</span></button></li>
     {/each}
+    {#each tableHits as c (c.name)}
+      <li><button class="pick" onclick={() => onpick(c.name)}><span class="name">{c.name}</span><span class="lvl">Level {c.level}</span></button></li>
+    {/each}
+    {#if !typed && cardHits.length === 0 && tableHits.length === 0}
+      <li class="none">Type a creature's name to add it.</li>
+    {/if}
   </ul>
-</aside>
+</section>
 
 <style>
   .encounter-picker {
@@ -43,9 +76,6 @@
     display: flex;
     flex-direction: column;
     gap: 10px;
-    padding: 12px 18px 18px;
-    background: var(--paper);
-    border-left: 2px solid var(--ink);
     overflow: hidden;
   }
   header {
@@ -112,6 +142,14 @@
     color: var(--muted);
     font-size: 15px;
     white-space: nowrap;
+  }
+  .note {
+    margin: 0;
+    color: var(--muted);
+    font-size: 16px;
+  }
+  .add {
+    font-weight: 600;
   }
   .none {
     color: var(--muted);

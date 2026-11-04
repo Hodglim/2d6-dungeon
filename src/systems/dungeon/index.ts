@@ -1,4 +1,5 @@
 import type { GameSystem } from '../../core/system';
+import { encounterProblem } from './combat';
 import { heroProblem } from './hero';
 
 export const dungeonSystem: GameSystem = {
@@ -20,4 +21,5 @@ export const dungeonSystem: GameSystem = {
   roomDieRange: { min: 1, max: 6 },
   maxExits: 3,
   heroProblem,
+  encounterProblem,
 };

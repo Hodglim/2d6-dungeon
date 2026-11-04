@@ -110,7 +110,7 @@ export function applyRoomRoll(room: Room, contents: RoomContents, unique: boolea
       return {
         ...m,
         rooms: m.rooms.map((r) => r.id === room.id
-          ? { ...r, contents, label: { ...r.label, type: contents.type, unique, narrative: contents.description } }
+          ? { ...r, contents, label: { ...r.label, type: contents.type, unique } }
           : r),
         doors: m.doors.map((d) => ids.has(d.id)
           ? { ...d, type: contents.door, lock: contents.locked ? { locked: true, note: '', quality: null } : null }

@@ -57,6 +57,12 @@ export class Autosaver {
     await this.drain();
   }
 
+  /** Writes now even with no history change (a change to the campaign meta, such as Game Over). */
+  async saveNow(): Promise<void> {
+    if (!this.paused && !this.disposed) this.dirty = true;
+    await this.flush();
+  }
+
   /** Dropping pending work (and retries) is intended: pause is used when the history is about to be replaced (the load-error dialog). */
   pause(): void {
     this.paused = true;

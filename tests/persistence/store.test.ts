@@ -6,7 +6,7 @@ import { IdbSaveStore, MemorySaveStore } from '../../src/persistence/store';
 import { encodeSave } from '../../src/persistence/record';
 import { emptyMap, room } from '../core/fixtures';
 
-const meta = { id: 'c1', name: 'Camp', systemId: 'dungeon', hero: null, earlierLevels: [] };
+const meta = { id: 'c1', name: 'Camp', systemId: 'dungeon', hero: null, earlierLevels: [], gameOver: null };
 function rec(n: number) {
   const h = new History(emptyMap(30, 30));
   for (let i = 0; i < n; i++) h.execute(addRoom(room(`r${i}`, i * 3, 1, 2, 2, 'room', i + 1)));

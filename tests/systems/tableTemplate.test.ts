@@ -19,7 +19,7 @@ describe('blankTableFile', () => {
     expect(t.format).toBe(1);
     expect(t.systemId).toBe('dungeon');
     expect(Object.keys(t.tables).sort()).toEqual(
-      ['conditions', 'dungeonLevels', 'exitTables', 'favourBoxes', 'gods', 'levels', 'limits', 'starting', 'startingArmour', 'startingScrolls', 'weapons'].sort(),
+      ['conditions', 'creatureTables', 'creatures', 'dungeonLevels', 'exitTables', 'favourBoxes', 'gods', 'levels', 'limits', 'starting', 'startingArmour', 'startingScrolls', 'weapons'].sort(),
     );
     expect(TEMPLATE_FILE_NAME).toMatch(/\.json$/);
   });
@@ -31,6 +31,14 @@ describe('blankTableFile', () => {
     expect(Object.keys(lvl.smallRooms)).toEqual(TWO_D6);
     expect(Object.keys(lvl.largeRooms)).toEqual(TWO_D6);
     expect(Object.keys(t.tables.exitTables[lvl.exitTable]!)).toEqual(D66);
+  });
+
+  it('has one creature table with keys 1-6 and one blank creature row', () => {
+    const t = blankTableFile();
+    expect(Object.keys(t.tables.creatureTables)).toEqual(['L1X']);
+    expect(Object.keys(t.tables.creatureTables.L1X!)).toEqual(['1', '2', '3', '4', '5', '6']);
+    expect(t.tables.creatureTables.L1X!['1']).toEqual({ creatures: [''] });
+    expect(t.tables.creatures).toEqual({ '': { level: null, hp: null, xp: null, shift: null, treasure: '' } });
   });
 
   it('holds no text at all except the file name and the exit table name', () => {
@@ -46,7 +54,9 @@ describe('blankTableFile', () => {
   it('is accepted once every blank is filled in', () => {
     const t = blankTableFile() as any;
     const f = fixture as any;
-    t.tables = { ...f.tables, dungeonLevels: t.tables.dungeonLevels, exitTables: t.tables.exitTables };
+    t.tables = { ...f.tables, dungeonLevels: t.tables.dungeonLevels, exitTables: t.tables.exitTables, creatureTables: t.tables.creatureTables, creatures: t.tables.creatures };
+    t.tables.creatures = { Grumbler: { level: 1, hp: 4, xp: 2, shift: 0, treasure: '' } };
+    for (const e of Object.values(t.tables.creatureTables.L1X) as any[]) e.creatures = ['Grumbler'];
     for (const e of Object.values(t.tables.exitTables.EXT1) as any[]) e.door = 'archway';
     const lvl = t.tables.dungeonLevels[0];
     for (const table of [lvl.rooms, lvl.smallRooms, lvl.largeRooms]) {

@@ -5,6 +5,7 @@ import type { Campaign } from './types';
 
 /** Null means the hero is valid. The game system supplies it; core never looks inside a hero. */
 export type HeroProblem = (hero: unknown) => string | null;
+export type EncounterProblem = (encounter: unknown) => string | null;
 
 export type ParseResult = { ok: true; campaign: Campaign } | { ok: false; error: string };
 
@@ -96,9 +97,17 @@ function heroFault(hero: unknown, heroProblem?: HeroProblem): string | null {
   return heroProblem(hero);
 }
 
-const HERO_DAMAGED = 'The saved hero is damaged:';
+/** Encounter must be present (null is fine); a non-null encounter must pass the system's check. */
+function encounterFault(encounter: unknown, encounterProblem?: EncounterProblem): string | null {
+  if (encounter === undefined) return 'the encounter is missing';
+  if (encounter === null || !encounterProblem) return null;
+  return encounterProblem(encounter);
+}
 
-export function parseCampaign(text: string, heroProblem?: HeroProblem): ParseResult {
+const HERO_DAMAGED = 'The saved hero is damaged:';
+const ENCOUNTER_DAMAGED = 'The saved encounter is damaged:';
+
+export function parseCampaign(text: string, heroProblem?: HeroProblem, encounterProblem?: EncounterProblem): ParseResult {
   let raw: unknown;
   try {
     raw = JSON.parse(text);
@@ -116,6 +125,8 @@ export function parseCampaign(text: string, heroProblem?: HeroProblem): ParseRes
   if (problem) return { ok: false, error: `The map file is damaged: ${problem}.` };
   const bad = heroFault(raw.hero, heroProblem);
   if (bad) return { ok: false, error: `${HERO_DAMAGED} ${bad}.` };
+  const encBad = encounterFault(raw.encounter, encounterProblem);
+  if (encBad) return { ok: false, error: `${ENCOUNTER_DAMAGED} ${encBad}.` };
   const campaign = raw as unknown as Campaign;
   for (const map of campaign.maps) {
     const broken = checkInvariants(map);
@@ -131,13 +142,15 @@ function snapshotProblem(map: unknown): string | null {
 }
 
 /** Validates a loaded History snapshot: heroes (required, null allowed), shape and invariants of every map, string labels, lengths within the cap. */
-export function parseHistoryState(raw: unknown, heroProblem?: HeroProblem): HistoryParse {
+export function parseHistoryState(raw: unknown, heroProblem?: HeroProblem, encounterProblem?: EncounterProblem): HistoryParse {
   const fail = (why: string): HistoryParse => ({ ok: false, error: `The saved history is damaged: ${why}.` });
   if (!isObj(raw)) return fail('it is not an object');
   const bad = snapshotProblem(raw.current);
   if (bad) return fail(`current map: ${bad}`);
   const heroBad = heroFault(raw.hero, heroProblem);
   if (heroBad) return { ok: false, error: `${HERO_DAMAGED} ${heroBad}.` };
+  const encBad = encounterFault(raw.encounter, encounterProblem);
+  if (encBad) return { ok: false, error: `${ENCOUNTER_DAMAGED} ${encBad}.` };
   for (const key of ['past', 'future'] as const) {
     const list = raw[key];
     if (!Array.isArray(list)) return fail(`${key} is missing`);
@@ -149,6 +162,8 @@ export function parseHistoryState(raw: unknown, heroProblem?: HeroProblem): Hist
       if (problem) return fail(`${key}[${i}]: ${problem}`);
       const eHero = heroFault(e.hero, heroProblem);
       if (eHero) return { ok: false, error: `${HERO_DAMAGED} ${key}[${i}]: ${eHero}.` };
+      const eEnc = encounterFault(e.encounter, encounterProblem);
+      if (eEnc) return { ok: false, error: `${ENCOUNTER_DAMAGED} ${key}[${i}]: ${eEnc}.` };
     }
   }
   return { ok: true, state: raw as unknown as HistoryState };

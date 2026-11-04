@@ -9,7 +9,7 @@ import { dungeonSystem } from '../../src/systems/dungeon';
 import { addRoom } from '../../src/core/commands';
 import { room } from '../core/fixtures';
 
-const meta = { id: 'c1', name: 'Test', systemId: dungeonSystem.id, earlierLevels: [] };
+const meta = { id: 'c1', name: 'Test', systemId: dungeonSystem.id, earlierLevels: [], gameOver: null };
 const newHistory = () => new History(createMap(dungeonSystem, { width: 25, height: 25 }));
 const record = (h = newHistory()) => JSON.parse(JSON.stringify(encodeSave(meta, h.exportState())));
 
@@ -49,8 +49,8 @@ describe('decideStartup', () => {
     expect(JSON.stringify(r)).toBe(before);
   });
 
-  it('a format 4 record is the newer-version error', () => {
-    const res = decideStartup({ ...record(), format: 4 });
+  it('a format 5 record is the newer-version error', () => {
+    const res = decideStartup({ ...record(), format: 5 });
     expect(res.kind === 'error' && res.error).toContain('newer version');
   });
 
@@ -81,14 +81,14 @@ describe('decideStartup', () => {
   it('a broken snapshot, past entry, future entry or over-cap history is an error', () => {
     const broken = (edit: (r: any) => void) => {
       const r = record();
-      r.history.past = [{ label: 'a', map: r.history.current, hero: null }];
+      r.history.past = [{ label: 'a', map: r.history.current, hero: null, encounter: null }];
       edit(r);
       return decideStartup(r).kind;
     };
     expect(broken((r) => (r.history.current = { nonsense: true }))).toBe('error');
     expect(broken((r) => (r.history.past[0].map = { nonsense: true }))).toBe('error');
-    expect(broken((r) => (r.history.future = [{ label: 'x', map: { nonsense: true }, hero: null }]))).toBe('error');
-    expect(broken((r) => (r.history.past = Array.from({ length: HISTORY_CAP + 1 }, () => ({ label: 'a', map: r.history.current, hero: null }))))).toBe('error');
+    expect(broken((r) => (r.history.future = [{ label: 'x', map: { nonsense: true }, hero: null, encounter: null }]))).toBe('error');
+    expect(broken((r) => (r.history.past = Array.from({ length: HISTORY_CAP + 1 }, () => ({ label: 'a', map: r.history.current, hero: null, encounter: null }))))).toBe('error');
   });
 });
 

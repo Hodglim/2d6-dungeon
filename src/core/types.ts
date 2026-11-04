@@ -102,4 +102,6 @@ export interface Campaign {
   activeMapId: string;
   /** Reserved for the Part 3 character sheet; shape defined by the game system. */
   hero: unknown | null;
+  /** The fight in progress; shape defined by the game system. */
+  encounter: unknown | null;
 }

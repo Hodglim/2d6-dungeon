@@ -121,7 +121,7 @@ describe('applyRoomRoll', () => {
       expect(d(id)).toMatchObject({ type: 'metal', lock: { locked: true, note: '', quality: null } });
     }
     expect(out.rooms[1]!.contents).toEqual(c);
-    expect(out.rooms[1]!.label).toEqual({ type: 'Fire Pit', unique: true, narrative: 'd' });
+    expect(out.rooms[1]!.label).toEqual({ type: 'Fire Pit', unique: true, narrative: '' }); // player's notes kept, description not copied
     expect(out.rooms[0]).toEqual(m.rooms[0]);
   });
   it('leaves the entry door, doors shared with neighbours and far doors unchanged', () => {

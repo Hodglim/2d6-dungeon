@@ -9,6 +9,8 @@
   import type { DungeonTables } from '../systems/dungeon/tables';
   import DiceEntry from './DiceEntry.svelte';
   import DieFace from './DieFace.svelte';
+  import EncounterText from './encounter/EncounterText.svelte';
+  import type { EncounterHooks } from './encounter/encounterActions';
   
   interface Props {
     map: DungeonMap;
@@ -17,9 +19,10 @@
     rng?: Rng;
     onapply: (contents: RoomContents, unique: boolean) => void;
     oncancel: () => void;
+    encounter?: EncounterHooks | null;
   }
 
-  let { map, room, tables, rng = Math.random, onapply, oncancel }: Props = $props();
+  let { map, room, tables, rng = Math.random, onapply, oncancel, encounter = null }: Props = $props();
 
   const lv = $derived(levelTables(tables, map.level));
   const kind = $derived(room.sizeClass === 'small' ? 'small' : room.sizeClass === 'large' ? 'large' : 'rooms');
@@ -114,7 +117,7 @@
       </div>
       <p class="type">{r.type}{#if r.unique}<span class="badge">Unique</span>{/if}</p>
       <p>{r.description}</p>
-      {#if r.encounter}<p><strong>Encounter:</strong> {r.encounter}</p>{/if}
+      {#if r.encounter}<p data-testid="encounter-text"><strong>Encounter:</strong> {#if encounter}<EncounterText text={r.encounter} {tables} {...encounter} />{:else}{r.encounter}{/if}</p>{/if}
       {#if r.contents}<p data-testid="exit-result"><strong>Exits:</strong> {doorName(r.contents.door)}{r.contents.locked ? ', locked' : ''}</p>{/if}
       {#if r.capped}<p class="note">No unused rooms left on this table — accepted anyway</p>{/if}
       {#if rerolled > 0 && !r.capped}<p class="note">Re-rolled {rerolled} {rerolled === 1 ? 'time' : 'times'}: unique rooms already on this level.</p>{/if}

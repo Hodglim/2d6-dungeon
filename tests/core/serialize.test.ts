@@ -52,8 +52,8 @@ describe('serialize / parse', () => {
   });
 
   it('version coupling: bump the save format and the schema version together', () => {
-    expect(CURRENT_SCHEMA_VERSION).toBe(3);
-    expect(SAVE_FORMAT).toBe(3);
+    expect(CURRENT_SCHEMA_VERSION).toBe(4);
+    expect(SAVE_FORMAT).toBe(4);
   });
 
   it('validates a non-null hero with heroProblem, and requires the hero key', () => {
@@ -70,6 +70,28 @@ describe('serialize / parse', () => {
     expect(none.ok).toBe(true);
     const { hero: _h, ...noHero } = sample();
     expect(parseCampaign(JSON.stringify(noHero)).ok).toBe(false);
+  });
+
+  it('refuses an old schema 3 file, and validates the encounter like the hero', () => {
+    expect(parseCampaign(JSON.stringify({ ...sample(), schemaVersion: 3 })).ok).toBe(false);
+    const c = { ...sample(), encounter: { foes: [] } };
+    const seen: unknown[] = [];
+    expect(parseCampaign(JSON.stringify(c), undefined, (e) => (seen.push(e), null)).ok).toBe(true);
+    expect(seen).toEqual([{ foes: [] }]);
+    expect(parseCampaign(JSON.stringify(c), undefined, () => 'bad foe')).toEqual({ ok: false, error: 'The saved encounter is damaged: bad foe.' });
+    expect(parseCampaign(JSON.stringify(sample()), undefined, () => { throw new Error('not called for null'); }).ok).toBe(true);
+    const { encounter: _e, ...noEnc } = sample();
+    expect(parseCampaign(JSON.stringify(noEnc)).ok).toBe(false);
+  });
+
+  it('parseHistoryState checks the encounter of the state and of each entry', () => {
+    const map = sample().maps[0]!;
+    const st = (over: object, entry: object = {}) => ({ current: map, hero: null, encounter: null, past: [{ label: 'a', map, hero: null, encounter: null, ...entry }], future: [], ...over });
+    expect(parseHistoryState(st({ encounter: { foes: [] } }), undefined, () => null).ok).toBe(true);
+    expect(parseHistoryState(st({ encounter: { foes: [] } }), undefined, () => 'bad foe')).toEqual({ ok: false, error: 'The saved encounter is damaged: bad foe.' });
+    expect(parseHistoryState(st({}, { encounter: { foes: [] } }), undefined, () => 'bad foe')).toEqual({ ok: false, error: 'The saved encounter is damaged: past[0]: bad foe.' });
+    const { encounter: _e, ...noEnc } = st({});
+    expect(parseHistoryState(noEnc).ok).toBe(false);
   });
 
   it('reports damaged structure', () => {

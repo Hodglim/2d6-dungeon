@@ -4,14 +4,19 @@
   import { dungeonSystem } from '../../systems/dungeon';
   import DiceEntry from '../DiceEntry.svelte';
   import DieFace from '../DieFace.svelte';
+  import EncounterText from '../encounter/EncounterText.svelte';
+  import type { EncounterHooks } from '../encounter/encounterActions';
+  import type { DungeonTables } from '../../systems/dungeon/tables';
 
   interface Props {
     flow: PlayFlow;
     step: Extract<Step, { kind: 'label' }>;
     oncommit: (run: () => ExecResult | null) => void;
+    tables?: DungeonTables | null;
+    encounter?: EncounterHooks | null;
   }
 
-  let { flow, step, oncommit }: Props = $props();
+  let { flow, step, oncommit, tables = null, encounter = null }: Props = $props();
 
   // Seeded once from the draft (e.g. "Entrance Room"); the step object is stable while labelling.
   // svelte-ignore state_referenced_locally
@@ -81,7 +86,7 @@
     </div>
     <p class="type">{r.entry.type}{#if r.entry.unique}<span class="badge">Unique</span>{/if}</p>
     <p>{r.entry.description}</p>
-    {#if r.entry.encounter}<p><strong>Encounter:</strong> {r.entry.encounter}</p>{/if}
+    {#if r.entry.encounter}<p data-testid="encounter-text"><strong>Encounter:</strong> {#if encounter}<EncounterText text={r.entry.encounter} {tables} {...encounter} />{:else}{r.entry.encounter}{/if}</p>{/if}
     {#if r.contents}
       <p data-testid="exit-result"><strong>Exits:</strong> {doorName(r.contents.door)}{r.contents.locked ? ', locked' : ''}</p>
     {/if}

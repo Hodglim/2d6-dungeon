@@ -15,7 +15,7 @@
   import { Autosaver } from '../persistence/autosave';
   import { cardsKind, chooseFile, loadStored, readStored, removeFile, tablesKind } from '../persistence/extras';
   import { exportCampaignFile, readImportText } from '../persistence/files';
-  import { campaignFrom, metaFrom, type CampaignMeta } from '../persistence/record';
+  import { campaignFrom, metaFrom, type CampaignMeta, type GameOver as GameOverRecord } from '../persistence/record';
   import { shareOrDownload } from '../persistence/share';
   import { blankTableFile, TEMPLATE_FILE_NAME } from '../systems/dungeon/template';
   import { isIosSafari, isStandalone, readDisplayEnv } from '../persistence/standalone';
@@ -25,7 +25,8 @@
   import type { Pick } from '../render/hit';
   import { DEFAULT_TOGGLES, type DisplayToggles } from '../render/renderer';
   import { dungeonSystem } from '../systems/dungeon';
-  import type { CardPack, CreatureCard } from '../systems/dungeon/cards';
+  import type { CardPack } from '../systems/dungeon/cards';
+  import { allDefeated, type Encounter } from '../systems/dungeon/combat';
   import { restOnStairs, type Hero } from '../systems/dungeon/hero';
   import { levelLabel } from './levelLabel';
   import type { DungeonTables } from '../systems/dungeon/tables';
@@ -41,8 +42,12 @@
   import ReplaceGameDialog from './ReplaceGameDialog.svelte';
   import SaveBanner from './SaveBanner.svelte';
   import HeroPanel from './hero/HeroPanel.svelte';
-  import EncounterCard from './encounter/EncounterCard.svelte';
-  import EncounterPicker from './encounter/EncounterPicker.svelte';
+  import EncounterPane, { NO_WIN, type WinState } from './encounter/EncounterPane.svelte';
+  import DeathDialog from './DeathDialog.svelte';
+  import GameOver from './GameOver.svelte';
+  import { shouldAskDeath } from './endings';
+  import { queueCreatureRoll, startOrJoin, type EncounterHooks } from './encounter/encounterActions';
+  import { findCreature } from '../systems/dungeon/creatures';
   import LevelViewer from './LevelViewer.svelte';
   import StairsDialog from './StairsDialog.svelte';
   import StepPanel from './StepPanel.svelte';
@@ -62,6 +67,12 @@
   /** Mirror of meta.earlierLevels for the UI (meta itself is not reactive). Kept in step wherever meta changes. */
   let earlier = $state.raw<DungeonMap[]>(meta.earlierLevels);
   let stairsOpen = $state(false);
+  /** Mirror of meta.gameOver: the Game Over cover shows while it's set. Never on the undo timeline. */
+  let gameOver = $state.raw<GameOverRecord | null>(meta.gameOver);
+  /** The hero state whose death question was cancelled: asked again only once a change makes a new one. */
+  let deathDismissed = $state.raw<Hero | null>(null);
+  /** The win question and Victory panel (kept here so a remounted pane keeps them). */
+  let win = $state.raw<WinState>(NO_WIN);
   let viewing = $state.raw<DungeonMap | null>(null);
   const store = new IdbSaveStore();
   const saver = new Autosaver(history, store, () => meta);
@@ -119,13 +130,13 @@
   /** The side panels were showing when a play-flow step took the sidebar: restore them when the flow ends. */
   let sideBeforeFlow = false;
   let heroOn = $state(false);
-  let encOn = $state(false);
+  /** The player opened the encounter pane from the toolbar with no fight on (an open fight always shows it). */
+  let encounterPaneOpen = $state(false);
   /** Which tab is selected while both are open. */
   let sideTab = $state<SideTab>('encounter');
-  /** The creature being faced. Not saved and not in History. */
-  let encCard = $state.raw<CreatureCard | null>(null);
+  const fighting = $derived($view.encounter !== null);
   const heroShown = $derived(sidebar === 'side' && heroOn && $view.hero !== null);
-  const encShown = $derived(sidebar === 'side' && encOn && cards !== null);
+  const encShown = $derived(sidebar === 'side' && (fighting || encounterPaneOpen));
   const sideShown = $derived(heroShown || encShown);
   /** While a play-flow step is open, the step panel is a tab too, so Place and Cancel stay one tap away. */
   const roomTab = $derived(sideShown && step.kind !== 'idle');
@@ -141,14 +152,21 @@
     toastTimer = setTimeout(() => (toast = null), 5000);
   }
 
-  // A removed pack takes its encounter with it; a replaced one is looked up again by id.
+  // A fight that starts (or comes back with Undo, a reload or an import) brings its pane up;
+  // one that ends puts the pane away. The card pack has no say: the fight lives in History.
+  let wasFighting = false;
   $effect(() => {
-    if (encCard) {
-      const id = encCard.id;
-      const found = cards?.cards.find((c) => c.id === id) ?? null;
-      if (found !== encCard) encCard = found;
+    const now = fighting;
+    if (now === wasFighting) return;
+    wasFighting = now;
+    if (now) {
+      sideTab = 'encounter';
+      if (step.kind !== 'idle') sideBeforeFlow = true;
+      else sidebar = 'side';
+    } else {
+      encounterPaneOpen = false;
+      if (sidebar === 'side' && !(heroOn && $view.hero !== null)) sidebar = 'steps';
     }
-    if (!cards) encOn = false;
   });
   // No hero, no hero panel.
   $effect(() => {
@@ -194,8 +212,41 @@
     return tool === 'play' && step.kind !== 'idle' ? flow.draftMap : committed;
   });
 
-  /** A modal (menu, dialogs, start-up) is open: map taps and shortcuts are off. */
-  const modalOpen = $derived(!started || !!loadError || menuOpen || newMapOpen || !!pendingReplace || !!importError || stairsOpen || !!viewing);
+  /**
+   * Death from any cause: watched on the History-derived hero, so any execute, undo, redo, restore
+   * or import that leaves HP at 0 or below asks. Not before start-up has settled.
+   */
+  const askingDeath = $derived(started && !loadError && shouldAskDeath($view.hero as Hero | null, gameOver !== null, deathDismissed));
+
+  // The Victory panel goes once the fight is over or a foe is standing again (Undo).
+  $effect(() => {
+    const e = $view.encounter as Encounter | null;
+    if ((e === null || !allDefeated(e)) && win.victory) win = { ...win, victory: false };
+  });
+
+  function confirmDeath() {
+    const h = history.hero as Hero | null;
+    if (!h) return;
+    (document.activeElement as HTMLElement | null)?.blur?.();
+    flow.cancel();
+    stairsOpen = false;
+    menuOpen = false;
+    viewing = null;
+    meta = { ...meta, gameOver: { heroName: h.name, heroLevel: h.level } };
+    gameOver = meta.gameOver;
+    void saver.saveNow(); // meta only: no history change, so the autosaver must be told
+  }
+
+  /** Game Over's New game: the new-game wizard; finishing it clears gameOver, cancelling returns here. */
+  function newGameFromGameOver() {
+    wizardMode = 'new-game';
+    newMapOpen = true;
+  }
+
+  /** A modal (menu, dialogs, start-up, Game Over) is open: map taps and shortcuts are off. */
+  const modalOpen = $derived(
+    !started || !!loadError || menuOpen || newMapOpen || !!pendingReplace || !!importError || stairsOpen || !!viewing || askingDeath || gameOver !== null,
+  );
 
   // The overlay follows the step (and the map, for idle highlights). draftMap isn't reactive,
   // but it only changes together with the step or the committed map.
@@ -219,7 +270,7 @@
 
   const cover = $derived(coverage($view.map));
   /** Replacing the map would lose something: content on it, or undo history. */
-  const hasWork = $derived(hasContent($view.map) || $view.canUndo || $view.hero !== null);
+  const hasWork = $derived(hasContent($view.map) || $view.canUndo || $view.hero !== null || $view.encounter !== null);
 
   function hasContent(m: DungeonMap): boolean {
     return m.rooms.length > 0 || m.doors.length > 0 || m.features.length > 0 || m.token !== null;
@@ -271,7 +322,7 @@
     }
     let decision: ReturnType<typeof decideStartup>;
     try {
-      decision = decideStartup(out.raw, dungeonSystem.heroProblem);
+      decision = decideStartup(out.raw, dungeonSystem.heroProblem, dungeonSystem.encounterProblem);
       if (decision.kind === 'restore') history.restore(decision.history);
     } catch (err) {
       decision = { kind: 'error', error: `The saved game is damaged: ${err instanceof Error ? err.message : String(err)}` };
@@ -285,6 +336,7 @@
     if (decision.kind === 'restore') {
       meta = decision.meta;
       earlier = meta.earlierLevels;
+      gameOver = meta.gameOver;
     }
     saver.start();
     saver.resume();
@@ -296,7 +348,7 @@
   let tablesTouched = false;
   let cardsTouched = false;
   /** A stored card pack exists but could not be read at start-up (Encounter says so instead of "none loaded"). */
-  let cardsUnreadable = false;
+  let cardsUnreadable = $state(false);
 
   /** Loads the stored table file and card pack. Any failure means carrying on without them. */
   async function loadExtras(isAlive: () => boolean) {
@@ -357,15 +409,17 @@
   }
 
   /** Swap in a whole new game (fresh history) and write it now, replacing whatever was saved. */
-  function replaceGame(next: CampaignMeta, map: DungeonMap, hero: unknown | null = null) {
+  function replaceGame(next: CampaignMeta, map: DungeonMap, hero: unknown | null = null, encounter: unknown | null = null) {
     (document.activeElement as HTMLElement | null)?.blur?.(); // commit a half-typed field into the old game first
     meta = next;
     earlier = next.earlierLevels;
+    gameOver = next.gameOver;
+    deathDismissed = null;
+    win = NO_WIN;
     stairsOpen = false;
     viewing = null;
     heroOn = false;
-    encOn = false;
-    encCard = null;
+    encounterPaneOpen = false;
     sidebar = 'steps';
     sideBeforeFlow = false;
     selection = null;
@@ -375,7 +429,7 @@
     importError = null;
     saver.start();
     saver.resume();
-    history.reset(map, hero);
+    history.reset(map, hero, encounter);
     void saver.flush();
   }
 
@@ -387,12 +441,15 @@
 
   /** The wizard finished: confirm the replacement first, as New game always has. */
   function beginNewGame(v: { width: number; height: number; title: string; hero: Hero | null }) {
-    // The wizard stays open until the replacement is accepted, so cancelling keeps the draft.
-    askReplace('New game', () => {
+    const run = () => {
       newMapOpen = false;
       const c = createCampaign(dungeonSystem, v.title || 'My dungeon', { width: v.width, height: v.height, title: v.title });
-      replaceGame(metaFrom(c), activeMap(c), v.hero);
-    });
+      replaceGame(metaFrom(c), activeMap(c), v.hero); // a fresh meta: gameOver is null
+    };
+    // After Game Over the old game is finished (Export is on the Game Over screen): no replace confirm.
+    if (gameOver) return run();
+    // The wizard stays open until the replacement is accepted, so cancelling keeps the draft.
+    askReplace('New game', run);
   }
 
   /** Add a hero to the current game (opened from the Hero button when there is none). */
@@ -427,27 +484,51 @@
     }
   }
 
-  /** The toolbar's Encounter button: explain how to get a card pack, or show or hide the encounter. */
+  /** The toolbar's Encounter button: show the pane, or hide it while no fight is open. No card pack needed. */
   function onEncounterButton() {
     if (!started || loadError) return;
-    if (!cards) {
-      showToast(cardsUnreadable ? "Couldn't read your stored creature cards — try loading them again" : 'No creature cards loaded. Open the menu and choose Load creature cards…');
+    sideBeforeFlow = false;
+    if (encShown && activeTab === 'encounter') {
+      if (!fighting) closeEncounterPane();
+      // An open fight only steps aside (to the hero sheet or the step panel); the button brings it back.
+      else if (heroShown) sideTab = 'hero';
+      else sidebar = 'steps';
       return;
     }
-    sideBeforeFlow = false;
-    if (encShown) {
-      encOn = false;
-      if (!heroShown) sidebar = 'steps';
-    } else {
-      encOn = true;
-      sideTab = 'encounter';
-      sidebar = 'side';
-    }
+    encounterPaneOpen = true;
+    sideTab = 'encounter';
+    sidebar = 'side';
   }
 
-  function endEncounter() {
-    encCard = null;
-    encOn = false;
+  /** Bring the encounter pane to the front (a Roll or Fight button); a step in progress stays a Room tab. */
+  function showEncounterPane() {
+    sideBeforeFlow = false;
+    encounterPaneOpen = true;
+    sideTab = 'encounter';
+    sidebar = 'side';
+  }
+
+  /** Creatures for the pane to add once it has asked for their starting HP (no stats in the table file). */
+  let fightRequest = $state<{ names: string[]; seq: number } | null>(null);
+  let fightSeq = 0;
+
+  /** The Roll and Fight buttons in a room's encounter text. */
+  const encounterHooks: EncounterHooks = {
+    onroll(code, modifier) {
+      if (!started || loadError) return;
+      queueCreatureRoll(history, code, modifier);
+      showEncounterPane();
+    },
+    onfight(name) {
+      if (!started || loadError) return;
+      if (findCreature(tables, name)) startOrJoin(history, tables, [name], randomId, () => null);
+      else fightRequest = { names: [name], seq: ++fightSeq };
+      showEncounterPane();
+    },
+  };
+
+  function closeEncounterPane() {
+    encounterPaneOpen = false;
     if (!heroShown) sidebar = 'steps';
   }
 
@@ -455,6 +536,7 @@
   function goDown(opts: { eat: boolean; bandage: boolean }) {
     (document.activeElement as HTMLElement | null)?.blur?.(); // commit a half-typed field first
     stairsOpen = false;
+    if (history.encounter !== null) return; // finish or end the fight first
     const old = history.map;
     if (old.level >= 10) return;
     const hero = history.hero as Hero | null;
@@ -466,7 +548,7 @@
     selection = null;
     gapMode = false;
     notice = null;
-    history.reset(fresh, rested);
+    history.reset(fresh, rested, null);
     void saver.flush();
   }
 
@@ -483,7 +565,7 @@
 
   function exportGame() {
     // Build the File synchronously so shareOrDownload runs inside the click's user gesture.
-    const { name, text } = exportCampaignFile(campaignFrom(meta, history.map, history.hero));
+    const { name, text } = exportCampaignFile(campaignFrom(meta, history.map, history.hero, history.encounter));
     shareOrDownload(new File([text], name, { type: 'application/json' }));
   }
 
@@ -515,14 +597,14 @@
       importError = "That file couldn't be read.";
       return;
     }
-    const res = readImportText(text, file.size, dungeonSystem.heroProblem);
+    const res = readImportText(text, file.size, dungeonSystem.heroProblem, dungeonSystem.encounterProblem);
     if (!res.ok) {
       importError = res.error;
       return;
     }
     const campaign = res.campaign;
     const map = activeMap(campaign);
-    const run = () => replaceGame(metaFrom(campaign), map, campaign.hero);
+    const run = () => replaceGame(metaFrom(campaign), map, campaign.hero, campaign.encounter);
     // From the load-error dialog there's no current game to lose, but the stored record is overwritten.
     if (loadError) askOverwriteSaved(run);
     else askReplace('Import game', run);
@@ -666,7 +748,9 @@
 
 <svelte:window onkeydown={onKey} />
 
-<div class="shell" class:collapsed={panelCollapsed && !sideShown} class:wide={sideShown}>
+<!-- Under Game Over or the death question, nothing behind them can be focused or used (keyboard included).
+     The wizard and dialogs are siblings of the shell, so they stay usable. -->
+<div class="shell" class:collapsed={panelCollapsed && !sideShown} class:wide={sideShown} inert={gameOver !== null || askingDeath}>
   <div class="top">
     <Toolbar
       view={$view}
@@ -675,10 +759,10 @@
       {menuOpen}
       heroOpen={heroShown}
       encounterOpen={encShown}
-      disabled={!started || !!loadError}
+      disabled={!started || !!loadError || gameOver !== null}
       ontool={selectTool}
-      onundo={() => history.undo()}
-      onredo={() => history.redo()}
+      onundo={() => !modalOpen && history.undo()}
+      onredo={() => !modalOpen && history.redo()}
       onmenu={() => started && !loadError && (menuOpen = !menuOpen)}
       onhero={onHeroButton}
       onencounter={onEncounterButton}
@@ -733,12 +817,16 @@
       oncommit={commit}
       {tables}
       levelText={levelLabel(tables, $view.map.level)}
-      ongodown={() => (stairsOpen = true)}
+      ongodown={() => {
+        if (history.encounter === null) stairsOpen = true;
+      }}
+      {fighting}
       selection={liveSelection}
       onexec={exec}
       onselect={(sel) => (selection = sel)}
       {collapsed}
       ontoggle={() => (panelCollapsed = !panelCollapsed)}
+      encounter={encounterHooks}
     />
   {/snippet}
   {#if sideShown}
@@ -768,16 +856,20 @@
             if (!encShown) sidebar = 'steps';
           }}
         />
-      {:else if cards && encCard}
-        <EncounterCard card={encCard} onend={endEncounter} />
-      {:else if cards}
-        <EncounterPicker
-          pack={cards}
-          onpick={(c) => (encCard = c)}
-          onclose={() => {
-            encOn = false;
-            if (!heroShown) sidebar = 'steps';
-          }}
+      {:else}
+        <EncounterPane
+          {history}
+          encounter={$view.encounter as Encounter | null}
+          hero={$view.hero as Hero | null}
+          {tables}
+          {cards}
+          {cardsUnreadable}
+          onclose={closeEncounterPane}
+          request={fightRequest}
+          onrequesttaken={() => (fightRequest = null)}
+          {win}
+          onwin={(w) => (win = w)}
+          holdWin={askingDeath || gameOver !== null}
         />
       {/if}
     </div>
@@ -789,6 +881,18 @@
 <input bind:this={fileInput} type="file" accept=".json,application/json" hidden onchange={onFileChosen} />
 <input bind:this={tablesInput} type="file" accept=".json,application/json" hidden data-extra="tables" onchange={onTablesChosen} />
 <input bind:this={cardsInput} type="file" accept=".json,application/json" hidden data-extra="cards" onchange={onCardsChosen} />
+
+{#if gameOver && !newMapOpen}
+  <GameOver over={gameOver} onexport={exportGame} onnew={newGameFromGameOver} />
+{/if}
+
+{#if askingDeath && $view.hero}
+  <DeathDialog
+    heroName={($view.hero as Hero).name}
+    onconfirm={confirmDeath}
+    oncancel={() => (deathDismissed = $view.hero as Hero)}
+  />
+{/if}
 
 {#if newMapOpen}
   <HeroWizard

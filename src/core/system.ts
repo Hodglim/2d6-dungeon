@@ -23,4 +23,6 @@ export interface GameSystem {
   maxExits: number;
   /** Describes what is wrong with a loaded hero, or null if it is valid. Called only for non-null heroes. */
   heroProblem?: (hero: unknown) => string | null;
+  /** Describes what is wrong with a loaded encounter, or null if it is valid. Called only for non-null encounters. */
+  encounterProblem?: (encounter: unknown) => string | null;
 }

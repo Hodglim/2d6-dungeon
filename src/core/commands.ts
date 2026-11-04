@@ -15,6 +15,19 @@ export interface HeroCommand {
 
 export const setHero = (after: unknown | null, label: string): HeroCommand => ({ label, applyHero: () => after });
 
+/** The hero and the encounter together, as one undo step (fight actions change both). */
+export interface PlayState {
+  hero: unknown | null;
+  encounter: unknown | null;
+}
+
+export interface PlayCommand {
+  label: string;
+  applyPlay(s: PlayState): PlayState;
+}
+
+export const setPlay = (after: PlayState, label: string): PlayCommand => ({ label, applyPlay: () => after });
+
 type Collection = 'rooms' | 'doors' | 'features';
 type ItemOf<K extends Collection> = DungeonMap[K][number];
 

@@ -862,42 +862,57 @@ if (!(await page.isVisible('text=This replaces your current game.'))) problems.p
     ] };
     await pick('cards', 'cards3.json', Buffer.from(JSON.stringify(pack)));
     await p.click('header.toolbar button.encounter');
+    await p.waitForSelector('.encounter-pane');
+    await p.click('.encounter-pane button:text-is("Add creature")');
     await p.waitForSelector('.encounter-picker');
-    if ((await p.$$eval('.encounter-picker .pick', (e) => e.length)) !== 3) problems.push('picker did not list 3 cards');
+    // Three cards plus the fixture's three table creatures (which have no cards).
+    const picks = () => p.$$eval('.encounter-picker .pick:not(.add)', (e) => e.length);
+    if ((await picks()) !== 6) problems.push(`picker listed ${await picks()} creatures, not 6`);
     const opts = await p.$$eval('.encounter-picker select option', (e) => e.map((o) => o.textContent.trim()));
     if (opts.join('|') !== 'All|Level 1|Level 2') problems.push('level filter options: ' + opts.join('|'));
     await p.selectOption('.encounter-picker select', '2');
-    if ((await p.$$eval('.encounter-picker .pick', (e) => e.length)) !== 2) problems.push('level filter did not narrow');
+    if ((await picks()) !== 3) problems.push('level filter did not narrow');
     await p.fill('.encounter-picker input[type=search]', 'penny');
-    if ((await p.$$eval('.encounter-picker .pick', (e) => e.length)) !== 1) problems.push('name search did not narrow');
+    if ((await picks()) !== 1) problems.push('name search did not narrow');
     const histBefore = await undoText();
-    await p.click('.encounter-picker .pick');
-    await p.waitForSelector('.encounter-card img[alt="Tall Pennywort"]');
-    if (await p.isVisible('.panel[aria-label="Step panel"]')) problems.push('step panel showing beside the encounter card');
-    const fit = await p.$eval('.encounter-card img', (e) => e.getBoundingClientRect().width <= e.closest('.encounter-card').getBoundingClientRect().width);
+    await p.click('.encounter-picker .pick:not(.add)');
+    // A card with no stats in the table file asks for its starting HP.
+    await p.waitForSelector('.encounter-pane form.ask');
+    if (!(await p.textContent('.encounter-pane form.ask label'))?.includes('Starting HP for Tall Pennywort')) problems.push('starting HP prompt text');
+    if ((await undoText()) !== histBefore) problems.push('picking a no-stats card changed History before its HP was given');
+    await p.fill('.encounter-pane form.ask input', '5');
+    await p.click('.encounter-pane form.ask button:text-is("Add")');
+    await p.waitForSelector('.encounter-pane .thumb img');
+    if (await p.isVisible('.panel[aria-label="Step panel"]')) problems.push('step panel showing beside the encounter pane');
+    const fit = await p.$eval('.encounter-pane .thumb img', (e) => e.getBoundingClientRect().width <= e.closest('.encounter-pane').getBoundingClientRect().width);
     if (!fit) problems.push('card image wider than the panel');
-    if ((await undoText()) !== histBefore) problems.push('picking a card changed History');
+    if (!(await undoText()).includes('Start encounter')) problems.push(`adding a creature: undo reads "${await undoText()}"`);
     await wshot('38-encounter.png');
     // Hero open too: tabs, Encounter first.
     await p.click('header.toolbar button.hero');
     await p.waitForSelector('.hero-panel');
     if (!(await p.isVisible('#side-tab-encounter')) || !(await p.isVisible('#side-tab-hero'))) problems.push('tabs missing with both open');
     await p.click('#side-tab-encounter');
-    if (!(await p.isVisible('.encounter-card'))) problems.push('Encounter tab did not show the card');
+    if (!(await p.isVisible('.encounter-pane'))) problems.push('Encounter tab did not show the pane');
     await p.click('#side-tab-hero');
-    if (!(await p.isVisible('.hero-panel')) || (await p.isVisible('.encounter-card'))) problems.push('Hero tab did not switch');
+    if (!(await p.isVisible('.hero-panel')) || (await p.isVisible('.encounter-pane'))) problems.push('Hero tab did not switch');
     await wshot('39-encounter-hero-tabs.png');
     await p.click('#side-tab-encounter');
     // Full screen closes on tap and on Escape.
-    await p.click('.encounter-card .image');
+    await p.click('.encounter-pane .thumb');
     if (!(await p.isVisible('.full img'))) problems.push('full-screen card missing');
     await p.click('.full');
     if (await p.isVisible('.full')) problems.push('full-screen card did not close on tap');
-    await p.click('.encounter-card .image');
+    await p.click('.encounter-pane .thumb');
     await p.keyboard.press('Escape');
     if (await p.isVisible('.full')) problems.push('full-screen card did not close on Escape');
-    await p.click('.encounter-card button:text-is("End encounter")');
-    if (await p.isVisible('.encounter-card') || !(await p.isVisible('.hero-panel'))) problems.push('End encounter did not leave the hero panel');
+    // A creature still standing: End encounter asks first.
+    await p.click('.encounter-pane button:text-is("End encounter")');
+    if (!(await p.isVisible('.encounter-pane .confirm >> text=Creatures are still standing. End the encounter anyway?'))) problems.push('End encounter did not ask while a creature stands');
+    await p.click('.encounter-pane .confirm button:text-is("End encounter")');
+    await p.waitForTimeout(200);
+    if (await p.isVisible('.encounter-pane') || !(await p.isVisible('.hero-panel'))) problems.push('End encounter did not leave the hero panel');
+    if (!(await undoText()).includes('End encounter')) problems.push(`End encounter: undo reads "${await undoText()}"`);
     await p.click(`${panel} button[aria-label="Close hero panel"]`);
     if (!(await p.isVisible('.panel[aria-label="Step panel"]'))) problems.push('step panel did not return');
     // Mid-placement: opening Encounter keeps the step panel reachable as a Room tab.
@@ -920,12 +935,9 @@ if (!(await page.isVisible('text=This replaces your current game.'))) problems.p
       await p.click('aside.panel button:text-is("Cancel")');
       await p.waitForTimeout(300);
       if (await p.isVisible('#side-tab-room')) problems.push('Room tab still showing after the flow ended');
-      if (!(await p.isVisible('.encounter-picker'))) problems.push('encounter panel not left open after the flow ended');
-      await p.click('.encounter-picker button[aria-label="Close encounter search"]');
+      if (!(await p.isVisible('.encounter-pane'))) problems.push('encounter pane not left open after the flow ended');
+      await p.click('.encounter-pane button[aria-label="Close encounter"]');
     }
-    // Not saved.
-    await p.waitForTimeout(1200);
-    if ((await readSaved()).includes('Tall Pennywort')) problems.push('encounter was saved');
   }
 
   await p.reload({ waitUntil: 'load' });
@@ -1435,6 +1447,767 @@ for (const reduced of [false, true]) {
   console.log(`${tag}: export holds ${exported.maps?.length} maps`);
   if (exported.maps?.length !== 2) problems.push(`${tag}: export has ${exported.maps?.length} maps`);
   await banner('at the end');
+  await ctx.close();
+}
+
+// 16. The encounter pane: a fight added by hand from the fixture's two-creature entry, HP taps,
+// turns, shifting the attack dice, rounds and the Fatigue Die, a reload mid-fight, removing the card pack, and the Go down guard.
+{
+  const ctx = await browser.newContext({ viewport: { width: 1180, height: 820 }, deviceScaleFactor: 2, hasTouch: true, reducedMotion: 'reduce' });
+  await ctx.addInitScript(() => localStorage.setItem('2d6.installHintDismissed', '1'));
+  const p = await ctx.newPage();
+  p.on('pageerror', (e) => errors.push(e.message));
+  p.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
+  await p.goto(url, { waitUntil: 'load' });
+  await p.waitForTimeout(800);
+  const tag = 'encounter pane';
+  const tap = async (x, y) => {
+    const at = await p.$eval('canvas', (c, [wx, wy]) => {
+      const [cx, cy, sc] = (c.dataset.camera ?? '').split(',').map(Number);
+      const r = c.getBoundingClientRect();
+      return { x: r.left + (wx - cx) * sc, y: r.top + (wy - cy) * sc };
+    }, [x, y]);
+    await p.mouse.click(at.x, at.y);
+    await p.waitForTimeout(150);
+  };
+  const btn = (name) => p.click(`aside.panel button:text-is("${name}")`);
+  const wiz = (t) => p.click(`[role=dialog][aria-labelledby=wizard-title] button:text-is("${t}")`);
+  const menu = () => p.click('header.toolbar button[aria-label="Menu"]');
+  const undoText = async () => (await p.textContent('header.toolbar button.history'))?.trim() ?? '';
+  const pane = '.encounter-pane';
+  const foeHp = (name) => p.textContent(`${pane} .foe:has(.name span:text-is("${name}")) .num`).then((t) => t?.trim());
+  const addByHand = async (name) => {
+    await p.click(`${pane} button:text-is("Add creature")`);
+    await p.fill('.encounter-picker input[type=search]', name);
+    await p.click(`.encounter-picker .pick:not(.add):has(.name:text-is("${name}"))`);
+    await p.waitForTimeout(150);
+  };
+  const state = async () => ({
+    turn: (await p.textContent(`${pane} [data-testid=turn]`))?.trim(),
+    round: (await p.textContent(`${pane} [data-testid=round]`))?.trim(),
+    fatigue: (await p.textContent(`${pane} [data-testid=fatigue]`))?.trim(),
+    foes: await p.$$eval(`${pane} .foe`, (els) => els.map((e) => `${e.querySelector('.name span')?.textContent?.trim()}:${e.querySelector('.num')?.textContent?.trim()}`)),
+  });
+
+  await p.setInputFiles('input[data-extra="tables"]', { name: 'tables.json', mimeType: 'application/json', buffer: Buffer.from(readFileSync('tests/fixtures/dungeon-tables.fixture.json')) });
+  await p.waitForTimeout(500);
+  // A made-up card for one of the fixture creatures, so the pane has a picture to lose later.
+  const img = await p.evaluate(() => {
+    const c = document.createElement('canvas');
+    c.width = 300;
+    c.height = 420;
+    const g = c.getContext('2d');
+    g.fillStyle = '#c96';
+    g.fillRect(0, 0, 300, 420);
+    g.fillStyle = '#222';
+    g.font = '160px sans-serif';
+    g.textAlign = 'center';
+    g.fillText('G', 150, 260);
+    return c.toDataURL('image/png');
+  });
+  const pack = { format: 1, systemId: 'dungeon', name: 'Made-up cards', cards: [{ id: 'g1', name: 'Grumbler', level: 1, image: img }] };
+  await p.setInputFiles('input[data-extra="cards"]', { name: 'cards.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(pack)) });
+  await p.waitForTimeout(500);
+  await menu();
+  await p.click('[role=menuitem]:text-is("New game…")');
+  await wiz('Next');
+  await p.fill('[aria-labelledby=wizard-title] input[type=text]', 'Pip Fight');
+  await wiz('Next');
+  await p.click('.weapon:has-text("Practice Sword")');
+  await p.click('.mtable .row:has-text("Wobbly Poke")');
+  await p.click('.mtable .row:has-text("Gentle Swipe")');
+  await wiz('Next');
+  await p.click('.option:has-text("Padded Tablecloth")');
+  await wiz('Next');
+  await p.click('.option:has-text("Scroll of Mild Glow")');
+  await wiz('Next');
+  await wiz('Begin');
+  await p.waitForTimeout(500);
+  if (await p.isVisible('[role=alertdialog] button:text-is("Replace")')) await p.click('[role=alertdialog] button:text-is("Replace")');
+  await p.waitForTimeout(800);
+  await tap(12.5, 25.5);
+  await p.fill('aside.panel form.dice input >> nth=0', '3');
+  await p.fill('aside.panel form.dice input >> nth=1', '4');
+  await btn('Use these');
+  await btn('Place');
+  await btn('Done');
+  await btn('Done');
+  await p.waitForTimeout(1500);
+  await p.click('header.toolbar button.tool:text-is("Stairs")');
+  await tap(12.5, 23.5);
+  await p.waitForTimeout(300);
+  if (!(await p.isEnabled('[data-testid=go-down]'))) problems.push(`${tag}: Go down disabled before any fight`);
+  await p.click('header.toolbar button.tool:text-is("Play")');
+
+  // 16a. The fixture's two-creature entry (Grumbler, Moss Lurker), added by hand.
+  await p.click('header.toolbar button.encounter');
+  await p.waitForSelector(pane);
+  if (!(await p.isVisible(`${pane} >> text=No fight yet`))) problems.push(`${tag}: empty pane text missing`);
+  await addByHand('Grumbler');
+  if ((await undoText()) !== 'Undo Start encounter' && !(await undoText()).includes('Start encounter')) problems.push(`${tag}: first creature: undo "${await undoText()}"`);
+  await addByHand('Moss Lurker');
+  if (!(await undoText()).includes('Add Moss Lurker')) problems.push(`${tag}: second creature: undo "${await undoText()}"`);
+  const s0 = await state();
+  console.log(`${tag}: start ${JSON.stringify(s0)}`);
+  if (s0.foes.join('|') !== 'Grumbler:4|Moss Lurker:6' || s0.round !== 'Round 1' || s0.fatigue !== '+0 Shift' || s0.turn !== 'Your turn') problems.push(`${tag}: start state ${JSON.stringify(s0)}`);
+  const stats = (await p.textContent(`${pane} .foe:has(.name span:text-is("Grumbler")) .stats`))?.replace(/\s+/g, ' ').trim();
+  if (!stats?.includes('SH 0 (+0)') || !stats.includes('XP 2') || !stats.includes('Treasure: Made-up: a pouch of pebbles.')) problems.push(`${tag}: Grumbler stats "${stats}"`);
+  if ((await p.$$(`${pane} .thumb img`)).length !== 1) problems.push(`${tag}: expected one card image`);
+  if (!(await p.isVisible(`${pane} [data-testid=hero-hp]`))) problems.push(`${tag}: hero HP tracker missing`);
+  // HP buttons are at least 56 px; every pane button at least 44.
+  const hpBtns = await p.$$eval(`${pane} .hp button`, (els) => els.map((e) => e.getBoundingClientRect()).filter((r) => r.width < 56 || r.height < 56).length);
+  if (hpBtns) problems.push(`${tag}: ${hpBtns} HP buttons under 56 px`);
+  const smallBtns = await p.$$eval(`${pane} button`, (els) => els.map((e) => ({ t: e.textContent?.trim(), r: e.getBoundingClientRect() })).filter((b) => b.r.width > 0 && (b.r.width < 44 || b.r.height < 44)).map((b) => b.t));
+  if (smallBtns.length) problems.push(`${tag}: small pane buttons ${smallBtns.join(', ')}`);
+  // Two quick taps down: one step.
+  await p.click(`${pane} button[aria-label="Grumbler HP down"]`);
+  await p.click(`${pane} button[aria-label="Grumbler HP down"]`);
+  if ((await foeHp('Grumbler')) !== '2') problems.push(`${tag}: Grumbler HP after two taps ${await foeHp('Grumbler')}`);
+  if (!(await undoText()).includes('Grumbler HP −2')) problems.push(`${tag}: merged tap label "${await undoText()}"`);
+  // Typed HP: not a whole number is ignored.
+  await p.click(`${pane} .foe:has(.name span:text-is("Moss Lurker")) .num`);
+  await p.fill(`${pane} .foe:has(.name span:text-is("Moss Lurker")) input`, '2.5');
+  await p.keyboard.press('Enter');
+  if ((await foeHp('Moss Lurker')) !== '6') problems.push(`${tag}: typed 2.5 was not ignored`);
+  // Turns and the attack dice. The hero (Shift 2) knows Wobbly Poke 1-4 and Gentle Swipe 2-6.
+  const td = `${pane} [data-testid=turn-dice]`;
+  const typeDice = async (a, b) => {
+    await p.fill(`${td} form.dice input >> nth=0`, String(a));
+    await p.fill(`${td} form.dice input >> nth=1`, String(b));
+    await p.click(`${td} form.dice button:text-is("Use these")`);
+  };
+  const faces = () => p.$$eval(`${td} [data-testid=attack-die]`, (els) => els.map((e) => e.dataset.value).join('-'));
+  const shiftLeft = async () => (await p.textContent(`${td} [data-testid=shift-left]`))?.trim();
+  const lit = () => p.$$eval(`${pane} [data-testid=manoeuvre].match .m-name`, (els) => els.map((e) => e.textContent.trim()).join('|'));
+  const rollNoteText = async () => ((await p.isVisible(`${td} [data-testid=roll-note]`)) ? (await p.textContent(`${td} [data-testid=roll-note]`))?.trim() : null);
+  const nextTurn = () => p.click(`${pane} button:text-is("Next turn")`);
+  const turnText = async () => (await p.textContent(`${pane} [data-testid=turn]`))?.trim();
+  const ms = await p.$$eval(`${pane} [data-testid=manoeuvre] .m-name`, (els) => els.map((e) => e.textContent.trim()).join('|'));
+  if (ms !== 'Wobbly Poke|Gentle Swipe') problems.push(`${tag}: hero manoeuvres listed "${ms}"`);
+  await typeDice(2, 4);
+  if ((await faces()) !== '2-4' || (await shiftLeft()) !== 'Shift left: 2 of 2' || (await lit()) !== '') problems.push(`${tag}: 2-4 rolled: ${await faces()} "${await shiftLeft()}" lit "${await lit()}"`);
+  await p.click(`${td} button[aria-label="Red die down"]`);
+  if ((await faces()) !== '1-4' || (await shiftLeft()) !== 'Shift left: 1 of 2' || (await lit()) !== 'Wobbly Poke') problems.push(`${tag}: one shift down: ${await faces()} "${await shiftLeft()}" lit "${await lit()}"`);
+  if ((await rollNoteText()) !== null) problems.push(`${tag}: a shifted match was called "${await rollNoteText()}"`);
+  await shot('51a-shift-match.png', p);
+  // Left-click the blue die: up one, the pool is spent and nothing matches.
+  await p.click(`${td} [data-testid=attack-die] >> nth=1`);
+  if ((await faces()) !== '1-5' || (await shiftLeft()) !== 'Shift left: 0 of 2' || (await lit()) !== '') problems.push(`${tag}: blue up: ${await faces()} "${await shiftLeft()}" lit "${await lit()}"`);
+  if (!(await p.isDisabled(`${td} button[aria-label="Blue die up"]`)) || !(await p.isDisabled(`${td} button[aria-label="Red die down"]`))) problems.push(`${tag}: arrows not disabled with the pool spent`);
+  await p.click(`${td} [data-testid=attack-die] >> nth=1`);
+  if ((await faces()) !== '1-5') problems.push(`${tag}: shifted past the pool: ${await faces()}`);
+  // Right-click the blue die: back down, the point comes back.
+  await p.click(`${td} [data-testid=attack-die] >> nth=1`, { button: 'right' });
+  if ((await faces()) !== '1-4' || (await shiftLeft()) !== 'Shift left: 1 of 2' || (await lit()) !== 'Wobbly Poke') problems.push(`${tag}: right-click refund: ${await faces()} "${await shiftLeft()}" lit "${await lit()}"`);
+  const smallTd = await p.$$eval(`${td} button`, (els) => els.map((e) => ({ t: e.getAttribute('aria-label') ?? e.textContent?.trim(), r: e.getBoundingClientRect() })).filter((b) => b.r.width > 0 && (b.r.width < 44 || b.r.height < 44)).map((b) => b.t));
+  if (smallTd.length) problems.push(`${tag}: small attack-dice buttons ${smallTd.join(', ')}`);
+  // A natural match is an Exact Strike; a natural 1-1 always misses and can't be shifted.
+  await p.click(`${td} button:text-is("Roll again")`);
+  await typeDice(1, 4);
+  if ((await rollNoteText()) !== 'Exact Strike: add your Shift to the damage' || (await lit()) !== 'Wobbly Poke') problems.push(`${tag}: exact strike "${await rollNoteText()}" lit "${await lit()}"`);
+  await shot('51b-exact-strike.png', p);
+  await p.click(`${td} button:text-is("Roll again")`);
+  await typeDice(1, 1);
+  if ((await rollNoteText()) !== 'Double 1: always a miss' || !(await p.isDisabled(`${td} button[aria-label="Red die up"]`))) problems.push(`${tag}: double 1 "${await rollNoteText()}"`);
+  await p.click(`${td} button:text-is("Roll again")`);
+  await typeDice(6, 6);
+  if ((await rollNoteText()) !== 'Prime Attack: pick any manoeuvre and add your Shift to the damage') problems.push(`${tag}: hero double 6 "${await rollNoteText()}"`);
+  // Next turn: Grumbler (SH 0, round 1: no pool); the dice start afresh.
+  await nextTurn();
+  if ((await turnText()) !== "Grumbler's turn") problems.push(`${tag}: after the hero's turn "${await turnText()}"`);
+  if (!(await undoText()).includes('Next turn')) problems.push(`${tag}: Next turn undo "${await undoText()}"`);
+  if (!(await p.isVisible(`${pane} .foe.current:has(.name span:text-is("Grumbler"))`))) problems.push(`${tag}: Grumbler's card not marked on its turn`);
+  if (await p.isVisible(`${td} [data-testid=attack-die]`)) problems.push(`${tag}: the hero's dice carried into Grumbler's turn`);
+  await typeDice(6, 6);
+  if ((await rollNoteText()) !== 'Prime Attack: see the bottom of its card' || (await shiftLeft()) !== 'Shift left: 0 of 0' || (await lit()) !== '') problems.push(`${tag}: creature 6-6 "${await rollNoteText()}" "${await shiftLeft()}"`);
+  // The attacking creature's card sits above its dice: its bottom, the dice and Next turn all on screen.
+  const seen = await p.evaluate(() => {
+    const body = document.querySelector('.encounter-pane .body').getBoundingClientRect();
+    const bar = document.querySelector('.encounter-pane [data-testid=turn-bar]').getBoundingClientRect();
+    const card = document.querySelector('.encounter-pane .foe.current')?.getBoundingClientRect();
+    const dice = document.querySelector('.encounter-pane [data-testid=turn-dice]').getBoundingClientRect();
+    const next = [...document.querySelectorAll('.encounter-pane button')].find((b) => b.textContent.trim() === 'Next turn').getBoundingClientRect();
+    const inside = (r) => r.top >= bar.bottom - 1 && r.bottom <= body.bottom + 1;
+    return {
+      cardBottom: !!card && card.bottom > bar.bottom && card.bottom <= body.bottom + 1,
+      cardAboveDice: !!card && card.bottom <= dice.top + 1,
+      dice: inside(dice),
+      next: next.top >= body.top - 1 && next.bottom <= body.bottom + 1,
+    };
+  });
+  if (!seen.cardBottom || !seen.cardAboveDice || !seen.dice || !seen.next) problems.push(`${tag}: creature turn not all in view ${JSON.stringify(seen)}`);
+  await shot('51c-creature-turn.png', p);
+  // Undo of Next turn: back to the hero with no dice; Next turn again starts Grumbler afresh.
+  await p.keyboard.press('Control+z');
+  await p.waitForTimeout(200);
+  if ((await turnText()) !== 'Your turn' || (await p.isVisible(`${td} [data-testid=attack-die]`))) problems.push(`${tag}: Undo of Next turn: "${await turnText()}", dice ${await p.isVisible(`${td} [data-testid=attack-die]`)}`);
+  await nextTurn();
+  if ((await turnText()) !== "Grumbler's turn" || (await p.isVisible(`${td} [data-testid=attack-die]`))) problems.push(`${tag}: Next turn after Undo: "${await turnText()}", dice ${await p.isVisible(`${td} [data-testid=attack-die]`)}`);
+  await nextTurn();
+  if ((await turnText()) !== "Moss Lurker's turn") problems.push(`${tag}: second creature "${await turnText()}"`);
+  await typeDice(1, 1);
+  if ((await rollNoteText()) !== 'Mishap: see the bottom of its card') problems.push(`${tag}: creature 1-1 "${await rollNoteText()}"`);
+  // Past the last creature: round 2, the Fatigue Die shows 2, back to the hero.
+  await nextTurn();
+  const r2 = await state();
+  const die2 = await p.getAttribute(`${pane} .round [role=img]`, 'aria-label');
+  if (r2.turn !== 'Your turn' || r2.round !== 'Round 2' || die2 !== 'red 2') problems.push(`${tag}: round 2 ${JSON.stringify(r2)} die "${die2}"`);
+  // On to round 4 and Grumbler's turn there (SH 0 + 1 fatigue: a pool of 1).
+  for (let i = 0; i < 7; i++) await nextTurn();
+  const s1 = await state();
+  console.log(`${tag}: round 4 ${JSON.stringify(s1)}`);
+  if (s1.round !== 'Round 4' || s1.fatigue !== '+1 Shift' || s1.turn !== "Grumbler's turn") problems.push(`${tag}: round 4 state ${JSON.stringify(s1)}`);
+  if (!(await p.textContent(`${pane} .foe:has(.name span:text-is("Grumbler")) .stats`))?.includes('SH 0 (+1)')) problems.push(`${tag}: foe Shift without the fatigue bonus`);
+  if (await p.isVisible(`${pane} .reminder`)) problems.push(`${tag}: round 7 reminder shown at round 4`);
+  await typeDice(3, 3);
+  if ((await shiftLeft()) !== 'Shift left: 1 of 1') problems.push(`${tag}: Grumbler's round-4 pool "${await shiftLeft()}"`);
+  // The plain roller stays for damage: one die or two.
+  await p.click(`${pane} .combat-dice button:text-is("One die")`);
+  await p.click(`${pane} .combat-dice form.dice button:has-text("Roll")`);
+  await p.waitForTimeout(600);
+  if (!(await p.isVisible(`${pane} [data-testid=dice-result]`))) problems.push(`${tag}: rolled damage dice show no result`);
+  await shot('51-encounter-pane.png', p);
+
+  // 16b. Reload mid-fight: round, HP and creatures come back, with the pane.
+  await p.waitForTimeout(1500);
+  await p.reload({ waitUntil: 'load' });
+  await p.waitForSelector(pane, { timeout: 5000 }).catch(() => problems.push(`${tag}: pane not shown after reload`));
+  const s2 = await state();
+  console.log(`${tag}: after reload ${JSON.stringify(s2)}`);
+  if (JSON.stringify(s2) !== JSON.stringify(s1)) problems.push(`${tag}: reload changed the fight: ${JSON.stringify(s2)}`);
+  await shot('52-encounter-reloaded.png', p);
+
+  // 16c. Remove the card pack mid-fight: the fight stays, without pictures.
+  await menu();
+  await p.click('.menu [data-status="cards"] button:text-is("Remove")');
+  await p.keyboard.press('Escape');
+  await p.waitForTimeout(300);
+  const s3 = await state();
+  if (JSON.stringify(s3) !== JSON.stringify(s1)) problems.push(`${tag}: removing the pack changed the fight: ${JSON.stringify(s3)}`);
+  if ((await p.$$(`${pane} .thumb img`)).length !== 0) problems.push(`${tag}: card image still shown after removing the pack`);
+  await p.click(`${pane} button:text-is("Add creature")`);
+  if (!(await p.isVisible('.encounter-picker >> text=Load creature cards to search by picture'))) problems.push(`${tag}: no-pack note missing in Add creature`);
+  await p.click('.encounter-picker button[aria-label="Close creature search"]');
+  await shot('53-encounter-no-pack.png', p);
+
+  // 16d. Go down waits for the fight: the toolbar button puts the pane aside to show the step panel.
+  await p.click('header.toolbar button.encounter');
+  await p.waitForSelector('[data-testid=go-down]');
+  if (!(await p.isDisabled('[data-testid=go-down]'))) problems.push(`${tag}: Go down enabled during a fight`);
+  const note = (await p.textContent('[data-testid=go-down-note]'))?.trim();
+  if (note !== 'Finish or end the encounter first.') problems.push(`${tag}: Go down note "${note}"`);
+  await shot('54-encounter-go-down.png', p);
+  await p.click('header.toolbar button.encounter');
+  await p.waitForSelector(pane);
+  await p.click(`${pane} button:text-is("End encounter")`);
+  await p.click(`${pane} .confirm button:text-is("End encounter")`);
+  await p.waitForTimeout(300);
+  if (await p.isVisible(pane)) problems.push(`${tag}: pane still open after End encounter`);
+  if (!(await p.isEnabled('[data-testid=go-down]'))) problems.push(`${tag}: Go down still disabled after the fight ended`);
+  // Undo brings the fight (and its pane) back.
+  await p.keyboard.press('Control+z');
+  await p.waitForTimeout(300);
+  if (!(await p.isVisible(pane))) problems.push(`${tag}: Undo of End encounter did not bring the pane back`);
+  await ctx.close();
+}
+
+// 17. Encounter-text buttons: a made-up Level 1 encounter text naming "PRAC1 -1", "PRAC2" and a
+// creature in capitals. Roll queues a pending roll in the pane; rolling it adds the row's
+// creatures; Fight joins the same fight; × drops an unrolled roll; LOOT9 and FP
+// stay plain text; the room inspector shows the same buttons.
+{
+  const ctx = await browser.newContext({ viewport: { width: 1180, height: 820 }, deviceScaleFactor: 2, hasTouch: true, reducedMotion: 'reduce' });
+  await ctx.addInitScript(() => localStorage.setItem('2d6.installHintDismissed', '1'));
+  const p = await ctx.newPage();
+  p.on('pageerror', (e) => errors.push(e.message));
+  p.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
+  await p.goto(url, { waitUntil: 'load' });
+  await p.waitForTimeout(800);
+  const tag = 'encounter text';
+  const tap = async (x, y) => {
+    const at = await p.$eval('canvas', (c, [wx, wy]) => {
+      const [cx, cy, sc] = (c.dataset.camera ?? '').split(',').map(Number);
+      const r = c.getBoundingClientRect();
+      return { x: r.left + (wx - cx) * sc, y: r.top + (wy - cy) * sc };
+    }, [x, y]);
+    await p.mouse.click(at.x, at.y);
+    await p.waitForTimeout(150);
+  };
+  const btn = (name) => p.click(`aside.panel button:text-is("${name}")`);
+  const menu = () => p.click('header.toolbar button[aria-label="Menu"]');
+  const undoText = async () => (await p.textContent('header.toolbar button.history'))?.trim() ?? '';
+  const pane = '.encounter-pane';
+  const foes = () => p.$$eval(`${pane} .foe`, (els) => els.map((e) => `${e.querySelector('.name span')?.textContent?.trim()}:${e.querySelector('.num')?.textContent?.trim()}`));
+  const ENC = 'Made-up: PRAC1 -1 waits here, or PRAC2. A GRUMBLER guards LOOT9; spend 1 FP.';
+
+  // The fixture with every Level 1 room's encounter text swapped for ENC (in memory: the fixture
+  // file is unchanged).
+  const fx = JSON.parse(readFileSync('tests/fixtures/dungeon-tables.fixture.json', 'utf8'));
+  const swap = (v) => {
+    if (Array.isArray(v)) v.forEach(swap);
+    else if (v && typeof v === 'object') for (const k of Object.keys(v)) k === 'encounter' && typeof v[k] === 'string' ? (v[k] = ENC) : swap(v[k]);
+  };
+  swap(fx.tables.dungeonLevels);
+  await p.setInputFiles('input[data-extra="tables"]', { name: 'tables.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(fx)) });
+  await p.waitForTimeout(500);
+
+  const wiz = (t) => p.click(`[role=dialog][aria-labelledby=wizard-title] button:text-is("${t}")`);
+  await menu();
+  await p.click('[role=menuitem]:text-is("New game…")');
+  await wiz('Next');
+  await p.fill('[aria-labelledby=wizard-title] input[type=text]', 'Pip Text');
+  await wiz('Next');
+  await p.click('.weapon:has-text("Practice Sword")');
+  await p.click('.mtable .row:has-text("Wobbly Poke")');
+  await p.click('.mtable .row:has-text("Gentle Swipe")');
+  await wiz('Next');
+  await p.click('.option:has-text("Padded Tablecloth")');
+  await wiz('Next');
+  await p.click('.option:has-text("Scroll of Mild Glow")');
+  await wiz('Next');
+  await wiz('Begin');
+  await p.waitForTimeout(500);
+  if (await p.isVisible('[role=alertdialog] button:text-is("Replace")')) await p.click('[role=alertdialog] button:text-is("Replace")');
+  await p.waitForTimeout(800);
+
+  const dice = async (...v) => {
+    const ins = await p.$$('aside.panel form.dice input');
+    for (let i = 0; i < v.length; i++) await ins[i].fill(v[i]);
+  };
+  await tap(12.5, 25.5);
+  await dice('3', '4');
+  await btn('Use these');
+  await btn('Place');
+  await btn('Done');
+  await btn('Done');
+  await p.waitForTimeout(1500);
+  // A second room: its room-table result (the label step) shows the text with its buttons.
+  await tap(12.5, 20);
+  await dice('3', '4');
+  await btn('Use these');
+  await btn('Place');
+  await dice('4');
+  await btn('Use this');
+  await dice('3');
+  await btn('Place for me');
+  await btn('Done');
+  await dice('3', '4');
+  await btn('Use these');
+  await p.waitForSelector('aside.panel [data-testid=encounter-text]');
+  const encText = (await p.textContent('aside.panel [data-testid=encounter-text] .enc-text'))?.trim();
+  if (encText !== ENC) problems.push(`${tag}: label step text "${encText}"`);
+  const labels = await p.$$eval('aside.panel [data-testid=encounter-actions] button', (els) => els.map((e) => e.textContent.trim()));
+  console.log(`${tag}: buttons ${JSON.stringify(labels)}`);
+  if (labels.join('|') !== '🎲 Roll on PRAC1 −1|🎲 Roll on PRAC2|⚔ Fight Grumbler') problems.push(`${tag}: buttons ${JSON.stringify(labels)}`);
+  const refs = await p.$$eval('aside.panel [data-testid=encounter-text] .ref', (els) => els.map((e) => e.textContent.trim()));
+  if (refs.some((r) => /LOOT9|FP/.test(r)) || labels.some((l) => /LOOT9|FP/.test(l))) problems.push(`${tag}: LOOT9 or FP became an action`);
+  const small = await p.$$eval('aside.panel [data-testid=encounter-actions] button', (els) => els.map((e) => e.getBoundingClientRect()).filter((r) => r.width < 44 || r.height < 44).length);
+  if (small) problems.push(`${tag}: ${small} encounter buttons under 44 px`);
+  await shot('55-encounter-text-buttons.png', p);
+
+  // Roll: a pending roll at the top of the pane, which comes to the front (the step stays a Room tab).
+  await p.click('aside.panel button:text-is("🎲 Roll on PRAC1 −1")');
+  await p.waitForSelector(`${pane} [data-testid=pending-roll]`);
+  if (!(await p.isVisible('#side-tab-room'))) problems.push(`${tag}: no Room tab while the step is open`);
+  const head = (await p.textContent(`${pane} [data-testid=pending-roll] h3`))?.trim();
+  if (head !== 'Roll on PRAC1 −1') problems.push(`${tag}: pending heading "${head}"`);
+  if (!(await undoText()).includes('Roll on PRAC1 −1')) problems.push(`${tag}: Roll undo "${await undoText()}"`);
+  await shot('56-encounter-pending-roll.png', p);
+  // Roll for me: the sum shown and the creatures added agree with the table.
+  await p.click(`${pane} [data-testid=pending-roll] button:has-text("Roll for me")`);
+  await p.waitForSelector(`${pane} [data-testid=creature-roll-result]`);
+  const res = (await p.textContent(`${pane} [data-testid=creature-roll-result] .line`))?.replace(/\s+/g, ' ').trim();
+  console.log(`${tag}: rolled "${res}"`);
+  const m = /^PRAC1 −1 (\d) − 1 = (\d|−\d)(?:, counts as (\d))?:\s*(.*?)\s*×$/.exec(res ?? '');
+  if (!m) problems.push(`${tag}: roll result "${res}"`);
+  else {
+    const total = Math.min(6, Math.max(1, Number(m[1]) - 1));
+    const row = fx.tables.creatureTables.PRAC1[String(total)];
+    const want = row.creatures ?? [];
+    const got = (await foes()).map((f) => f.split(':')[0]);
+    if (JSON.stringify(got) !== JSON.stringify(want)) problems.push(`${tag}: rolled ${m[1]}, foes ${JSON.stringify(got)}, want ${JSON.stringify(want)}`);
+    if (m[4] !== want.join(', ')) problems.push(`${tag}: result names "${m[4]}"`);
+    const said = (await p.textContent(`${pane} [data-testid=creature-roll-result] .said`).catch(() => null))?.trim() ?? null;
+    if (row.text ? said !== row.text : said !== null) problems.push(`${tag}: text row shows "${said}"`);
+  }
+  if (await p.isVisible(`${pane} [data-testid=pending-roll]`)) problems.push(`${tag}: pending roll still shown after rolling`);
+  // Undo brings the pending roll back and takes the result with it; a typed 3 then gives row 2 (Grumbler, Moss Lurker).
+  await p.keyboard.press('Control+z');
+  await p.waitForSelector(`${pane} [data-testid=pending-roll]`);
+  if ((await foes()).length) problems.push(`${tag}: Undo left foes ${JSON.stringify(await foes())}`);
+  if (await p.isVisible(`${pane} [data-testid=creature-roll-result]`)) problems.push(`${tag}: Undo left the roll result showing`);
+  await p.fill(`${pane} [data-testid=pending-roll] input`, '7');
+  await p.click(`${pane} [data-testid=pending-roll] button:text-is("Use this")`);
+  if (!(await p.isVisible(`${pane} [data-testid=pending-roll] >> text=Type the die, 1 to 6.`))) problems.push(`${tag}: typed 7 not refused`);
+  await p.fill(`${pane} [data-testid=pending-roll] input`, '3');
+  await p.click(`${pane} [data-testid=pending-roll] button:text-is("Use this")`);
+  await p.waitForSelector(`${pane} [data-testid=creature-roll-result]`);
+  const typed = (await p.textContent(`${pane} [data-testid=creature-roll-result] .line`))?.replace(/\s+/g, ' ').trim();
+  if (typed !== 'PRAC1 −1 3 − 1 = 2: Grumbler, Moss Lurker ×') problems.push(`${tag}: typed result "${typed}"`);
+  if ((await foes()).join('|') !== 'Grumbler:4|Moss Lurker:6') problems.push(`${tag}: typed 3 foes ${JSON.stringify(await foes())}`);
+  if (!(await undoText()).includes('PRAC1 −1: Grumbler, Moss Lurker')) problems.push(`${tag}: roll undo "${await undoText()}"`);
+  await shot('57-encounter-roll-result.png', p);
+
+  // Fight from the step result: the Grumbler joins the same fight.
+  await p.click('#side-tab-room');
+  await p.click('aside.panel button:text-is("⚔ Fight Grumbler")');
+  await p.waitForSelector(pane);
+  if ((await foes()).join('|') !== 'Grumbler:4|Moss Lurker:6|Grumbler:4') problems.push(`${tag}: Fight foes ${JSON.stringify(await foes())}`);
+  if (!(await undoText()).includes('Add Grumbler')) problems.push(`${tag}: Fight undo "${await undoText()}"`);
+
+  // PRAC2, typed 3 (no modifier): row 3 adds a Grumbler.
+  await p.click('#side-tab-room');
+  await p.click('aside.panel button:text-is("🎲 Roll on PRAC2")');
+  await p.waitForSelector(`${pane} [data-testid=pending-roll]`);
+  await p.fill(`${pane} [data-testid=pending-roll] input`, '3');
+  await p.click(`${pane} [data-testid=pending-roll] button:text-is("Use this")`);
+  await p.waitForTimeout(200);
+  const r2 = (await p.textContent(`${pane} [data-testid=creature-roll-result] .line`))?.replace(/\s+/g, ' ').trim();
+  if (r2 !== 'PRAC2 3: Grumbler ×') problems.push(`${tag}: PRAC2 result "${r2}"`);
+  if ((await foes()).join('|') !== 'Grumbler:4|Moss Lurker:6|Grumbler:4|Grumbler:4') problems.push(`${tag}: PRAC2 foes ${JSON.stringify(await foes())}`);
+  if (!(await undoText()).includes('PRAC2: Grumbler')) problems.push(`${tag}: PRAC2 undo "${await undoText()}"`);
+
+  // PRAC2, typed 5: a text row. Its text stays shown after switching to the Room tab and back
+  // (it lives in the encounter, not in the pane).
+  const echoes = 'Made-up: nothing here but echoes.';
+  const saidNow = async () => (await p.$$eval(`${pane} [data-testid=creature-roll-result] .said`, (els) => els.map((e) => e.textContent.trim()))).includes(echoes);
+  await p.click('#side-tab-room');
+  await p.click('aside.panel button:text-is("🎲 Roll on PRAC2")');
+  await p.waitForSelector(`${pane} [data-testid=pending-roll]`);
+  await p.fill(`${pane} [data-testid=pending-roll] input`, '5');
+  await p.click(`${pane} [data-testid=pending-roll] button:text-is("Use this")`);
+  await p.waitForTimeout(200);
+  const r5 = (await p.textContent(`${pane} [data-testid=creature-roll-result] .line`))?.replace(/\s+/g, ' ').trim();
+  if (r5 !== 'PRAC2 5: ×') problems.push(`${tag}: PRAC2 text result line "${r5}"`);
+  if (!(await saidNow())) problems.push(`${tag}: text result not shown`);
+  await p.click('#side-tab-room');
+  if (await p.isVisible(pane)) problems.push(`${tag}: Room tab still shows the pane`);
+  await p.click('#side-tab-encounter');
+  await p.waitForSelector(pane);
+  if (!(await saidNow())) problems.push(`${tag}: text result gone after switching tabs`);
+  if ((await p.$$(`${pane} [data-testid=creature-roll-result]`)).length !== 3) problems.push(`${tag}: expected 3 results after the tab switch, got ${(await p.$$(`${pane} [data-testid=creature-roll-result]`)).length}`);
+  await shot('57b-encounter-text-result-after-tab.png', p);
+  // × clears a result as its own step; Undo brings it back.
+  await p.click(`${pane} [data-testid=creature-roll-result] >> nth=0 >> button[aria-label="Dismiss roll result"]`);
+  if (await saidNow()) problems.push(`${tag}: × left the text result`);
+  if (!(await undoText()).includes('Clear PRAC2 result')) problems.push(`${tag}: result × undo "${await undoText()}"`);
+  await p.keyboard.press('Control+z');
+  await p.waitForTimeout(150);
+  if (!(await saidNow())) problems.push(`${tag}: Undo did not bring the text result back`);
+
+  // × drops an unrolled roll as its own step.
+  await p.click('#side-tab-room');
+  await p.click('aside.panel button:text-is("🎲 Roll on PRAC1 −1")');
+  await p.click(`${pane} [data-testid=pending-roll] button[aria-label="Remove roll on PRAC1 −1"]`);
+  if (await p.isVisible(`${pane} [data-testid=pending-roll]`)) problems.push(`${tag}: × left the pending roll`);
+  if (!(await undoText()).includes('Remove roll on PRAC1 −1')) problems.push(`${tag}: × undo "${await undoText()}"`);
+  const smallPane = await p.$$eval(`${pane} button`, (els) => els.map((e) => ({ t: e.textContent?.trim(), r: e.getBoundingClientRect() })).filter((b) => b.r.width > 0 && (b.r.width < 44 || b.r.height < 44)).map((b) => b.t));
+  if (smallPane.length) problems.push(`${tag}: small pane buttons ${smallPane.join(', ')}`);
+
+  // The same roll twice ("roll twice": tap again): rolling the first leaves the second ready to roll.
+  for (let i = 0; i < 2; i++) {
+    await p.click('#side-tab-room');
+    await p.click('aside.panel button:text-is("🎲 Roll on PRAC1 −1")');
+  }
+  await p.waitForSelector(`${pane} [data-testid=pending-roll] >> nth=1`);
+  if ((await p.$$(`${pane} [data-testid=pending-roll]`)).length !== 2) problems.push(`${tag}: two taps did not queue two rolls`);
+  await p.click(`${pane} [data-testid=pending-roll] >> nth=0 >> button:has-text("Roll for me")`);
+  await p.waitForFunction((sel) => document.querySelectorAll(sel).length === 1, `${pane} [data-testid=pending-roll]`);
+  const second = `${pane} [data-testid=pending-roll]`;
+  const ready = {
+    input: await p.isVisible(`${second} input`),
+    value: await p.inputValue(`${second} input`).catch(() => '?'),
+    roll: await p.isEnabled(`${second} button:has-text("Roll for me")`),
+    use: await p.isEnabled(`${second} button:text-is("Use this")`),
+    face: (await p.$$(`${second} .face`)).length,
+  };
+  console.log(`${tag}: second roll after the first ${JSON.stringify(ready)}`);
+  if (!ready.input || ready.value !== '' || !ready.roll || !ready.use || ready.face !== 0) problems.push(`${tag}: second identical roll not ready ${JSON.stringify(ready)}`);
+  await p.click(`${second} button:has-text("Roll for me")`);
+  await p.waitForFunction((sel) => document.querySelectorAll(sel).length === 0, `${pane} [data-testid=pending-roll]`, { timeout: 5000 }).catch(() => problems.push(`${tag}: second identical roll did not resolve`));
+  if ((await p.$$(`${pane} [data-testid=creature-roll-result]`)).length < 2) problems.push(`${tag}: expected two roll results`);
+  // The typed path: a typed die on the first leaves the second's input empty.
+  for (let i = 0; i < 2; i++) {
+    await p.click('#side-tab-room');
+    await p.click('aside.panel button:text-is("🎲 Roll on PRAC1 −1")');
+  }
+  await p.fill(`${pane} [data-testid=pending-roll] >> nth=0 >> input`, '3');
+  await p.click(`${pane} [data-testid=pending-roll] >> nth=0 >> button:text-is("Use this")`);
+  await p.waitForFunction((sel) => document.querySelectorAll(sel).length === 1, `${pane} [data-testid=pending-roll]`);
+  const left = await p.inputValue(`${pane} [data-testid=pending-roll] input`);
+  if (left !== '') problems.push(`${tag}: typed die carried over to the second roll ("${left}")`);
+  await p.fill(`${pane} [data-testid=pending-roll] input`, '3');
+  await p.click(`${pane} [data-testid=pending-roll] button:text-is("Use this")`);
+  await p.waitForTimeout(200);
+  if (await p.isVisible(`${pane} [data-testid=pending-roll]`)) problems.push(`${tag}: second typed roll not resolved`);
+  await shot('60-encounter-roll-twice.png', p);
+  const beforeFight = (await foes()).length; // while the pane shows
+
+  // Finish the room; the Select tool's inspector shows the same buttons.
+  await p.click('#side-tab-room');
+  await btn('Done');
+  await p.waitForTimeout(300);
+  if (await p.isVisible('aside.panel button:text-is("Done")')) await btn('Done');
+  await p.waitForTimeout(800);
+  await p.click('header.toolbar button.tool:text-is("Select")');
+  if (await p.isVisible('#side-tab-room')) await p.click('#side-tab-room');
+  await p.click('header.toolbar button.encounter');
+  await p.waitForTimeout(200);
+  await tap(12.5, 18.5);
+  await p.waitForSelector('[data-editor=room] [data-testid=encounter-actions]', { timeout: 3000 }).catch(() => problems.push(`${tag}: inspector shows no encounter buttons`));
+  const insp = await p.$$eval('[data-editor=room] [data-testid=encounter-actions] button', (els) => els.map((e) => e.textContent.trim()));
+  if (insp.join('|') !== '🎲 Roll on PRAC1 −1|🎲 Roll on PRAC2|⚔ Fight Grumbler') problems.push(`${tag}: inspector buttons ${JSON.stringify(insp)}`);
+  await shot('59-encounter-inspector-buttons.png', p);
+  await p.click('[data-editor=room] button:text-is("⚔ Fight Grumbler")');
+  await p.waitForSelector(pane);
+  if ((await foes()).length !== beforeFight + 1) problems.push(`${tag}: inspector Fight foes ${JSON.stringify(await foes())}`);
+  // The roll results (the text one included) survive a reload.
+  const resultsBefore = await p.$$eval(`${pane} [data-testid=creature-roll-result]`, (els) => els.map((e) => e.textContent.replace(/\s+/g, ' ').trim()));
+  await p.reload({ waitUntil: 'load' });
+  await p.waitForSelector(pane, { timeout: 5000 }).catch(() => problems.push(`${tag}: pane not shown after reload`));
+  await p.waitForTimeout(500);
+  const resultsAfter = await p.$$eval(`${pane} [data-testid=creature-roll-result]`, (els) => els.map((e) => e.textContent.replace(/\s+/g, ' ').trim()));
+  console.log(`${tag}: ${resultsAfter.length} roll results after reload`);
+  if (JSON.stringify(resultsAfter) !== JSON.stringify(resultsBefore)) problems.push(`${tag}: roll results changed on reload: ${JSON.stringify(resultsAfter)} vs ${JSON.stringify(resultsBefore)}`);
+  if (!(await saidNow())) problems.push(`${tag}: text result gone after reload`);
+  await shot('57c-encounter-results-after-reload.png', p);
+  await ctx.close();
+}
+
+// 18. Endings: win a fight (the question, Not yet, the Victory panel's treasure lines, Add XP, Done);
+// the End-encounter confirm goes when the fight goes; death from the sheet's HP − (Cancel, no loop,
+// asked again), Game Over (survives a reload, Undo off, Export, New game via the wizard).
+{
+  const ctx = await browser.newContext({ viewport: { width: 1180, height: 820 }, deviceScaleFactor: 2, hasTouch: true, reducedMotion: 'reduce' });
+  await ctx.addInitScript(() => localStorage.setItem('2d6.installHintDismissed', '1'));
+  const p = await ctx.newPage();
+  p.on('pageerror', (e) => errors.push(e.message));
+  p.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
+  await p.goto(url, { waitUntil: 'load' });
+  await p.waitForTimeout(800);
+  const tag = 'endings';
+  const wiz = (t) => p.click(`[role=dialog][aria-labelledby=wizard-title] button:text-is("${t}")`);
+  const menu = () => p.click('header.toolbar button[aria-label="Menu"]');
+  const undoText = async () => (await p.textContent('header.toolbar button.history'))?.trim() ?? '';
+  const pane = '.encounter-pane';
+  const winQ = `${pane} .confirm.win`;
+  const endQ = `${pane} .confirm:has-text("Creatures are still standing")`;
+  const deathQ = '[role=alertdialog][aria-labelledby=death-title]';
+  const cover = '[role=dialog][aria-labelledby=game-over-title]';
+  const addByHand = async (name) => {
+    await p.click(`${pane} button:text-is("Add creature")`);
+    await p.fill('.encounter-picker input[type=search]', name);
+    await p.click(`.encounter-picker .pick:not(.add):has(.name:text-is("${name}"))`);
+    await p.waitForTimeout(150);
+  };
+  const setFoe = async (name, n) => {
+    await p.click(`${pane} .foe:has(.name span:text-is("${name}")) .num`);
+    await p.fill(`${pane} .foe:has(.name span:text-is("${name}")) input`, String(n));
+    await p.keyboard.press('Enter');
+    await p.waitForTimeout(150);
+  };
+  const newGame = async (name) => {
+    await wiz('Next');
+    await p.fill('[aria-labelledby=wizard-title] input[type=text]', name);
+    await wiz('Next');
+    await p.click('.weapon:has-text("Practice Sword")');
+    await p.click('.mtable .row:has-text("Wobbly Poke")');
+    await p.click('.mtable .row:has-text("Gentle Swipe")');
+    await wiz('Next');
+    await p.click('.option:has-text("Padded Tablecloth")');
+    await wiz('Next');
+    await p.click('.option:has-text("Scroll of Mild Glow")');
+    await wiz('Next');
+    await wiz('Begin');
+    await p.waitForTimeout(500);
+  };
+
+  await p.setInputFiles('input[data-extra="tables"]', { name: 'tables.json', mimeType: 'application/json', buffer: Buffer.from(readFileSync('tests/fixtures/dungeon-tables.fixture.json')) });
+  await p.waitForTimeout(500);
+  await menu();
+  await p.click('[role=menuitem]:text-is("New game…")');
+  await newGame('Pip End');
+  if (await p.isVisible('[role=alertdialog] button:text-is("Replace")')) await p.click('[role=alertdialog] button:text-is("Replace")');
+  await p.waitForTimeout(500);
+
+  // 18a. The End-encounter confirm goes when the fight goes (here by Undo).
+  await p.click('header.toolbar button.encounter');
+  await p.waitForSelector(pane);
+  await addByHand('Grumbler');
+  await p.click(`${pane} button:text-is("End encounter")`);
+  if (!(await p.isVisible(endQ))) problems.push(`${tag}: End-encounter confirm not shown`);
+  await p.click('header.toolbar button.history >> nth=0'); // Undo "Start encounter": the fight is gone
+  await p.waitForTimeout(300);
+  if (!(await p.isVisible(pane))) await p.click('header.toolbar button.encounter');
+  await p.waitForSelector(pane);
+  if (await p.isVisible(endQ)) problems.push(`${tag}: End-encounter confirm still up with no fight`);
+  await addByHand('Grumbler');
+  if (await p.isVisible(endQ)) problems.push(`${tag}: End-encounter confirm came back with a new fight`);
+
+  // 18b. Win: both foes to 0; the question; Not yet keeps the fight and doesn't loop; a change asks again.
+  await addByHand('Moss Lurker');
+  await setFoe('Grumbler', 0);
+  if (await p.isVisible(winQ)) problems.push(`${tag}: win asked with a foe standing`);
+  await setFoe('Moss Lurker', 0);
+  await p.waitForSelector(winQ, { timeout: 2000 }).catch(() => problems.push(`${tag}: no win question with every foe at 0`));
+  const q = (await p.textContent(`${winQ} p`))?.trim();
+  if (q !== 'All creatures defeated: win the fight?') problems.push(`${tag}: win question "${q}"`);
+  await shot('61-win-question.png', p);
+  await p.click(`${winQ} button:text-is("Not yet")`);
+  await p.waitForTimeout(400);
+  if (await p.isVisible(winQ)) problems.push(`${tag}: win question came straight back after Not yet`);
+  if (!(await p.isVisible(`${pane} button:text-is("Next turn")`))) problems.push(`${tag}: Not yet closed the fight`);
+  await p.click(`${pane} button:text-is("Next turn")`);
+  await p.waitForSelector(winQ, { timeout: 2000 }).catch(() => problems.push(`${tag}: win not asked again after a change`));
+  await p.click(`${winQ} button:text-is("Win the fight")`);
+  await p.waitForSelector(`${pane} .victory`);
+  const lines = await p.$$eval(`${pane} [data-testid=treasure-line]`, (els) => els.map((e) => e.textContent.trim()));
+  console.log(`${tag}: treasure ${JSON.stringify(lines)}`);
+  if (JSON.stringify(lines) !== JSON.stringify(['Grumbler: Made-up: a pouch of pebbles.'])) problems.push(`${tag}: treasure lines ${JSON.stringify(lines)}`);
+  const xpLine = (await p.textContent(`${pane} [data-testid=victory-xp]`))?.trim();
+  if (xpLine !== 'XP total: 5') problems.push(`${tag}: victory XP "${xpLine}"`);
+  if (await p.isVisible(`${pane} button:text-is("End encounter")`)) problems.push(`${tag}: End encounter shown beside Victory`);
+  const smallV = await p.$$eval(`${pane} .victory button`, (els) => els.map((e) => e.getBoundingClientRect()).filter((r) => r.width < 44 || r.height < 44).length);
+  if (smallV) problems.push(`${tag}: ${smallV} Victory buttons under 44 px`);
+  await shot('62-victory.png', p);
+  await p.click(`${pane} .victory button:text-is("Add 5 XP")`);
+  await p.waitForTimeout(200);
+  if (!(await undoText()).includes('XP +5')) problems.push(`${tag}: Add XP undo "${await undoText()}"`);
+  if (!(await p.isDisabled(`${pane} .victory button:has-text("XP")`))) problems.push(`${tag}: Add XP still enabled after use`);
+  // The XP award is on the undo timeline: Undo offers it again, Redo awards it once more.
+  await p.keyboard.press('Control+z');
+  await p.waitForTimeout(200);
+  if (!(await p.isEnabled(`${pane} .victory button:text-is("Add 5 XP")`).catch(() => false))) problems.push(`${tag}: Undo of Add XP did not offer it again`);
+  await p.keyboard.press('Control+y');
+  await p.waitForTimeout(200);
+  if ((await p.textContent(`${pane} .victory button:has-text("XP")`))?.trim() !== '5 XP added') problems.push(`${tag}: Redo of Add XP: "${await p.textContent(`${pane} .victory button:has-text("XP")`)}"`);
+  await p.click('header.toolbar button.hero');
+  await p.waitForTimeout(300);
+  if (await p.isVisible('#side-tab-hero')) await p.click('#side-tab-hero');
+  const sheetXp = (await p.textContent('[aria-label="XP total"]'))?.trim();
+  if (sheetXp !== '5') problems.push(`${tag}: sheet XP ${sheetXp} after Add 5 XP`);
+  await shot('63-victory-xp-on-sheet.png', p);
+  await p.click('#side-tab-encounter');
+  await p.click(`${pane} .victory button:text-is("Done")`);
+  await p.waitForTimeout(300);
+  if (!(await undoText()).includes('Win the fight')) problems.push(`${tag}: Done undo "${await undoText()}"`);
+  if (await p.isVisible(pane)) problems.push(`${tag}: pane still shown after Done`);
+  // Undo of Done reopens the fight and asks again; the XP is still awarded, so it isn't offered twice.
+  await p.keyboard.press('Control+z');
+  await p.waitForTimeout(300);
+  if (!(await p.isVisible(pane))) await p.click('header.toolbar button.encounter');
+  if (await p.isVisible('#side-tab-encounter')) await p.click('#side-tab-encounter');
+  await p.waitForSelector(winQ, { timeout: 2000 }).catch(() => problems.push(`${tag}: no win question after undoing Done`));
+  await p.click(`${winQ} button:text-is("Win the fight")`);
+  await p.waitForSelector(`${pane} .victory`);
+  const again = (await p.textContent(`${pane} .victory button:has-text("XP")`))?.trim();
+  if (again !== '5 XP added' || !(await p.isDisabled(`${pane} .victory button:has-text("XP")`))) problems.push(`${tag}: after undoing Done the XP button reads "${again}"`);
+  await p.click(`${pane} .victory button:text-is("Done")`);
+  await p.waitForTimeout(300);
+  if (await p.isVisible(pane)) problems.push(`${tag}: pane still shown after the second Done`);
+
+  // 18c. Death from the sheet's − button.
+  if (await p.isVisible('#side-tab-hero')) await p.click('#side-tab-hero');
+  await p.waitForSelector('[aria-label="Quick strip"]');
+  const hp = Number(await p.inputValue('[aria-label="Quick strip"] input[aria-label="HP"]'));
+  for (let i = 0; i < hp; i++) await p.click('[aria-label="Quick strip"] button[aria-label="HP down"]');
+  await p.waitForSelector(deathQ, { timeout: 2000 }).catch(() => problems.push(`${tag}: no death question at 0 HP`));
+  const dq = (await p.textContent(`${deathQ} h2`))?.trim();
+  if (dq !== 'Your hero has fallen: confirm their death?') problems.push(`${tag}: death question "${dq}"`);
+  await shot('64-death-question.png', p);
+  const deathFocus = await p.evaluate((sel) => !!document.activeElement?.closest(sel), deathQ);
+  if (!deathFocus) problems.push(`${tag}: focus not in the death dialog`);
+  if (!(await p.evaluate(() => document.querySelector('.shell')?.inert === true))) problems.push(`${tag}: app behind the death question is not inert`);
+  await p.click(`${deathQ} button:text-is("Cancel")`);
+  await p.waitForTimeout(500);
+  if (await p.isVisible(deathQ)) problems.push(`${tag}: death question came straight back after Cancel`);
+  const hpNow = await p.inputValue('[aria-label="Quick strip"] input[aria-label="HP"]');
+  if (hpNow !== '0') problems.push(`${tag}: HP after Cancel ${hpNow}`);
+  await p.click('[aria-label="Quick strip"] button[aria-label="HP down"]');
+  await p.waitForSelector(deathQ, { timeout: 2000 }).catch(() => problems.push(`${tag}: death not asked again after another −`));
+  await p.click(`${deathQ} button:text-is("Confirm death")`);
+  await p.waitForSelector(cover, { timeout: 2000 }).catch(() => problems.push(`${tag}: no Game Over after confirming`));
+  const who = (await p.textContent('[data-testid=game-over-hero]'))?.trim();
+  if (who !== 'Pip End, level 1') problems.push(`${tag}: Game Over shows "${who}"`);
+  const smallG = await p.$$eval(`${cover} button`, (els) => els.map((e) => e.getBoundingClientRect()).filter((r) => r.width < 44 || r.height < 44).length);
+  if (smallG) problems.push(`${tag}: ${smallG} Game Over buttons under 44 px`);
+  await shot('65-game-over.png', p);
+  // Undo is off: the shortcut does nothing, the button is disabled.
+  await p.keyboard.press('Control+z');
+  await p.waitForTimeout(300);
+  if (!(await p.isDisabled('header.toolbar button.history >> nth=0'))) problems.push(`${tag}: Undo enabled under Game Over`);
+  if (!(await p.isVisible(cover))) problems.push(`${tag}: Ctrl+Z took Game Over away`);
+
+  // Keyboard: focus starts on the cover, Tab never reaches a control behind it, and Enter on
+  // whatever has focus behind (none can) leaves the saved game as it was.
+  const readSaved = () =>
+    p.evaluate(
+      () =>
+        new Promise((res) => {
+          const r = indexedDB.open('2d6-map-maker', 1);
+          r.onsuccess = () => {
+            const g = r.result.transaction('saves', 'readonly').objectStore('saves').get('current');
+            g.onsuccess = () => res(JSON.stringify(g.result?.history ?? null));
+            g.onerror = () => res(null);
+          };
+          r.onerror = () => res(null);
+        }),
+    );
+  await p.waitForTimeout(500);
+  const savedBefore = await readSaved();
+  const focusOn = () => p.evaluate((sel) => {
+    const a = document.activeElement;
+    return { inCover: !!a?.closest(sel), inShell: !!a?.closest('.shell'), what: a?.textContent?.trim() || a?.getAttribute('aria-label') || a?.tagName };
+  }, cover);
+  const f0 = await focusOn();
+  if (!f0.inCover) problems.push(`${tag}: Game Over focus starts on "${f0.what}"`);
+  const behind = [];
+  // The shell comes before the cover in the DOM: Shift+Tab walks back into it, Tab walks forward.
+  // (Headless Firefox doesn't wrap Tab past the last control, so both directions are tried.)
+  for (let i = 0; i < 40; i++) {
+    await p.keyboard.press(i < 15 ? 'Shift+Tab' : 'Tab');
+    const f = await focusOn();
+    if (f.inShell) behind.push(f.what);
+    if (f.inShell) await p.keyboard.press('Enter'); // what a keyboard user would do there
+  }
+  if (behind.length) problems.push(`${tag}: Tab reached controls behind Game Over: ${JSON.stringify(behind)}`);
+  // The Undo/Redo shortcuts don't change the saved game either.
+  await p.keyboard.press('Control+z');
+  await p.keyboard.press('Control+y');
+  await p.waitForTimeout(1500);
+  const savedAfter = await readSaved();
+  if (savedBefore === null || savedAfter !== savedBefore) problems.push(`${tag}: the saved game changed under Game Over`);
+  if (!(await p.isVisible(cover))) problems.push(`${tag}: keyboard took Game Over away`);
+  // The death dialog's buttons were usable (Cancel and Confirm above); the shell behind it was inert.
+
+  // 18d. Reload: still Game Over.
+  await p.reload({ waitUntil: 'load' });
+  await p.waitForSelector(cover, { timeout: 5000 }).catch(() => problems.push(`${tag}: Game Over not shown after reload`));
+  if (await p.isVisible(deathQ)) problems.push(`${tag}: death asked again after reload`);
+  await shot('66-game-over-reloaded.png', p);
+
+  // 18e. Export game downloads a file.
+  const [dl] = await Promise.all([p.waitForEvent('download', { timeout: 5000 }).catch(() => null), p.click(`${cover} button:text-is("Export game")`)]);
+  if (!dl) problems.push(`${tag}: Game Over Export produced no file`);
+  else console.log(`${tag}: exported ${dl.suggestedFilename()}`);
+
+  // 18f. New game: the wizard; Cancel returns to Game Over; finishing it clears Game Over.
+  await p.click(`${cover} button:text-is("New game")`);
+  await p.waitForSelector('[role=dialog][aria-labelledby=wizard-title]');
+  if (await p.isVisible(cover)) problems.push(`${tag}: Game Over covers the wizard`);
+  if (await p.evaluate(() => !!document.querySelector('[aria-labelledby=wizard-title]')?.closest('[inert]'))) problems.push(`${tag}: the wizard is inside an inert subtree`);
+  await wiz('Cancel');
+  await p.waitForSelector(cover, { timeout: 2000 }).catch(() => problems.push(`${tag}: cancelling the wizard did not return to Game Over`));
+  await p.click(`${cover} button:text-is("New game")`);
+  await newGame('Pip Again');
+  await p.waitForTimeout(300);
+  if (await p.isVisible('[role=alertdialog] button:text-is("Replace")')) problems.push(`${tag}: New game from Game Over asked to replace`);
+  if (await p.isVisible(cover)) problems.push(`${tag}: Game Over still shown after a new game`);
+  await shot('67-after-game-over-new-game.png', p);
+  await p.waitForTimeout(1500);
+  await p.reload({ waitUntil: 'load' });
+  await p.waitForTimeout(1000);
+  if (await p.isVisible(cover)) problems.push(`${tag}: Game Over came back after reloading the new game`);
   await ctx.close();
 }
 

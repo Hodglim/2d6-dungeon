@@ -7,7 +7,7 @@ import { SAVE_FORMAT, campaignFrom, decodeSave, encodeSave, metaFrom } from '../
 import { decideStartup } from '../../src/persistence/startup';
 import { emptyMap, room } from '../core/fixtures';
 
-const meta = { id: 'c1', name: 'Camp', systemId: 'dungeon', earlierLevels: [] };
+const meta = { id: 'c1', name: 'Camp', systemId: 'dungeon', earlierLevels: [], gameOver: null };
 
 function historyWith(n: number, size = 10): History {
   const h = new History(emptyMap(size, size));
@@ -41,7 +41,7 @@ describe('earlier levels', () => {
     if (!parsed.ok) return;
     const m = metaFrom(parsed.campaign);
     expect(m.earlierLevels).toEqual([a]);
-    expect(campaignFrom(m, b!, null).maps).toEqual([a, b]);
+    expect(campaignFrom(m, b!, null, null).maps).toEqual([a, b]);
   });
   it('a format 2 record is refused as an older test version', () => {
     const rec = JSON.parse(JSON.stringify(encodeSave(meta, historyWith(1).exportState())));
@@ -82,7 +82,7 @@ describe('save record', () => {
 
   it('refuses a newer format, a broken snapshot, and null', () => {
     const rec = JSON.parse(JSON.stringify(encodeSave(meta, historyWith(1).exportState())));
-    const newer = decodeSave({ ...rec, format: 4 });
+    const newer = decodeSave({ ...rec, format: 5 });
     expect(newer.ok).toBe(false);
     if (!newer.ok) expect(newer.error).toContain('newer version');
     const broken = decodeSave({ ...rec, history: { ...rec.history, current: { nope: 1 } } });
@@ -108,6 +108,23 @@ describe('save record', () => {
     if (!bad.ok) expect(bad.error).toMatch(/^The saved hero is damaged/);
   });
 
+  it('a format 3 record is refused as an older test version', () => {
+    const rec = JSON.parse(JSON.stringify(encodeSave(meta, historyWith(1).exportState())));
+    expect(decodeSave({ ...rec, format: 3 }).ok).toBe(false);
+  });
+
+  it('keeps an encounter through undo history, reports a problem, and refuses a missing field', () => {
+    const h = new History(emptyMap(10, 10), 20, null, undefined, { foes: ['x'] });
+    const rec = JSON.parse(JSON.stringify(encodeSave(meta, h.exportState())));
+    const out = decodeSave(rec, undefined, () => null);
+    expect(out.ok && out.history.encounter).toEqual({ foes: ['x'] });
+    const bad = decodeSave(rec, undefined, () => 'nope');
+    expect(bad.ok).toBe(false);
+    if (!bad.ok) expect(bad.error).toMatch(/^The saved encounter is damaged/);
+    delete rec.history.encounter;
+    expect(decodeSave(rec).ok).toBe(false);
+  });
+
   it('a record without hero fields is refused', () => {
     const rec = JSON.parse(JSON.stringify(encodeSave(meta, historyWith(1).exportState())));
     delete rec.history.hero;
@@ -116,7 +133,7 @@ describe('save record', () => {
 
   it('campaignFrom builds a campaign that parseCampaign accepts', () => {
     const map = historyWith(2).map;
-    const c = campaignFrom(meta, map, null);
+    const c = campaignFrom(meta, map, null, null);
     expect(c.maps).toEqual([map]);
     expect(c.activeMapId).toBe(map.id);
     const parsed = parseCampaign(serializeCampaign(c));
@@ -126,7 +143,7 @@ describe('save record', () => {
 
   it('metaFrom of a real campaign round-trips through campaignFrom', () => {
     const c = createCampaign(dungeonSystem, 'X');
-    expect(campaignFrom(metaFrom(c), c.maps[0]!, c.hero)).toEqual(c);
+    expect(campaignFrom(metaFrom(c), c.maps[0]!, c.hero, c.encounter)).toEqual(c);
   });
 
   it('measures a 20-step history of about 40 rooms on a 100x100 map', () => {
@@ -140,5 +157,32 @@ describe('save record', () => {
     const bytes = JSON.stringify(encodeSave(meta, state)).length;
     console.log(`save record size: ${bytes} bytes (${(bytes / 1024).toFixed(1)} KiB)`);
     expect(bytes).toBeLessThan(5 * 1024 * 1024);
+  });
+});
+
+describe('game over', () => {
+  it('round-trips through encodeSave, decodeSave and decideStartup', () => {
+    const m = { ...meta, gameOver: { heroName: 'Pip', heroLevel: 3 } };
+    const rec = JSON.parse(JSON.stringify(encodeSave(m, historyWith(1).exportState())));
+    const out = decodeSave(rec);
+    expect(out.ok && out.meta.gameOver).toEqual({ heroName: 'Pip', heroLevel: 3 });
+    const start = decideStartup(rec);
+    expect(start.kind === 'restore' && start.meta.gameOver).toEqual({ heroName: 'Pip', heroLevel: 3 });
+  });
+  it('is null when not set, and when missing from a stored meta', () => {
+    const rec = JSON.parse(JSON.stringify(encodeSave({ ...meta, gameOver: null }, historyWith(1).exportState())));
+    const out = decodeSave(rec);
+    expect(out.ok && out.meta.gameOver).toBeNull();
+    delete rec.meta.gameOver;
+    const out2 = decodeSave(rec);
+    expect(out2.ok && out2.meta.gameOver).toBeNull();
+  });
+  it('a malformed gameOver is a damaged save', () => {
+    const rec = JSON.parse(JSON.stringify(encodeSave({ ...meta, gameOver: null }, historyWith(1).exportState())));
+    rec.meta.gameOver = { heroName: 5, heroLevel: 'x' };
+    expect(decodeSave(rec).ok).toBe(false);
+  });
+  it('a new campaign starts with no game over', () => {
+    expect(metaFrom(createCampaign(dungeonSystem, 'X')).gameOver).toBeNull();
   });
 });

@@ -628,7 +628,7 @@ describe('PlayFlow follows whole-state replacement', () => {
       expect(flow.step.kind).toBe('exitCount');
       const next = emptyMap(12, 12);
       if (replace === 'reset') history.reset(next);
-      else history.restore({ current: next, hero: null, past: [], future: [] });
+      else history.restore({ current: next, hero: null, encounter: null, past: [], future: [] });
       expect(flow.step.kind).toBe('idle');
       expect(flow.draftMap).toBe(next);
       expect(history.map).toBe(next);
@@ -680,6 +680,15 @@ describe('PlayFlow Room step (table file loaded)', () => {
     expect(s.chosen.length).toBeGreaterThan(0);
   });
 
+  it('keeps the narrative the player typed when the room is rolled', () => {
+    const { history, flow } = toLabel();
+    flow.applyRoomTableResult([3, 4]);
+    expect(flow.finish({ type: '', unique: false, narrative: 'Left the lantern here' }).ok).toBe(true);
+    const r = history.map.rooms.find((x) => x.number === 2)!;
+    expect(r.label.narrative).toBe('Left the lantern here');
+    expect(r.contents?.description).toBe(e34.description);
+  });
+
   it('rolling [3,4] commits label, contents and door/locked on every exit, as one Add room undo', () => {
     const { history, flow } = toLabel();
     const doorsBefore = history.map.doors.length;
@@ -687,7 +696,7 @@ describe('PlayFlow Room step (table file loaded)', () => {
     expect(flow.finish(null).ok).toBe(true);
     const r = history.map.rooms.find((x) => x.number === 2)!;
     expect(r.label.type).toBe(e34.type);
-    expect(r.label.narrative).toBe(e34.description);
+    expect(r.label.narrative).toBe(''); // the description lives in contents; narrative is the player's own
     expect(r.contents).toMatchObject({ table: 'rooms', roll: '34', type: e34.type, door: 'wooden', locked: true });
     const own = history.map.doors.filter((d) => d.type === 'wooden' && d.lock?.locked === true);
     expect(own.length).toBeGreaterThan(0);

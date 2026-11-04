@@ -38,6 +38,17 @@ describe('hero export/import round trip', () => {
   });
 });
 
+describe('encounter export/import round trip', () => {
+  it('keeps the encounter, and applies encounterProblem on import', () => {
+    const encounter = { foes: [{ name: 'Example Foe', hp: 3 }] };
+    const c = { ...createCampaign(dungeonSystem, 'Camp'), encounter };
+    const f = exportCampaignFile(c);
+    const res = readImportText(f.text, f.text.length, undefined, () => null);
+    expect(res.ok && res.campaign.encounter).toEqual(encounter);
+    expect(readImportText(f.text, f.text.length, undefined, () => 'broken')).toEqual({ ok: false, error: 'The saved encounter is damaged: broken.' });
+  });
+});
+
 describe('readImportText', () => {
   const c = createCampaign(dungeonSystem, 'Camp');
   const valid = serializeCampaign(c);
