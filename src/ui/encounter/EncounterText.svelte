@@ -3,7 +3,8 @@
   // "Roll on CODE ±n" for a creature-table code, "Fight Name" for a creature named in capitals,
   // "Open CODE ±n" for a reference-table code, "🎲 Roll D6" for a dice phrase (opens the dice roller and rolls).
   import { scanEncounter } from '../../systems/dungeon/encounterText';
-  import { useDiceRoll, type DiceRollFn } from '../diceContext';
+  import { useDiceDesk } from '../diceDeskContext';
+  import type { DiceKind } from '../diceRoller';
   import { diceLabel } from '../diceRoller';
   import type { DungeonTables } from '../../systems/dungeon/tables';
   import { rollName } from './encounterActions';
@@ -15,9 +16,10 @@
     onfight?: (name: string) => void;
     onopentable?: (code: string, modifier: number) => void;
     /** A dice phrase; by default the app's dice roller. */
-    ondice?: DiceRollFn;
+    ondice?: (dice: DiceKind) => void;
   }
-  const shellDice = useDiceRoll();
+  const desk = useDiceDesk();
+  const shellDice = desk ? (dice: DiceKind) => desk.rollFree(dice) : undefined;
   let { text, tables, onroll, onfight, onopentable, ondice = shellDice }: Props = $props();
 
   const parts = $derived(scanEncounter(text, tables));

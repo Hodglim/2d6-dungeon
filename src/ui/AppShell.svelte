@@ -59,8 +59,9 @@
   import { initialTablesState, openTable, type TablesState } from './tables/tablesState';
   import { findTable } from '../systems/dungeon/referenceTables';
   import DicePanel from './DicePanel.svelte';
-  import { readDicePrefs, writeDicePrefs, type DiceKind } from './diceRoller';
-  import { provideDiceRoll } from './diceContext';
+  import { readDicePrefs, writeDicePrefs } from './diceRoller';
+  import { DiceDesk, type DeskView } from './diceDesk';
+  import { provideDiceDesk } from './diceDeskContext';
 
   function activeMap(c: Campaign): DungeonMap {
     const m = c.maps.find((x) => x.id === c.activeMapId) ?? c.maps[0];
@@ -133,25 +134,19 @@
       return undefined;
     }
   };
-  const dicePrefs = readDicePrefs(storage());
-  let diceOpen = $state(dicePrefs.open);
-  let diceKind = $state<DiceKind>(dicePrefs.dice);
-  /** A "Roll a D6" button asked the roller to roll; the panel takes it once. */
-  let diceRequest = $state<{ dice: DiceKind; modifier: number; seq: number } | null>(null);
-  let diceSeq = 0;
-  $effect(() => writeDicePrefs(storage(), { open: diceOpen, dice: diceKind, enter: dicePrefs.enter }));
+  const desk = new DiceDesk(readDicePrefs(storage()));
+  let diceView = $state.raw<DeskView>(desk.view);
+  $effect(() =>
+    desk.subscribe((v) => {
+      diceView = v;
+      writeDicePrefs(storage(), desk.prefs());
+    }),
+  );
   function onDiceButton() {
     if (!started || loadError || gameOver !== null) return;
-    diceOpen = !diceOpen;
+    desk.setOpen(!diceView.open);
   }
-  /** A dice phrase in encounter or table text, or a hit manoeuvre's damage: open the roller on that die and roll once. */
-  function rollFromText(dice: DiceKind, modifier = 0) {
-    if (!started || loadError || gameOver !== null) return;
-    diceKind = dice;
-    diceOpen = true;
-    diceRequest = { dice, modifier, seq: ++diceSeq };
-  }
-  provideDiceRoll(rollFromText);
+  provideDiceDesk(desk);
   let importError = $state<string | null>(null);
   let fileInput: HTMLInputElement | undefined;
   let tablesInput: HTMLInputElement | undefined;
@@ -903,7 +898,7 @@
       onhero={onHeroButton}
       onencounter={onEncounterButton}
       ontables={onTablesButton}
-      {diceOpen}
+      diceOpen={diceView.open}
       ondice={onDiceButton}
     />
     {#if toast}<p class="toast" role="status">{toast}</p>{/if}
@@ -944,14 +939,8 @@
     dragsGhost={step.kind === 'position'}
     ghost={step.kind === 'position' ? step.placement.rect : null}
   />
-  {#if diceOpen && started && !loadError && gameOver === null}
-    <DicePanel
-      dice={diceKind}
-      request={diceRequest}
-      onchoose={(d) => (diceKind = d)}
-      onrequesttaken={() => (diceRequest = null)}
-      onclose={() => (diceOpen = false)}
-    />
+  {#if started && !loadError && gameOver === null}
+    <DicePanel {desk} />
   {/if}
   {#snippet stepPanel(collapsed: boolean)}
     <StepPanel

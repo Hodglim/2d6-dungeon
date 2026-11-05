@@ -3,7 +3,7 @@
   // also a code that is a creature table too. Creature-only codes and creature names stay plain text.
   // A dice phrase ("Roll a D6") is a button that opens the dice roller on that die and rolls once.
   import { scanReference } from '../../systems/dungeon/encounterText';
-  import { useDiceRoll } from '../diceContext';
+  import { useDiceDesk } from '../diceDeskContext';
   import { diceLabel } from '../diceRoller';
   import type { DungeonTables } from '../../systems/dungeon/tables';
   import { rollName } from '../encounter/encounterActions';
@@ -15,11 +15,11 @@
   }
   let { text, tables, onopen }: Props = $props();
 
-  const ondice = useDiceRoll();
+  const desk = useDiceDesk();
   const parts = $derived(scanReference(text, tables));
 </script>
 
-{#each parts as p, i (i)}{#if p.kind === 'table'}<button type="button" class="code" onclick={() => onopen(p.code, p.modifier)}>{rollName(p.code, p.modifier)}</button>{:else if p.kind === 'dice' && ondice}<button type="button" class="code" onclick={() => ondice(p.dice)}>🎲 Roll {diceLabel(p.dice)}</button>{:else}{p.text}{/if}{/each}
+{#each parts as p, i (i)}{#if p.kind === 'table'}<button type="button" class="code" onclick={() => onopen(p.code, p.modifier)}>{rollName(p.code, p.modifier)}</button>{:else if p.kind === 'dice' && desk}<button type="button" class="code" onclick={() => desk.rollFree(p.dice)}>🎲 Roll {diceLabel(p.dice)}</button>{:else}{p.text}{/if}{/each}
 
 <style>
   .code {

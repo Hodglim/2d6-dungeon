@@ -38,7 +38,7 @@
   import DiceSet from '../DiceSet.svelte';
   import { deflects } from '../../systems/dungeon/armour';
   import { interruptHits, interruptLapsed } from '../../systems/dungeon/creatureCombat';
-  import { useDiceRoll } from '../diceContext';
+  import { useDiceDesk } from '../diceDeskContext';
   import { parseDamage, rollLabel } from '../diceRoller';
   import { adjustHp, commitHero } from '../hero/heroActions';
   import { shouldAskWin } from '../endings';
@@ -106,7 +106,7 @@
   }: Props = $props();
 
   /** The shell's dice roller: a hit manoeuvre rolls its damage there. */
-  const diceRoll = useDiceRoll();
+  const desk = useDiceDesk();
 
   const askingWin = $derived(!holdWin && !win.victory && shouldAskWin(encounter, win.dismissed));
   const showVictory = $derived(win.victory && encounter !== null);
@@ -458,7 +458,7 @@
       <ul class="manoeuvres" aria-label="{f.name} manoeuvres">
         {#each stats.manoeuvres as m, i (i)}
           {@const hit = attacking && foeHits.has(i)}
-          {@const damage = hit && diceRoll ? parseDamage(m.damage) : null}
+          {@const damage = hit && desk ? parseDamage(m.damage) : null}
           {#snippet body()}
             <span class="faces">
               <DieFace value={m.dice[0]!} colour="red" size={28} />
@@ -474,7 +474,7 @@
                 type="button"
                 class="m-roll"
                 aria-label={`${m.name}: roll damage ${rollLabel(damage.dice, damage.modifier)}`}
-                onclick={() => diceRoll?.(damage.dice, damage.modifier)}
+                onclick={() => desk?.rollFree(damage.dice, damage.modifier)}
               >{@render body()}<span class="m-dice" aria-hidden="true">🎲</span></button>
             {:else}
               {@render body()}
@@ -638,7 +638,7 @@
               <ul class="manoeuvres" aria-label="Manoeuvres">
                 {#each hero.manoeuvres as m, i (i)}
                   {@const hit = matched.has(i)}
-                  {@const damage = hit && diceRoll ? parseDamage(m.modifier) : null}
+                  {@const damage = hit && desk ? parseDamage(m.modifier) : null}
                   {#snippet body()}
                     <span class="faces">
                       {#if m.dice[0]}<DieFace value={m.dice[0]} colour="red" size={28} />{/if}
@@ -654,7 +654,7 @@
                         type="button"
                         class="m-roll"
                         aria-label={`${m.name}: roll damage ${rollLabel(damage.dice, damage.modifier)}`}
-                        onclick={() => diceRoll?.(damage.dice, damage.modifier)}
+                        onclick={() => desk?.rollFree(damage.dice, damage.modifier)}
                       >{@render body()}<span class="m-dice" aria-hidden="true">🎲</span></button>
                     {:else}
                       {@render body()}

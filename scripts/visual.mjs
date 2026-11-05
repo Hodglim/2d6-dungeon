@@ -3076,12 +3076,14 @@ for (const reduced of [false, true]) {
   if (pr.right > cr.right + 0.5 || pr.left < cr.left || pr.top < cr.top - 0.5 || pr.top > cr.top + 30 || cr.right - pr.right > 30) problems.push(`${tag}: panel is not in the map's top-right corner`);
   if (pr.right > side.left + 0.5) problems.push(`${tag}: panel covers the sidebar`);
   if ((await chip()) !== 'D6') problems.push(`${tag}: first open chose "${await chip()}"`);
+  const forLine = async () => ((await p.textContent(`${panel} [data-testid=dice-for]`).catch(() => null)) ?? '').replace(/\s+/g, ' ').replace('×', '').trim();
+  if ((await forLine()) !== 'Free roll') problems.push(`${tag}: For line "${await forLine()}" on first open`);
   await p.screenshot({ path: join(outDir, 'd1-dice-open.png') });
   console.log(`Saved ${join(outDir, 'd1-dice-open.png')}`);
 
   // Every die rolls; check the faces and the total's form.
   const undo0 = await undoText();
-  const want = { D6: [1, /^= [1-6]$/], '2D6': [2, /^= ([2-9]|1[0-2])$/], D66: [2, /^[1-6][1-6]$/], D3: [1, /^([1-6]) → ([1-3])$/] };
+  const want = { D6: [1, /^= [1-6]$/], '2D6': [2, /^[1-6] \+ [1-6] = ([2-9]|1[0-2])$/], D66: [2, /^[1-6][1-6]$/], D3: [1, /^([1-6]) → ([1-3])$/] };
   for (const [label, [n, re]] of Object.entries(want)) {
     await p.click(`${panel} .chips button:text-is("${label}")`);
     if ((await chip()) !== label) problems.push(`${tag}: chip ${label} not highlighted ("${await chip()}")`);
@@ -3110,10 +3112,10 @@ for (const reduced of [false, true]) {
   const hist = await historyLines();
   console.log(`${tag}: history ${JSON.stringify(hist)}`);
   if (hist.length !== 5) problems.push(`${tag}: history has ${hist.length} lines`);
-  if (!/^2D6: [1-6] \+ [1-6] = \d+$/.test(hist[0] ?? '') || !/^2D6: /.test(hist[1] ?? '') || !/^D3: [1-6] → [1-3]$/.test(hist[2] ?? '') || !/^D66: [1-6][1-6]$/.test(hist[3] ?? '') || !/^2D6: /.test(hist[4] ?? '')) problems.push(`${tag}: history ${JSON.stringify(hist)}`);
+  if (!/^Free 2D6: [1-6] \+ [1-6] = \d+$/.test(hist[0] ?? '') || !/^Free 2D6: /.test(hist[1] ?? '') || !/^Free D3: [1-6] → [1-3]$/.test(hist[2] ?? '') || !/^Free D66: [1-6][1-6]$/.test(hist[3] ?? '') || !/^Free 2D6: /.test(hist[4] ?? '')) problems.push(`${tag}: history ${JSON.stringify(hist)}`);
   const [a, b] = (hist[0] ?? '').match(/(\d) \+ (\d) = (\d+)/)?.slice(1, 4).map(Number) ?? [];
   if ((hist[0] ?? '').match(/= (\d+)$/)?.[1] !== String(a + b)) problems.push(`${tag}: 2D6 sum wrong in "${hist[0]}"`);
-  if (`= ${(hist[0] ?? '').split('= ')[1]}` !== (await total())) problems.push(`${tag}: total "${await total()}" is not the newest history line "${hist[0]}"`);
+  if (!(hist[0] ?? '').endsWith(`: ${await total()}`)) problems.push(`${tag}: total "${await total()}" is not the newest history line "${hist[0]}"`);
   if ((await undoText()) !== undo0) problems.push(`${tag}: rolling added a History step ("${await undoText()}", was "${undo0}")`);
   const small = await p.$$eval(`${panel} button`, (els) => els.map((e) => ({ t: e.getAttribute('aria-label') ?? e.textContent?.trim(), r: e.getBoundingClientRect() })).filter((x) => x.r.width < 44 || x.r.height < 44).map((x) => `${x.t} ${x.r.width}×${x.r.height}`));
   for (const s of small) problems.push(`${tag}: panel button too small: ${s}`);
@@ -3238,20 +3240,42 @@ for (const reduced of [false, true]) {
   if ((await chip()) !== 'D6') problems.push(`${tag}: text button opened the panel on "${await chip()}"`);
   const fromText = await historyLines();
   console.log(`${tag}: after the text button ${JSON.stringify(fromText)} total ${await total()}`);
-  if (fromText.length !== 1 || !/^D6: [1-6]$/.test(fromText[0] ?? '') || !/^= [1-6]$/.test(await total())) problems.push(`${tag}: text button roll ${JSON.stringify(fromText)} / "${await total()}"`);
+  if (fromText.length !== 5 || !/^Free D6: [1-6]$/.test(fromText[0] ?? '') || !/^= [1-6]$/.test(await total())) problems.push(`${tag}: text button roll ${JSON.stringify(fromText)} / "${await total()}"`);
   if ((await undoText()) !== undo1) problems.push(`${tag}: the text roll added a History step`);
+  if ((await forLine()) !== 'Free roll') problems.push(`${tag}: For line "${await forLine()}" after a text button`);
+  if (!/^Free D6:/.test(fromText[0] ?? '')) problems.push(`${tag}: history first line "${fromText[0]}" does not start with "Free D6:"`);
   await shot('d7-dice-from-encounter-text.png', p);
   // A second tap while open rolls again (one more line).
   await p.click('aside.panel [data-testid=encounter-actions] button:text-is("🎲 Roll D6")');
   await p.waitForTimeout(ROLL_MS);
-  if ((await historyLines()).length !== 2) problems.push(`${tag}: second text tap gave ${(await historyLines()).length} lines`);
+  const afterSecond = await historyLines();
+  if (afterSecond[1] !== fromText[0] || !/^Free D6: [1-6]$/.test(afterSecond[0] ?? '')) problems.push(`${tag}: second text tap gave ${JSON.stringify(afterSecond)}`);
+
+  // Enter my roll: type a die, "Use these" records it as a free roll; 7 shows the roller's own error.
+  const typedIn = `${panel} [data-testid=dice-typed] input`;
+  await p.click(`${panel} [data-testid=dice-enter]`);
+  if ((await p.getAttribute(`${panel} [data-testid=dice-enter]`, 'aria-pressed')) !== 'true') problems.push(`${tag}: enter toggle not pressed`);
+  await p.fill(typedIn, '4');
+  await p.click(`${panel} [data-testid=dice-typed] button:text-is("Use these")`);
+  await p.waitForTimeout(150);
+  if ((await historyLines())[0] !== 'Free D6: 4') problems.push(`${tag}: typed free roll gave ${JSON.stringify((await historyLines())[0])}`);
+  await p.fill(typedIn, '7');
+  await p.click(`${panel} [data-testid=dice-typed] button:text-is("Use these")`);
+  await p.waitForTimeout(150);
+  const typedErr = (await p.textContent(`${panel} [data-testid=dice-typed] [role=alert]`).catch(() => ''))?.trim();
+  if (typedErr !== 'Type a number from 1 to 6.') problems.push(`${tag}: typed 7 gave "${typedErr}"`);
+  if ((await historyLines())[0] !== 'Free D6: 4') problems.push(`${tag}: a rejected typed roll changed the history`);
+  await p.fill(typedIn, '');
+  await p.click(`${panel} [data-testid=dice-enter]`);
+  if ((await p.getAttribute(`${panel} [data-testid=dice-enter]`, 'aria-pressed')) !== 'false') problems.push(`${tag}: enter toggle still pressed`);
+  if ((await historyLines())[1] !== afterSecond[0]) problems.push(`${tag}: typed roll history is ${JSON.stringify(await historyLines())}`);
 
   // "Roll a D3" in a reference-table row is a button too.
   await p.click('aside.panel [data-testid=encounter-actions] button:text-is("📖 Open XX1")');
   await p.waitForSelector('.tables-pane h3:has-text("Practice Crate Table")');
   await p.click('.tables-pane tbody button:text-is("🎲 Roll D3")');
   await p.waitForTimeout(ROLL_MS);
-  if ((await chip()) !== 'D3' || !/^D3: [1-6] → [1-3]$/.test((await historyLines())[0] ?? '')) problems.push(`${tag}: table D3 button gave chip "${await chip()}" / ${JSON.stringify(await historyLines())}`);
+  if ((await chip()) !== 'D3' || !/^Free D3: [1-6] → [1-3]$/.test((await historyLines())[0] ?? '')) problems.push(`${tag}: table D3 button gave chip "${await chip()}" / ${JSON.stringify(await historyLines())}`);
   const rowText = (await p.textContent('.tables-pane tbody tr:nth-child(4)'))?.replace(/\s+/g, ' ').trim();
   if (!rowText?.includes('A made-up trinket pile. 🎲 Roll D3 to count them.')) problems.push(`${tag}: table row "${rowText}"`);
   await shot('d8-dice-from-table.png', p);
