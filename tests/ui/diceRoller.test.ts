@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DICE, DICE_PREFS_KEY, addToHistory, describeRoll, diceLabel, readDicePrefs, rollDice, rollTotal, writeDicePrefs } from '../../src/ui/diceRoller';
+import { DICE, DICE_PREFS_KEY, addToHistory, describeRoll, diceLabel, parseDamage, readDicePrefs, rollDice, rollLabel, rollTotal, writeDicePrefs } from '../../src/ui/diceRoller';
 
 /** An rng that returns the given values in turn. */
 const seq = (...v: number[]) => {
@@ -50,6 +50,29 @@ describe('dice roller helper', () => {
     expect(describeRoll('d6', [6])).toBe('D6: 6');
     expect(describeRoll('d3', [1])).toBe('D3: 1 → 1');
     expect(describeRoll('d3', [5])).toBe('D3: 5 → 3');
+  });
+  it('reads a damage text as a die and a modifier, or null when there is nothing to roll', () => {
+    expect(parseDamage('D6 -1')).toEqual({ dice: 'd6', modifier: -1 });
+    expect(parseDamage('D6')).toEqual({ dice: 'd6', modifier: 0 });
+    expect(parseDamage('2D6 +7')).toEqual({ dice: '2d6', modifier: 7 });
+    expect(parseDamage(' d6+2 ')).toEqual({ dice: 'd6', modifier: 2 });
+    expect(parseDamage('D6 −1')).toEqual({ dice: 'd6', modifier: -1 });
+    expect(parseDamage('D3 +1')).toEqual({ dice: 'd3', modifier: 1 });
+    expect(parseDamage('1')).toBeNull();
+    expect(parseDamage('')).toBeNull();
+    expect(parseDamage('D66')).toBeNull();
+    expect(parseDamage('D6 x2')).toBeNull();
+  });
+  it('adds a modifier to the total, the label and the history line', () => {
+    expect(rollTotal('d6', [4], -1)).toBe('3');
+    expect(rollTotal('2d6', [4, 5], 7)).toBe('16');
+    expect(rollTotal('d3', [5], 1)).toBe('4');
+    expect(rollLabel('d6', -1)).toBe('D6 −1');
+    expect(rollLabel('2d6', 7)).toBe('2D6 +7');
+    expect(rollLabel('d6', 0)).toBe('D6');
+    expect(describeRoll('d6', [4], -1)).toBe('D6 −1: 4 − 1 = 3');
+    expect(describeRoll('2d6', [4, 5], 7)).toBe('2D6 +7: 4 + 5 + 7 = 16');
+    expect(describeRoll('d3', [5], 1)).toBe('D3 +1: 5 → 3 + 1 = 4');
   });
   it('keeps the last five rolls, newest first', () => {
     let h: string[] = [];

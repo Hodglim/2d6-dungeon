@@ -4,7 +4,8 @@ import type { DiceKind } from './diceRoller';
 
 const KEY = Symbol('dice-roll');
 
-export type DiceRollFn = (dice: DiceKind) => void;
+/** Roll `dice` once, adding `modifier` (a manoeuvre's "D6 −1") to the total. */
+export type DiceRollFn = (dice: DiceKind, modifier?: number) => void;
 
 export function provideDiceRoll(fn: DiceRollFn): void {
   setContext(KEY, fn);

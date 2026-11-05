@@ -137,19 +137,19 @@
   let diceOpen = $state(dicePrefs.open);
   let diceKind = $state<DiceKind>(dicePrefs.dice);
   /** A "Roll a D6" button asked the roller to roll; the panel takes it once. */
-  let diceRequest = $state<{ dice: DiceKind; seq: number } | null>(null);
+  let diceRequest = $state<{ dice: DiceKind; modifier: number; seq: number } | null>(null);
   let diceSeq = 0;
   $effect(() => writeDicePrefs(storage(), { open: diceOpen, dice: diceKind }));
   function onDiceButton() {
     if (!started || loadError || gameOver !== null) return;
     diceOpen = !diceOpen;
   }
-  /** A dice phrase in encounter or table text: open the roller on that die and roll once. */
-  function rollFromText(dice: DiceKind) {
+  /** A dice phrase in encounter or table text, or a hit manoeuvre's damage: open the roller on that die and roll once. */
+  function rollFromText(dice: DiceKind, modifier = 0) {
     if (!started || loadError || gameOver !== null) return;
     diceKind = dice;
     diceOpen = true;
-    diceRequest = { dice, seq: ++diceSeq };
+    diceRequest = { dice, modifier, seq: ++diceSeq };
   }
   provideDiceRoll(rollFromText);
   let importError = $state<string | null>(null);

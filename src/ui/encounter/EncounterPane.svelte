@@ -34,6 +34,8 @@
   import type { DungeonTables } from '../../systems/dungeon/tables';
   import { foePool, heroPool, locked, matches, type DiceState } from '../../systems/dungeon/shift';
   import DieFace from '../DieFace.svelte';
+  import { useDiceRoll } from '../diceContext';
+  import { parseDamage, rollLabel } from '../diceRoller';
   import { adjustHp, commitHero } from '../hero/heroActions';
   import { shouldAskWin } from '../endings';
   import VictoryPanel from './VictoryPanel.svelte';
@@ -90,6 +92,9 @@
     holdWin = false,
     onopentable,
   }: Props = $props();
+
+  /** The shell's dice roller: a hit manoeuvre rolls its damage there. */
+  const diceRoll = useDiceRoll();
 
   const askingWin = $derived(!holdWin && !win.victory && shouldAskWin(encounter, win.dismissed));
   const showVictory = $derived(win.victory && encounter !== null);
@@ -496,14 +501,28 @@
             {#if hero.manoeuvres.length}
               <ul class="manoeuvres" aria-label="Manoeuvres">
                 {#each hero.manoeuvres as m, i (i)}
-                  <li class:match={matched.has(i)} data-testid="manoeuvre">
+                  {@const hit = matched.has(i)}
+                  {@const damage = hit && diceRoll ? parseDamage(m.modifier) : null}
+                  {#snippet body()}
                     <span class="faces">
                       {#if m.dice[0]}<DieFace value={m.dice[0]} colour="red" size={28} />{/if}
                       {#if m.dice[1]}<DieFace value={m.dice[1]} colour="blue" size={28} />{/if}
                     </span>
                     <span class="m-name">{m.name}</span>
                     {#if m.modifier}<span class="m-mod">Damage {m.modifier}</span>{/if}
-                    {#if matched.has(i)}<span class="tag">Hit</span>{/if}
+                    {#if hit}<span class="tag">Hit</span>{/if}
+                  {/snippet}
+                  <li class:match={hit} data-testid="manoeuvre">
+                    {#if damage}
+                      <button
+                        type="button"
+                        class="m-roll"
+                        aria-label={`${m.name}: roll damage ${rollLabel(damage.dice, damage.modifier)}`}
+                        onclick={() => diceRoll?.(damage.dice, damage.modifier)}
+                      >{@render body()}<span class="m-dice" aria-hidden="true">🎲</span></button>
+                    {:else}
+                      {@render body()}
+                    {/if}
                   </li>
                 {/each}
               </ul>
@@ -770,6 +789,35 @@
     border-color: var(--ink);
     background: #f1e3b8;
     font-weight: 700;
+  }
+  .manoeuvres li:has(> .m-roll) {
+    padding: 0;
+  }
+  .m-roll {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px 10px;
+    min-height: 44px;
+    padding: 4px 8px;
+    font: inherit;
+    font-weight: inherit;
+    color: inherit;
+    text-align: left;
+    background: transparent;
+    border: 0;
+    border-radius: 4px;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  .m-roll:focus-visible {
+    outline: 3px solid var(--accent);
+    outline-offset: 2px;
+  }
+  .m-dice {
+    margin-left: auto;
+    font-size: 20px;
   }
   .manoeuvres .faces {
     display: inline-flex;

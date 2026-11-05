@@ -21,18 +21,39 @@ export function rollDice(kind: DiceKind, rng: Rng): number[] {
   return [rollD6(rng), rollD6(rng)];
 }
 
-/** "9" for 2D6 (the sum), "34" for D66 (red tens, blue units), "3" for D3 (a 5 read in halves), the face for D6. */
-export function rollTotal(kind: DiceKind, faces: number[]): string {
-  if (kind === '2d6') return String(faces.reduce((a, b) => a + b, 0));
-  if (kind === 'd3') return String(d3FromD6(faces[0] ?? 0));
-  return faces.join('');
+/** "9" for 2D6 (the sum), "34" for D66 (red tens, blue units), "3" for D3 (a 5 read in halves), the face for D6; plus any modifier (never on a D66). */
+export function rollTotal(kind: DiceKind, faces: number[], modifier = 0): string {
+  if (kind === 'd66') return faces.join('');
+  const base = kind === '2d6' ? faces.reduce((a, b) => a + b, 0) : kind === 'd3' ? d3FromD6(faces[0] ?? 0) : (faces[0] ?? 0);
+  return String(base + modifier);
 }
 
-/** A history line: "2D6: 4 + 5 = 9", "D66: 34", "D6: 4", "D3: 5 → 3". */
-export function describeRoll(kind: DiceKind, faces: number[]): string {
-  const total = rollTotal(kind, faces);
-  if (kind === 'd3') return `${diceLabel(kind)}: ${faces[0]} → ${total}`;
-  return kind === '2d6' ? `${diceLabel(kind)}: ${faces.join(' + ')} = ${total}` : `${diceLabel(kind)}: ${total}`;
+const signed = (n: number) => (n < 0 ? `−${-n}` : `+${n}`);
+const step = (n: number) => (n < 0 ? ` − ${-n}` : ` + ${n}`);
+
+/** "D6", or with a modifier "D6 −1", "2D6 +7". */
+export function rollLabel(kind: DiceKind, modifier = 0): string {
+  return modifier ? `${diceLabel(kind)} ${signed(modifier)}` : diceLabel(kind);
+}
+
+/** A history line: "2D6: 4 + 5 = 9", "D66: 34", "D6: 4", "D3: 5 → 3", "D6 −1: 4 − 1 = 3". */
+export function describeRoll(kind: DiceKind, faces: number[], modifier = 0): string {
+  const total = rollTotal(kind, faces, modifier);
+  const label = rollLabel(kind, modifier);
+  if (kind === 'd66') return `${label}: ${total}`;
+  const mod = modifier ? step(modifier) : '';
+  if (kind === 'd3') return mod ? `${label}: ${faces[0]} → ${d3FromD6(faces[0] ?? 0)}${mod} = ${total}` : `${label}: ${faces[0]} → ${total}`;
+  if (kind === '2d6') return `${label}: ${faces.join(' + ')}${mod} = ${total}`;
+  return mod ? `${label}: ${faces[0]}${mod} = ${total}` : `${label}: ${total}`;
+}
+
+/** A damage text such as "D6 -1" or "2D6 +7" as a die and a modifier; null for a fixed number or anything else. */
+export function parseDamage(text: string): { dice: DiceKind; modifier: number } | null {
+  const m = /^\s*(2d6|d6|d3)\s*(?:([+\-−])\s*(\d+))?\s*$/i.exec(text);
+  if (!m) return null;
+  const dice = m[1]!.toLowerCase() as DiceKind;
+  const n = m[3] ? Number(m[3]) : 0;
+  return { dice, modifier: m[2] === '+' || n === 0 ? n : -n };
 }
 
 export const HISTORY_SIZE = 5;

@@ -3,34 +3,42 @@
   // dice, see the total and the last five rolls. Never part of the game: no History step, no save.
   import { onDestroy, untrack } from 'svelte';
   import DieFace from './DieFace.svelte';
-  import { DICE, addToHistory, describeRoll, diceLabel, rollDice, rollTotal, type DiceKind } from './diceRoller';
+  import { DICE, addToHistory, describeRoll, rollDice, rollLabel, rollTotal, type DiceKind } from './diceRoller';
+  import { d3FromD6 } from '../systems/dungeon/rules';
   import { animateRoll } from './rollAnimation';
   import { unlockAudio } from './sound';
 
   interface Props {
     /** The chosen die. */
     dice: DiceKind;
-    /** A roll asked for from outside (a "Roll a D6" button): choose that die and roll once. */
-    request?: { dice: DiceKind; seq: number } | null;
+    /** A roll asked for from outside (a "Roll a D6" button or a hit manoeuvre): choose that die and roll once. */
+    request?: { dice: DiceKind; modifier?: number; seq: number } | null;
     onchoose: (dice: DiceKind) => void;
     onrequesttaken?: () => void;
     onclose: () => void;
   }
   let { dice, request = null, onchoose, onrequesttaken, onclose }: Props = $props();
 
-  /** The roll on show: its die, the faces (spinning while `settled` is false). */
-  let shown = $state<{ dice: DiceKind; faces: number[]; settled: boolean } | null>(null);
+  /** The modifier a hit manoeuvre asked for ("D6 −1"); kept for re-rolls until another die is chosen. */
+  let modifier = $state(0);
+  /** The roll on show: its die and modifier, the faces (spinning while `settled` is false). */
+  let shown = $state<{ dice: DiceKind; modifier: number; faces: number[]; settled: boolean } | null>(null);
   let history = $state<string[]>([]);
   let cancelRoll: (() => void) | null = null;
   onDestroy(() => cancelRoll?.());
 
   const rolling = $derived(shown !== null && !shown.settled);
 
-  function roll(kind: DiceKind) {
+  function choose(kind: DiceKind) {
+    modifier = 0;
+    onchoose(kind);
+  }
+
+  function roll(kind: DiceKind, mod: number) {
     cancelRoll?.(); // a new roll from a text button replaces one still spinning
     unlockAudio();
     const finals = rollDice(kind, Math.random);
-    shown = { dice: kind, faces: [...finals], settled: false };
+    shown = { dice: kind, modifier: mod, faces: [...finals], settled: false };
     cancelRoll = animateRoll(finals, 6, {
       faces: (f) => {
         if (shown) shown.faces = f;
@@ -38,8 +46,8 @@
       land: () => {},
       done: () => {
         cancelRoll = null;
-        shown = { dice: kind, faces: finals, settled: true };
-        history = addToHistory(history, describeRoll(kind, finals));
+        shown = { dice: kind, modifier: mod, faces: finals, settled: true };
+        history = addToHistory(history, describeRoll(kind, finals, mod));
       },
     });
   }
@@ -47,14 +55,26 @@
   $effect(() => {
     if (!request) return;
     const kind = request.dice;
+    const mod = kind === 'd66' ? 0 : (request.modifier ?? 0);
     untrack(() => {
       onchoose(kind);
-      roll(kind);
+      modifier = mod;
+      roll(kind, mod);
       onrequesttaken?.();
     });
   });
 
-  const total = $derived(shown?.settled ? rollTotal(shown.dice, shown.faces) : null);
+  const total = $derived(shown?.settled ? rollTotal(shown.dice, shown.faces, shown.modifier) : null);
+  /** "= 3", or with a modifier "− 1 = 3"; a D3 shows its reading "5 → 3". */
+  const totalText = $derived.by(() => {
+    if (!shown || total === null) return '';
+    if (shown.dice === 'd66') return total;
+    const m = shown.modifier;
+    const mod = m < 0 ? ` − ${-m}` : m > 0 ? ` + ${m}` : '';
+    const read = shown.dice === 'd3' ? `${shown.faces[0]} → ${d3FromD6(shown.faces[0] ?? 0)}` : '';
+    if (shown.dice === 'd3') return mod ? `${read}${mod} = ${total}` : `${read}`;
+    return `${mod} = ${total}`;
+  });
 </script>
 
 <section class="dice-panel" aria-labelledby="dice-title" data-testid="dice-panel">
@@ -64,17 +84,17 @@
   </header>
   <div class="chips" role="group" aria-label="Die">
     {#each DICE as d (d.kind)}
-      <button type="button" aria-pressed={dice === d.kind} onclick={() => onchoose(d.kind)}>{d.label}</button>
+      <button type="button" aria-pressed={dice === d.kind} onclick={() => choose(d.kind)}>{d.label}</button>
     {/each}
   </div>
-  <button type="button" class="roll" disabled={rolling} onclick={() => roll(dice)}>🎲 Roll {diceLabel(dice)}</button>
+  <button type="button" class="roll" disabled={rolling} onclick={() => roll(dice, modifier)}>🎲 Roll {rollLabel(dice, modifier)}</button>
   <div class="result" data-testid="dice-result" aria-live="polite">
     {#if shown}
       <span class="faces">
         {#each shown.faces as f, i (i)}<DieFace value={f} colour={i === 0 ? 'red' : 'blue'} size={48} />{/each}
       </span>
       {#if total !== null}
-        <span class="total" data-testid="dice-total">{shown.dice === 'd66' ? total : shown.dice === 'd3' ? `${shown.faces[0]} → ${total}` : `= ${total}`}</span>
+        <span class="total" data-testid="dice-total">{totalText}</span>
       {/if}
     {:else}
       <span class="empty">Choose a die and roll.</span>
