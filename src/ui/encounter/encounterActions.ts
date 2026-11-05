@@ -231,7 +231,7 @@ export function throwBomb(history: History, c: { bomb: PotionBomb; index: number
   const e = history.encounter as Encounter | null;
   const h = history.hero as Hero | null;
   if (!e || !h || !e.foes.some((f) => f.id === foeId)) return { ok: false, reason: 'No fight or no hero' };
-  if (!h.potions[c.index]) return { ok: false, reason: `${c.bomb.name} is no longer in the pack` };
+  if (!h.potions[c.index]?.name.toLowerCase().includes(c.bomb.name.toLowerCase())) return { ok: false, reason: `${c.bomb.name} is no longer in the pack` };
   const dice = c.bomb.damage ? parseDamage(c.bomb.damage) : null;
   const rolled = dice ? Number(rollTotal(dice.dice, faces, dice.modifier)) : null;
   const damage = bombDamage(c.bomb, rolled, dungeonLevel);

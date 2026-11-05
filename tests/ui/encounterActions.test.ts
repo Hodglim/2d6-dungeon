@@ -466,9 +466,20 @@ describe('throwing weapons and potion bombs', () => {
     expect((h.hero as Hero).potions).toEqual([]);
   });
 
+  it('a bomb is refused when another potion now sits at its index', () => {
+    const h = setup();
+    commitEncounter(h, enc(h), 'swap', { hero: { ...(h.hero as Hero), potions: [{ name: 'Plain Tonic', effect: '' }] } });
+    const hero0 = h.hero;
+    const enc0 = h.encounter;
+    expect(throwBomb(h, fizz, 'f1', 2, [4, 1])).toEqual({ ok: false, reason: 'Fizz Jar is no longer in the pack' });
+    expect(h.hero).toBe(hero0);
+    expect(h.encounter).toBe(enc0);
+  });
+
   it('throwBomb with no damage dice ignores faces', () => {
     const h = setup();
     commitEncounter(h, setFoeHp(enc(h), 'f1', 20), 'hp');
+    commitEncounter(h, enc(h), 'swap', { hero: { ...(h.hero as Hero), potions: [{ name: 'Smoke Jar', effect: '' }] } });
     const smoke = { bomb: { name: 'Smoke Jar', effect: '' }, index: 0 };
     expect(throwBomb(h, smoke, 'f1', 1, [])).toEqual({ ok: true });
     expect(enc(h).foes[0]!.hp).toBe(20);
