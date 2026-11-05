@@ -254,6 +254,34 @@ describe('creature tables and creatures', () => {
   });
 });
 
+describe('throwing weapons and potion bombs', () => {
+  const D = 'The table file is damaged: ';
+  it('takes both optional lists', () => {
+    const o = clone();
+    o.tables.throwingWeapons = [{ name: 'Spike', damage: 5, aliases: ['spikes'] }];
+    o.tables.potionBombs = [
+      { name: 'Fizz Jar', effect: 'Made-up: it fizzes.', damage: '2D6 +1' },
+      { name: 'Glare Phial', effect: 'Made-up: a glare.', noAttack: true },
+    ];
+    expect(parse(o).ok).toBe(true);
+  });
+  it('checks them', () => {
+    const bad = (key: string, v: unknown, msg: string) => {
+      const o = clone();
+      o.tables[key] = v;
+      expect(err(parse(o))).toBe(D + msg);
+    };
+    bad('throwingWeapons', {}, 'Throwing Weapons');
+    bad('throwingWeapons', [{ name: '', damage: 1 }], 'Throwing Weapons 1 name (empty)');
+    bad('throwingWeapons', [{ name: 'x', damage: -1 }], 'Throwing Weapons 1 damage');
+    bad('throwingWeapons', [{ name: 'x', damage: 1, aliases: [''] }], 'Throwing Weapons 1 aliases');
+    bad('potionBombs', [{ name: 'x' }], 'Potion Bombs 1 effect');
+    bad('potionBombs', [{ name: 'x', effect: '', damage: 3 }], 'Potion Bombs 1 damage');
+    bad('potionBombs', [{ name: 'x', effect: '', damagePerLevel: 'a' }], 'Potion Bombs 1 damagePerLevel');
+    bad('potionBombs', [{ name: 'x', effect: '', noAttack: 1 }], 'Potion Bombs 1 noAttack');
+  });
+});
+
 describe('docs/table-file-format.md', () => {
   it('the inline example is a valid table file', () => {
     const doc = readFileSync('docs/table-file-format.md', 'utf8');

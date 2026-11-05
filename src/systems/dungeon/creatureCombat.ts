@@ -8,12 +8,12 @@ export const interruptLapsed = (i: CreatureInterrupt, round: number): boolean =>
 /**
  * Indexes of the Interrupts a successful attack whose dice (after shifting) read [red, blue] sets
  * off: a primary set matching the red die, or a secondary set matching the blue. Lapsed ones are
- * left out. Only one counts each round; the player picks.
+ * left out, and movement ones too when `noMovement` (a Smoke-style bomb this round). Only one counts each round; the player picks.
  */
-export function interruptHits(faces: readonly number[], interrupts: readonly CreatureInterrupt[], round: number): number[] {
+export function interruptHits(faces: readonly number[], interrupts: readonly CreatureInterrupt[], round: number, noMovement = false): number[] {
   const out: number[] = [];
   interrupts.forEach((it, i) => {
-    if (interruptLapsed(it, round)) return;
+    if (interruptLapsed(it, round) || (noMovement && it.movement)) return;
     const die = it.side === 'primary' ? faces[0] : faces[1];
     if (it.dice.includes(die!)) out.push(i);
   });

@@ -5,7 +5,7 @@ import { History } from '../../src/core/history';
 import { setFoeHp, totalXp as totalXpOf, type Encounter } from '../../src/systems/dungeon/combat';
 import { createHero, type Hero } from '../../src/systems/dungeon/hero';
 import type { DungeonTables } from '../../src/systems/dungeon/tables';
-import { applyCreatureRoll, awardVictoryXp, commitEncounter, dismissRolled, dropPendingRoll, placingFirst, queueCreatureRoll, startOrJoin, xpToAward, type EncounterHooks } from '../../src/ui/encounter/encounterActions';
+import { applyCreatureRoll, awardVictoryXp, commitEncounter, dismissRolled, dropPendingRoll, placingFirst, queueCreatureRoll, recoverThrown, startOrJoin, throwBomb, throwWeapon, xpToAward, type EncounterHooks } from '../../src/ui/encounter/encounterActions';
 import { adjustHp } from '../../src/ui/hero/heroActions';
 import { emptyMap, room } from '../core/fixtures';
 
@@ -389,5 +389,60 @@ describe('placingFirst', () => {
     const { calls, hooks } = spyHooks();
     placingFirst(hooks, () => (calls.push('place'), true)).onopentable('XX1', 2);
     expect(calls).toEqual(['table XX1 2']);
+  });
+});
+
+describe('throwing weapons and potion bombs', () => {
+  const rngOf = (...v: number[]) => {
+    let i = 0;
+    return () => v[i++ % v.length]!;
+  };
+  /** A fight with one Grumbler and a hero carrying a spike and a bomb. */
+  function setup() {
+    const h = new History(emptyMap());
+    commitEncounter(h, null, 'x', { hero: { ...hero(), largeItems: ['Spike +1'], potions: [{ name: 'Fizz Jar', effect: '' }] } });
+    startOrJoin(h, t, ['Grumbler'], ids(), noAsk);
+    return h;
+  }
+  const spike = { weapon: { name: 'Spike', damage: 5 }, list: 'largeItems' as const, index: 0, item: 'Spike +1', modifier: 1 };
+  const fizz = { bomb: { name: 'Fizz Jar', effect: '', damage: '2D6 +1' }, index: 0 };
+
+  it('a throw takes the weapon from the pack, logs it and takes the damage off, as one step', () => {
+    const h = setup();
+    const before = enc(h).foes[0]!.hp;
+    // D66 of 3 & 4 against Damp Hide (secondary 4s, −1): 5 + 1 − 1 = 5
+    const ints = [{ name: 'Damp Hide', side: 'secondary' as const, dice: [4], modifier: -1 }];
+    expect(throwWeapon(h, spike, 'f1', ints, rngOf(0.4, 0.6))).toEqual({ ok: true });
+    expect(enc(h).foes[0]!.hp).toBe(Math.max(0, before - 5));
+    expect(enc(h).throws).toEqual([
+      { kind: 'weapon', name: 'Spike', foeId: 'f1', round: 1, faces: [3, 4], damage: 5, interrupts: ['Damp Hide'], item: 'Spike +1', list: 'largeItems', deflected: true },
+    ]);
+    expect((h.hero as Hero).largeItems).toEqual([]);
+    expect(h.undoLabel).toBe('Throw Spike');
+    h.undo();
+    expect((h.hero as Hero).largeItems).toEqual(['Spike +1']);
+    expect(enc(h).throws).toBeUndefined();
+  });
+
+  it('a bomb is used up and its rolled damage taken off', () => {
+    const h = setup();
+    commitEncounter(h, setFoeHp(enc(h), 'f1', 20), 'hp');
+    expect(throwBomb(h, fizz, 'f1', 2, rngOf(0.5, 0))).toEqual({ ok: true }); // 4 + 1 + 1 = 6
+    expect(enc(h).foes[0]!.hp).toBe(14);
+    expect(enc(h).throws![0]).toMatchObject({ kind: 'bomb', name: 'Fizz Jar', faces: [4, 1], damage: 6 });
+    expect((h.hero as Hero).potions).toEqual([]);
+  });
+
+  it('a weapon that was not deflected can be recovered after the fight', () => {
+    const h = setup();
+    throwWeapon(h, spike, 'f1', [], rngOf(0.4, 0.6));
+    expect(recoverThrown(h, 0, 5)).toEqual({ ok: true });
+    expect((h.hero as Hero).largeItems).toEqual(['Spike +1']);
+    expect(enc(h).throws![0]!.recovered).toBe(true);
+    expect(recoverThrown(h, 0, 5).ok).toBe(false);
+    h.undo();
+    expect(recoverThrown(h, 0, 2)).toEqual({ ok: true });
+    expect((h.hero as Hero).largeItems).toEqual([]);
+    expect(enc(h).throws![0]!.recovered).toBe(false);
   });
 });

@@ -159,7 +159,7 @@ A short, complete, valid example (copy it and replace the made-up values with yo
 - `format`: always `1`. A higher number is refused as made by a newer version of the app.
 - `systemId`: always `"dungeon"`.
 - `name`: any label for your own use.
-- `tables`: the tables below. Every one is required except `dungeonLevels`, `exitTables`, `creatureTables` and `creatures`.
+- `tables`: the tables below. Every one is required except `dungeonLevels`, `exitTables`, `creatureTables`, `creatures`, `referenceTables`, `throwingWeapons` and `potionBombs`.
 
 Dice are lists of faces, each a whole number 1 to 6, in printed order with the primary (red) die first.
 
@@ -378,6 +378,25 @@ Printed tables for the Tables pane, to look up and roll on. They are for display
 - `roll` is a single value or range as printed: `"3"`, `"1-2"` (a hyphen or en dash), `"7+"` (7 and above), `"0 or less"`. Totals are d3 1-3, d6 1-6, 2d6 2-12, d66 11-66. Rows must not overlap. Gaps are allowed; a total in a gap shows "No row for N". When a modifier takes the total past the lowest or highest row, it counts as that row; a natural (unmodified) total that no row covers is never moved and shows "No row for N", so check the rows reach every total the dice can roll.
 - A table needs at least one row.
 - Dice pictures in cells are written as text ("3 & 4").
+
+## throwingWeapons and potionBombs (optional)
+
+What the encounter pane can throw before the hero's attack. It offers only what the hero sheet carries, matched by name: a throwing weapon among the large or small items (in round 1, once a fight), a potion bomb among the potions. A throw uses the item up. A thrown weapon that wasn't deflected can be recovered on the Victory panel. Where to find them: the Core Rules combat and potion bomb pages.
+
+- `throwingWeapons`: a list of `{ "name", "damage" }`, plus optional `aliases` (other names it goes by on the sheet, such as a plural). `damage` is a whole number, before any `+1` written after the item's name on the sheet.
+- `potionBombs`: a list of `{ "name", "effect" }` with any of these optional keys. `damage` is dice to roll, such as `"2D6 +4"`. `damagePerLevel` is damage per level of the dungeon. `noAttack: true` means the target can't attack this round. `noMovementInterrupts: true` means the target can't use movement Interrupts this round.
+
+A made-up example:
+
+```text
+"throwingWeapons": [
+  { "name": "Pebble Sling", "damage": 3, "aliases": ["pebble slings"] }
+],
+"potionBombs": [
+  { "name": "Fizz Jar", "effect": "Made-up: it fizzes and pops.", "damage": "2D6 +1" },
+  { "name": "Glare Phial", "effect": "Made-up: a dazzling glare.", "noAttack": true }
+]
+```
 
 ## Creature cards
 

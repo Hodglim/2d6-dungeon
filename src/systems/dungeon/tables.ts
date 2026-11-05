@@ -2,6 +2,7 @@
 
 import { dungeonSystem } from './index';
 import { referenceProblem, type RefTable } from './referenceTables';
+import type { PotionBomb, ThrowingWeapon } from './throwing';
 
 export const TABLE_FILE_FORMAT = 1;
 export const MAX_TABLE_FILE_BYTES = 2_000_000;
@@ -107,6 +108,9 @@ export interface DungeonTables {
     creatures?: Record<string, CreatureStats>;
     /** Printed tables for the Tables pane, keyed by table id (optional). Display and rolling only. */
     referenceTables?: Record<string, RefTable>;
+    /** Throwing weapons and potion bombs the encounter pane can throw (optional). */
+    throwingWeapons?: ThrowingWeapon[];
+    potionBombs?: PotionBomb[];
   };
 }
 
@@ -272,6 +276,39 @@ function creatureCombatProblem(c: Record<string, unknown>, at: string): string |
   );
 }
 
+const isFlag = (v: unknown): boolean => v === undefined || typeof v === 'boolean';
+
+/** `throwingWeapons` and `potionBombs`, both optional lists. */
+function throwingProblem(t: Record<string, unknown>): string | null {
+  const list = (key: string, label: string, each: (r: Record<string, unknown>, at: string) => string | null): string | null => {
+    const v = t[key];
+    if (v === undefined) return null;
+    if (!Array.isArray(v)) return label;
+    for (const [i, r] of v.entries()) {
+      const at = `${label} ${i + 1}`;
+      if (!isObj(r)) return at;
+      const p = each(r, at);
+      if (p) return p;
+    }
+    return null;
+  };
+  return (
+    list('throwingWeapons', 'Throwing Weapons', (r, at) =>
+      named(r, at, ['name']) ??
+      field(r, at, ['damage'], isCount) ??
+      (r.aliases === undefined || (Array.isArray(r.aliases) && r.aliases.every((a) => isStr(a) && a.trim() !== '')) ? null : `${at} aliases`),
+    ) ??
+    list('potionBombs', 'Potion Bombs', (r, at) =>
+      named(r, at, ['name']) ??
+      field(r, at, ['effect'], isStr) ??
+      (r.damage === undefined || isStr(r.damage) ? null : `${at} damage`) ??
+      (r.damagePerLevel === undefined || isCount(r.damagePerLevel) ? null : `${at} damagePerLevel`) ??
+      (isFlag(r.noAttack) ? null : `${at} noAttack`) ??
+      (isFlag(r.noMovementInterrupts) ? null : `${at} noMovementInterrupts`),
+    )
+  );
+}
+
 /** `creatures` is checked first so the names in `creatureTables` have something to match. */
 function creatureProblem(t: Record<string, unknown>): string | null {
   const known = new Set<string>();
@@ -316,7 +353,7 @@ function roomTablesProblem(t: Record<string, unknown>): string | null {
   }
   const dl = t.dungeonLevels;
   const roomP = dl === undefined ? null : roomLevelsProblem(dl, exitTables);
-  return roomP ?? creatureProblem(t) ?? referenceProblem(t);
+  return roomP ?? creatureProblem(t) ?? referenceProblem(t) ?? throwingProblem(t);
 }
 
 function roomLevelsProblem(dl: unknown, exitTables: unknown): string | null {

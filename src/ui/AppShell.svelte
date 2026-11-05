@@ -1027,6 +1027,7 @@
           onwin={(w) => (win = w)}
           holdWin={askingDeath || gameOver !== null}
           onopentable={showTable}
+          dungeonLevel={$view.map.level}
         />
       {/if}
     </div>

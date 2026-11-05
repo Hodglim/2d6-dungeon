@@ -12,8 +12,12 @@
     hasHero: boolean;
     onaddxp: () => void;
     ondone: () => void;
+    /** Roll a D6 to get thrown weapon `i` (an index into encounter.throws) back. */
+    onrecover?: (i: number) => void;
   }
-  let { encounter, tables = null, onopentable, hasHero, onaddxp, ondone }: Props = $props();
+  let { encounter, tables = null, onopentable, hasHero, onaddxp, ondone, onrecover }: Props = $props();
+  /** Weapons thrown this fight, with their index in encounter.throws. */
+  const thrown = $derived((encounter.throws ?? []).map((t, i) => ({ t, i })).filter(({ t }) => t.kind === 'weapon'));
 
   const lines = $derived(treasureLines(encounter));
   const xp = $derived(totalXp(encounter));
@@ -47,6 +51,18 @@
     </ul>
   {:else}
     <p class="none">No treasure to roll for</p>
+  {/if}
+  {#if thrown.length && hasHero}
+    <ul class="treasure" aria-label="Thrown weapons">
+      {#each thrown as { t, i } (i)}
+        <li data-testid="thrown-weapon">
+          {#if t.deflected}{t.name}: lost (it was deflected)
+          {:else if t.recovered === true}{t.name}: recovered, back in your pack
+          {:else if t.recovered === false}{t.name}: lost
+          {:else}<button type="button" onclick={() => onrecover?.(i)}>🎲 Recover {t.name} (4–6)</button>{/if}
+        </li>
+      {/each}
+    </ul>
   {/if}
   <p class="xp" data-testid="victory-xp">XP total: {xp}</p>
   <div class="row">

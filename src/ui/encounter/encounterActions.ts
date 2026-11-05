@@ -1,11 +1,14 @@
 /** Encounter edits run through History. Pure apart from the History argument. */
 import { setPlay } from '../../core/commands';
 import type { ExecResult, History } from '../../core/history';
-import { addFoe, awardXp, dropRolled, newEncounter, queueRoll, recordRoll, resolveRoll, totalXp, type Encounter } from '../../systems/dungeon/combat';
+import { addFoe, awardXp, dropRolled, logThrow, newEncounter, queueRoll, recordRoll, resolveRoll, setFoeHp, setRecovered, totalXp, type Encounter, type ThrowLog } from '../../systems/dungeon/combat';
+import { rollD6, type Rng } from '../../systems/dungeon/rules';
+import { bombDamage, recovers, throwDamage, type CarriedWeapon, type PotionBomb } from '../../systems/dungeon/throwing';
+import { parseDamage, rollDice, rollTotal } from '../diceRoller';
 import { findCreature, rollCreatureTable, type CreatureRoll } from '../../systems/dungeon/creatures';
 import type { Hero } from '../../systems/dungeon/hero';
 import { addXp } from '../hero/heroActions';
-import type { DungeonTables } from '../../systems/dungeon/tables';
+import type { CreatureInterrupt, DungeonTables } from '../../systems/dungeon/tables';
 
 /** What the encounter-text buttons do (given by the shell, which owns the encounter pane). */
 export interface EncounterHooks {
@@ -178,4 +181,62 @@ export function awardVictoryXp(history: History): ExecResult {
   const n = xpToAward(e);
   if (n <= 0) return { ok: false, reason: 'That XP has already been added' };
   return commitEncounter(history, awardXp(e, n), `XP +${n}`, { hero: addXp(h, n) });
+}
+
+// ---- throwing weapons and potion bombs ----
+
+const minusHp = (e: Encounter, foeId: string, damage: number): Encounter => {
+  const f = e.foes.find((x) => x.id === foeId);
+  return f ? setFoeHp(e, foeId, Math.max(0, f.hp - damage)) : e;
+};
+
+/**
+ * Throw a carried weapon at foe `foeId`: roll a D66 against its Interrupts, take the weapon out of
+ * the pack (a recovery roll after the fight may put it back), log the throw and take the damage
+ * off, all as one step.
+ */
+export function throwWeapon(history: History, c: CarriedWeapon, foeId: string, interrupts: readonly CreatureInterrupt[], rng: Rng): ExecResult {
+  const e = history.encounter as Encounter | null;
+  const h = history.hero as Hero | null;
+  if (!e || !h || !e.foes.some((f) => f.id === foeId)) return { ok: false, reason: 'No fight or no hero' };
+  if (h[c.list][c.index] !== c.item) return { ok: false, reason: `${c.item} is no longer in the pack` };
+  const faces = [rollD6(rng), rollD6(rng)];
+  const r = throwDamage(faces, c.weapon.damage, c.modifier, interrupts, e.round);
+  const log: ThrowLog = {
+    kind: 'weapon', name: c.weapon.name, foeId, round: e.round, faces, damage: r.damage,
+    interrupts: r.hits.map((i) => interrupts[i]!.name), item: c.item, list: c.list, deflected: r.deflected,
+  };
+  const hero = { ...h, [c.list]: h[c.list].filter((_, i) => i !== c.index) };
+  return commitEncounter(history, minusHp(logThrow(e, log), foeId, r.damage), `Throw ${c.weapon.name}`, { hero });
+}
+
+/** Throw a carried potion bomb at foe `foeId`: used up, its damage (if any) rolled and taken off, as one step. */
+export function throwBomb(history: History, c: { bomb: PotionBomb; index: number }, foeId: string, dungeonLevel: number, rng: Rng): ExecResult {
+  const e = history.encounter as Encounter | null;
+  const h = history.hero as Hero | null;
+  if (!e || !h || !e.foes.some((f) => f.id === foeId)) return { ok: false, reason: 'No fight or no hero' };
+  if (!h.potions[c.index]) return { ok: false, reason: `${c.bomb.name} is no longer in the pack` };
+  const dice = c.bomb.damage ? parseDamage(c.bomb.damage) : null;
+  const faces = dice ? rollDice(dice.dice, rng) : [];
+  const rolled = dice ? Number(rollTotal(dice.dice, faces, dice.modifier)) : null;
+  const damage = bombDamage(c.bomb, rolled, dungeonLevel);
+  const log: ThrowLog = {
+    kind: 'bomb', name: c.bomb.name, foeId, round: e.round, faces, damage,
+    ...(c.bomb.noAttack ? { noAttack: true } : {}),
+    ...(c.bomb.noMovementInterrupts ? { noMovementInterrupts: true } : {}),
+  };
+  const hero = { ...h, potions: h.potions.filter((_, i) => i !== c.index) };
+  return commitEncounter(history, minusHp(logThrow(e, log), foeId, damage), `Throw ${c.bomb.name}`, { hero });
+}
+
+/** After the fight: thrown weapon `index` comes back on a D6 `face` of 4 to 6 (back into its list as it was). */
+export function recoverThrown(history: History, index: number, face: number): ExecResult {
+  const e = history.encounter as Encounter | null;
+  const h = history.hero as Hero | null;
+  const t = e?.throws?.[index];
+  if (!e || !h || !t || t.kind !== 'weapon') return { ok: false, reason: 'No thrown weapon' };
+  if (t.deflected || t.recovered !== undefined) return { ok: false, reason: `${t.name} has already been dealt with` };
+  const back = recovers(face);
+  const hero = back && t.item && t.list ? { ...h, [t.list]: [...h[t.list], t.item] } : h;
+  return commitEncounter(history, setRecovered(e, index, back), back ? `Recover ${t.name}` : `Lose ${t.name}`, { hero });
 }

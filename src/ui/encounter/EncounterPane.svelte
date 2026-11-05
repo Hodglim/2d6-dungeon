@@ -17,6 +17,7 @@
   import { randomId } from '../../core/ids';
   import type { CardPack } from '../../systems/dungeon/cards';
   import {
+    bombEffect,
     fatigueDie,
     fatigueShift,
     interruptReminder,
@@ -47,6 +48,7 @@
   import HpTracker from './HpTracker.svelte';
   import PendingRollView from './PendingRoll.svelte';
   import TurnDice from './TurnDice.svelte';
+  import ThrowPanel from './ThrowPanel.svelte';
   import {
     applyCreatureRoll,
     awardVictoryXp,
@@ -54,8 +56,11 @@
     dismissRolled,
     dropPendingRoll,
     queueCreatureRoll,
+    recoverThrown,
     rollName,
     startOrJoin,
+    throwBomb,
+    throwWeapon,
   } from './encounterActions';
 
   interface Props {
@@ -79,6 +84,8 @@
     holdWin?: boolean;
     /** Show a reference table in the Tables pane. */
     onopentable?: (code: string, modifier: number) => void;
+    /** The level of the dungeon the fight is on (some potion bombs scale with it). */
+    dungeonLevel?: number;
   }
   let {
     history,
@@ -94,6 +101,7 @@
     onwin = () => {},
     holdWin = false,
     onopentable,
+    dungeonLevel = 1,
   }: Props = $props();
 
   /** The shell's dice roller: a hit manoeuvre rolls its damage there. */
@@ -179,8 +187,10 @@
   /** On the hero's turn, a hit (not a Prime) sets off a standing creature's Interrupts its dice match. */
   function interruptsHit(f: Foe, ints: readonly CreatureInterrupt[]): Set<number> {
     if (!encounter || foeTurn || !turnDice || matched.size === 0 || f.hp <= 0) return new Set();
-    return new Set(interruptHits(turnDice.faces, ints, encounter.round));
+    return new Set(interruptHits(turnDice.faces, ints, encounter.round, !!bombEffect(encounter, f.id, 'noMovementInterrupts')));
   }
+  /** On a creature's turn, the bomb (if any) that stops its attack this round. */
+  const blindedBy = $derived(encounter && foeTurn ? bombEffect(encounter, foeTurn.id, 'noAttack') : null);
 
   /** Bumped when a newer request takes over the HP prompt: the older run of questions stops. */
   let askRun = 0;
@@ -491,6 +501,9 @@
         {/each}
       </ul>
       {#if hits.size > 1}<p class="small">Only one Interrupt counts each round.</p>{/if}
+      {#if encounter && bombEffect(encounter, f.id, 'noMovementInterrupts')}
+        <p class="small">{bombEffect(encounter, f.id, 'noMovementInterrupts')}: no movement Interrupts this round.</p>
+      {/if}
     {/if}
   </div>
 </li>
@@ -532,7 +545,15 @@
 
       {#if showVictory && encounter}
         <div bind:this={victoryBox}>
-          <VictoryPanel {encounter} {tables} {onopentable} hasHero={hero !== null} onaddxp={addVictoryXp} ondone={winDone} />
+          <VictoryPanel
+            {encounter}
+            {tables}
+            {onopentable}
+            hasHero={hero !== null}
+            onaddxp={addVictoryXp}
+            ondone={winDone}
+            onrecover={(i) => recoverThrown(history, i, Math.floor(Math.random() * 6) + 1)}
+          />
         </div>
       {/if}
 
@@ -573,6 +594,19 @@
 
         {#if foeTurn}
           <ul class="foes attacker" aria-label="Attacking creature">{@render foeCard(foeTurn)}</ul>
+        {/if}
+
+        {#if !foeTurn && hero && tables}
+          <ThrowPanel
+            {encounter}
+            {hero}
+            {tables}
+            onweapon={(c, id) => throwWeapon(history, c, id, findCreature(tables, encounter?.foes.find((x) => x.id === id)?.name ?? '')?.stats.interrupts ?? [], Math.random)}
+            onbomb={(c, id) => throwBomb(history, c, id, dungeonLevel, Math.random)}
+          />
+        {/if}
+        {#if blindedBy}
+          <p class="reminder" role="status">{blindedBy}: {foeTurn?.name} can't attack this round.</p>
         {/if}
 
         <div class="dice-box" bind:this={diceBox}>

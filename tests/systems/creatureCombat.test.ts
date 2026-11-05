@@ -22,4 +22,8 @@ describe('creature interrupts', () => {
     expect(interruptHits([3, 2], ints, 7)).toEqual([]);
     expect(interruptHits([1, 2], ints, 7)).toEqual([0]);
   });
+  it('drop movement Interrupts when a bomb stops them this round', () => {
+    expect(interruptHits([3, 2], ints, 1, true)).toEqual([]);
+    expect(interruptHits([1, 4], ints, 1, true)).toEqual([0, 2]);
+  });
 });

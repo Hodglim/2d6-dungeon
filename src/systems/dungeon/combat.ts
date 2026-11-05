@@ -15,6 +15,30 @@ export interface PendingRoll { code: string; modifier: number }
 /** A creature-table roll already resolved: kept so its result (and any text) stays on show. */
 export interface RolledRoll { code: string; modifier: number; die: number; total: number }
 /**
+ * A throwing weapon or potion bomb thrown this fight, oldest first. `faces`: the weapon's D66 (red,
+ * blue), or the bomb's damage dice (none for a bomb without dice). A weapon keeps the sheet's item
+ * text and list so a recovered one goes back as it was; `deflected` (an Interrupt matched: the
+ * weapon is lost) and `recovered` (after the fight: true back in the pack, false lost, absent not
+ * rolled yet). A bomb keeps its round effects.
+ */
+export interface ThrowLog {
+  kind: 'weapon' | 'bomb';
+  name: string;
+  foeId: string;
+  round: number;
+  faces: number[];
+  damage: number;
+  /** The Interrupts that came off a weapon's damage, by name. */
+  interrupts?: string[];
+  item?: string;
+  list?: 'largeItems' | 'smallItems';
+  deflected?: boolean;
+  recovered?: boolean;
+  noAttack?: boolean;
+  noMovementInterrupts?: boolean;
+}
+
+/**
  * `rolled`: resolved creature-table rolls, oldest first. `xpAwarded`: the XP already added to the
  * hero from this fight's Victory panel (on the undo timeline with the rest of the encounter).
  * `turn`: whose attack it is, 'hero' (the player's, with or without a hero) or a foe's id.
@@ -27,6 +51,8 @@ export interface Encounter {
   rolled: RolledRoll[];
   xpAwarded: number;
   turn: 'hero' | string;
+  /** Throwing weapons and potion bombs thrown (absent in fights saved before throwing existed). */
+  throws?: ThrowLog[];
 }
 
 export const newEncounter = (): Encounter => ({ version: 1, round: 1, foes: [], pending: [], rolled: [], xpAwarded: 0, turn: 'hero' });
@@ -40,7 +66,23 @@ const copy = (e: Encounter): Encounter => ({
   foes: e.foes.map((f) => ({ ...f })),
   pending: [...e.pending],
   rolled: [...e.rolled],
+  ...(e.throws ? { throws: e.throws.map((t) => ({ ...t })) } : {}),
 });
+
+/** Log a throw (its damage is applied separately, with setFoeHp). */
+export const logThrow = (e: Encounter, t: ThrowLog): Encounter => ({ ...copy(e), throws: [...(e.throws ?? []), t] });
+
+/** Record whether thrown weapon `i` came back after the fight. */
+export function setRecovered(e: Encounter, i: number, recovered: boolean): Encounter {
+  const c = copy(e);
+  return { ...c, throws: (c.throws ?? []).map((t, j) => (j === i ? { ...t, recovered } : t)) };
+}
+
+/** This round's bomb effect on a foe (a Flash-style bomb stops its attack; a Smoke-style one its movement Interrupts). */
+export function bombEffect(e: Encounter, foeId: string, key: 'noAttack' | 'noMovementInterrupts'): string | null {
+  const t = (e.throws ?? []).find((x) => x.kind === 'bomb' && x.foeId === foeId && x.round === e.round && x[key]);
+  return t ? t.name : null;
+}
 
 export function addFoe(e: Encounter, name: string, stats: CreatureStats | null, startHp: number, id: string): Encounter {
   const foe: Foe = {
@@ -163,5 +205,24 @@ export function encounterProblem(raw: unknown): string | null {
   }
   if (!isInt(raw.xpAwarded) || raw.xpAwarded < 0) return fail('xpAwarded');
   if (!isStr(raw.turn) || (raw.turn !== 'hero' && !ids.has(raw.turn))) return fail('turn');
+  if (raw.throws !== undefined) {
+    if (!Array.isArray(raw.throws)) return fail('throws');
+    for (let i = 0; i < raw.throws.length; i++) {
+      const t = raw.throws[i];
+      const at = `throws[${i}]`;
+      if (!isObj(t)) return fail(at);
+      if (t.kind !== 'weapon' && t.kind !== 'bomb') return fail(`${at} kind`);
+      if (!isStr(t.name)) return fail(`${at} name`);
+      if (!isStr(t.foeId) || !ids.has(t.foeId)) return fail(`${at} foeId`);
+      if (!isInt(t.round) || t.round < 1) return fail(`${at} round`);
+      if (!Array.isArray(t.faces) || !t.faces.every((d) => isInt(d) && d >= 1 && d <= 6)) return fail(`${at} faces`);
+      if (!isInt(t.damage) || t.damage < 0) return fail(`${at} damage`);
+      if (t.interrupts !== undefined && !(Array.isArray(t.interrupts) && t.interrupts.every(isStr))) return fail(`${at} interrupts`);
+      if (t.item !== undefined && !isStr(t.item)) return fail(`${at} item`);
+      if (t.list !== undefined && t.list !== 'largeItems' && t.list !== 'smallItems') return fail(`${at} list`);
+      const flag = ['deflected', 'recovered', 'noAttack', 'noMovementInterrupts'].find((k) => t[k] !== undefined && typeof t[k] !== 'boolean');
+      if (flag) return fail(`${at} ${flag}`);
+    }
+  }
   return null;
 }

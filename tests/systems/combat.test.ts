@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   newEncounter, addFoe, setFoeHp, nextRound, queueRoll, resolveRoll, recordRoll, dropRolled, awardXp, fatigueDie, fatigueShift,
-  momentumShift, allDefeated, totalXp, treasureLines, interruptReminder, encounterProblem, nextTurn, turnFoe,
+  momentumShift, allDefeated, totalXp, treasureLines, interruptReminder, encounterProblem, nextTurn, turnFoe, logThrow, setRecovered, bombEffect,
 } from '../../src/systems/dungeon/combat';
 
 const stats = { level: 1, hp: 6, xp: 3, shift: 1, treasure: 'a shiny thing' };
@@ -112,6 +112,33 @@ describe('encounterProblem', () => {
     expect(encounterProblem(bad)).toMatch(/foes\[0\] hp/);
     expect(encounterProblem(null)).not.toBeNull();
     expect(encounterProblem({ ...e, pending: [{ code: 1, modifier: 0 }] })).toMatch(/pending\[0\]/);
+  });
+  it('checks the throws, and still reads a fight saved without them', () => {
+    const e = two();
+    const id = e.foes[0]!.id;
+    const ok = logThrow(e, { kind: 'weapon', name: 'Spike', foeId: id, round: 1, faces: [3, 4], damage: 4, item: 'Spike', list: 'largeItems', deflected: false });
+    expect(encounterProblem(ok)).toBeNull();
+    expect(encounterProblem(setRecovered(ok, 0, true))).toBeNull();
+    expect(setRecovered(ok, 0, true).throws![0]!.recovered).toBe(true);
+    expect(ok.throws).toHaveLength(1);
+    expect(e.throws).toBeUndefined();
+    const t = ok.throws![0]!;
+    expect(encounterProblem({ ...ok, throws: {} })).toMatch(/throws/);
+    expect(encounterProblem({ ...ok, throws: [{ ...t, kind: 'rock' }] })).toMatch(/throws\[0\] kind/);
+    expect(encounterProblem({ ...ok, throws: [{ ...t, foeId: 'nobody' }] })).toMatch(/throws\[0\] foeId/);
+    expect(encounterProblem({ ...ok, throws: [{ ...t, faces: [7] }] })).toMatch(/throws\[0\] faces/);
+    expect(encounterProblem({ ...ok, throws: [{ ...t, damage: -1 }] })).toMatch(/throws\[0\] damage/);
+    expect(encounterProblem({ ...ok, throws: [{ ...t, list: 'pockets' }] })).toMatch(/throws\[0\] list/);
+    expect(encounterProblem({ ...ok, throws: [{ ...t, deflected: 'no' }] })).toMatch(/throws\[0\] deflected/);
+  });
+  it('finds a bomb effect on a foe this round only', () => {
+    const e = two();
+    const id = e.foes[0]!.id;
+    const b = logThrow(e, { kind: 'bomb', name: 'Glare Phial', foeId: id, round: 1, faces: [], damage: 0, noAttack: true });
+    expect(bombEffect(b, id, 'noAttack')).toBe('Glare Phial');
+    expect(bombEffect(b, id, 'noMovementInterrupts')).toBeNull();
+    expect(bombEffect(b, e.foes[1]!.id, 'noAttack')).toBeNull();
+    expect(bombEffect({ ...b, round: 2 }, id, 'noAttack')).toBeNull();
   });
   it('refuses duplicate foe ids', () => {
     const e = two();
