@@ -6,7 +6,19 @@ export type EncounterPart =
   | { kind: 'text'; text: string }
   | { kind: 'roll'; text: string; code: string; modifier: number }
   | { kind: 'table'; text: string; code: string; modifier: number }
-  | { kind: 'fight'; text: string; name: string };
+  | { kind: 'fight'; text: string; name: string }
+  | { kind: 'dice'; text: string; dice: DiceKind };
+
+/** The dice a "Roll a D6" phrase can name. */
+export type DiceKind = 'd6' | '2d6' | 'd66' | 'd3';
+
+/** "Roll a D6", "roll 2D6", "Roll an D66", "Roll D3": "roll" (any case), an optional "a"/"an", then the dice. */
+const DICE_RE = /(?<![A-Za-z0-9])roll\s+(?:an?\s+)?(2d6|d66|1?d6|d3)(?![A-Za-z0-9])/gi;
+
+function diceKind(notation: string): DiceKind {
+  const n = notation.toLowerCase();
+  return n === '1d6' ? 'd6' : (n as DiceKind);
+}
 
 const escapeRe = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const WORD = /[A-Z][A-Z'-]+/g;
@@ -75,10 +87,23 @@ export interface ScanOptions {
 
 export function scanEncounter(text: string, t: DungeonTables | null, opts: ScanOptions = {}): EncounterPart[] {
   const parts: EncounterPart[] = [];
-  if (!t) { pushText(parts, text); return parts; }
+  // Dice phrases first, so a phrase never takes in a code after it; codes and names are found between them.
+  let pos = 0;
+  for (const m of text.matchAll(DICE_RE)) {
+    scanCodes(text.slice(pos, m.index!), t, opts, parts);
+    parts.push({ kind: 'dice', text: m[0], dice: diceKind(m[1]!) });
+    pos = m.index! + m[0].length;
+  }
+  scanCodes(text.slice(pos), t, opts, parts);
+  return firstFightOnly(parts);
+}
+
+/** Table codes (with modifiers) and creature names in a stretch of text without dice phrases. */
+function scanCodes(text: string, t: DungeonTables | null, opts: ScanOptions, parts: EncounterPart[]): void {
+  if (!t) { pushText(parts, text); return; }
   const between = (s: string): void => (opts.fights === false ? pushText(parts, s) : scanFights(s, t, parts));
   const { creatureCodes, re } = scannerFor(t);
-  if (!re) { between(text); return firstFightOnly(parts); }
+  if (!re) { between(text); return; }
   let pos = 0;
   for (const m of text.matchAll(re)) {
     between(text.slice(pos, m.index!));
@@ -87,7 +112,6 @@ export function scanEncounter(text: string, t: DungeonTables | null, opts: ScanO
     pos = m.index! + m[0].length;
   }
   between(text.slice(pos));
-  return firstFightOnly(parts);
 }
 
 /** A creature named twice in one text is the same creature: later mentions become plain text. */
@@ -107,12 +131,13 @@ function firstFightOnly(parts: EncounterPart[]): EncounterPart[] {
 
 /**
  * Text inside a reference table: only reference-table codes are parts of their own (kind 'table'),
- * including a code that is also a creature table. Creature-only codes and creature names stay text.
+ * including a code that is also a creature table, and dice phrases (kind 'dice').
+ * Creature-only codes and creature names stay text.
  */
 export function scanReference(text: string, t: DungeonTables | null): EncounterPart[] {
   const parts: EncounterPart[] = [];
   for (const p of scanEncounter(text, t, { fights: false })) {
-    if (p.kind === 'table') parts.push(p);
+    if (p.kind === 'table' || p.kind === 'dice') parts.push(p);
     else if (p.kind === 'roll' && findTable(t, p.code)) parts.push({ ...p, kind: 'table' });
     else pushText(parts, p.text);
   }

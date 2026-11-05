@@ -88,8 +88,12 @@ const d6 = mk('d6', ['1-2', '3', '4-6', '7+']);
 
 describe('naturalTotal', () => {
   it('reads faces per dice', () => {
-    expect(naturalTotal('d3', [3])).toBe(3);
-    expect(naturalTotal('d3', [4])).toBeNull();
+    expect(naturalTotal('d3', [1])).toBe(1);
+    expect(naturalTotal('d3', [3])).toBe(2);
+    expect(naturalTotal('d3', [4])).toBe(2);
+    expect(naturalTotal('d3', [6])).toBe(3);
+    expect(naturalTotal('d3', [7])).toBeNull();
+    expect(naturalTotal('d3', [0])).toBeNull();
     expect(naturalTotal('d6', [6])).toBe(6);
     expect(naturalTotal('d6', [0])).toBeNull();
     expect(naturalTotal('d6', [1, 2])).toBeNull();
@@ -141,10 +145,13 @@ describe('rollReference', () => {
   it('reports a gap as row null', () => {
     expect(rollReference(mk('d6', ['1', '3', '6']), [2], 0)).toMatchObject({ total: 2, clamped: 2, row: null });
   });
-  it('d3 works and rejects 4', () => {
+  it('d3 reads a D6 face in halves, keeps the face, and rejects 7', () => {
     const t = mk('d3', ['1', '2', '3']);
-    expect(rollReference(t, [3], 0)).toMatchObject({ row: 2 });
-    expect(rollReference(t, [4], 0)).toBeNull();
+    expect(rollReference(t, [5], 0)).toMatchObject({ natural: 3, d3Face: 5, row: 2 });
+    expect(rollReference(t, [4], 0)).toMatchObject({ natural: 2, d3Face: 4, row: 1 });
+    expect(rollReference(t, [2], 1)).toMatchObject({ natural: 1, total: 2, row: 1 });
+    expect(rollReference(t, [7], 0)).toBeNull();
+    expect(rollReference(mk('d6', ['1-6']), [5], 0)).not.toHaveProperty('d3Face');
   });
   it('a list is not rollable', () => {
     expect(rollReference(mk(null, ['']), [1], 0)).toBeNull();

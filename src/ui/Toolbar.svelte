@@ -12,6 +12,8 @@
     encounterOpen?: boolean;
     /** The Tables pane is showing in the sidebar. */
     tablesOpen?: boolean;
+    /** The floating dice roller is open. */
+    diceOpen?: boolean;
     /** Start-up hasn't finished: nothing on the toolbar may act yet. */
     disabled?: boolean;
     /** A room is being placed: only Play stays available, so the room can't be dropped by accident. */
@@ -23,9 +25,10 @@
     onhero: () => void;
     onencounter: () => void;
     ontables: () => void;
+    ondice: () => void;
   }
 
-  let { view, tool, coverage, menuOpen, heroOpen = false, encounterOpen = false, tablesOpen = false, disabled = false, placing = false, ontool, onundo, onredo, onmenu, onhero, onencounter, ontables }: Props = $props();
+  let { view, tool, coverage, menuOpen, heroOpen = false, encounterOpen = false, tablesOpen = false, diceOpen = false, disabled = false, placing = false, ontool, onundo, onredo, onmenu, onhero, onencounter, ontables, ondice }: Props = $props();
 
   const tools: { id: Tool; label: string }[] = [
     { id: 'play', label: 'Play' },
@@ -53,6 +56,7 @@
   <button class="hero" aria-pressed={heroOpen} {disabled} onclick={onhero}>{view.hero === null ? 'Create hero' : 'Hero'}</button>
   <button class="encounter" aria-pressed={encounterOpen} {disabled} onclick={onencounter}>Encounter</button>
   <button class="tables" aria-pressed={tablesOpen} {disabled} onclick={ontables}>Tables</button>
+  <button class="icon dice" aria-label="Dice" title="Dice roller" aria-pressed={diceOpen} {disabled} onclick={ondice}>🎲</button>
   <div class="coverage" title="Map coverage" aria-label="Map coverage {Math.round(coverage * 100)}%">
     {Math.round(coverage * 100)}%
   </div>
@@ -113,6 +117,7 @@
   .tool[aria-pressed='true'],
   .encounter[aria-pressed='true'],
   .tables[aria-pressed='true'],
+  .dice[aria-pressed='true'],
   .hero[aria-pressed='true'] {
     color: var(--paper);
     background: var(--ink);

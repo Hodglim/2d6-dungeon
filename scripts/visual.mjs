@@ -2396,24 +2396,31 @@ for (const reduced of [false, true]) {
   if ((await hitRow()) !== 1) problems.push(`${tag}: d66 highlights row ${await hitRow()}`);
   await shot('76-d66.png', p);
 
-  // A d3 table takes 1–3 only.
+  // A d3 table is a D6 read in halves (1-2 = 1, 3-4 = 2, 5-6 = 3): a typed 7 is rejected, 4 reads 2, 5 reads 3.
   await p.click(`${pane} button:text-is("☰ List")`);
   await p.fill(`${pane} input[type=search]`, 'XX4');
   await p.click(`${pane} .list button:has-text("XX4 —")`);
   await p.waitForSelector(`${pane} .rolling`);
+  await p.fill(`${pane} input[aria-label="D3"]`, '7');
+  await p.click(`${pane} .rolling button:text-is("Use this")`);
+  await p.waitForTimeout(150);
+  if (!(await p.isVisible(`${pane} .rolling [role=alert]`))) problems.push(`${tag}: a typed 7 on a D3 was accepted`);
   await p.fill(`${pane} input[aria-label="D3"]`, '4');
   await p.click(`${pane} .rolling button:text-is("Use this")`);
   await p.waitForTimeout(150);
-  if (!(await p.isVisible(`${pane} .rolling [role=alert]`))) problems.push(`${tag}: a typed 4 on a D3 was accepted`);
-  await p.fill(`${pane} input[aria-label="D3"]`, '3');
+  r = await resultText();
+  if (!r.startsWith('4 → 2') || (await hitRow()) !== 1) problems.push(`${tag}: d3 typed 4 gave "${r}" (row ${await hitRow()})`);
+  await p.fill(`${pane} input[aria-label="D3"]`, '5');
   await p.click(`${pane} .rolling button:text-is("Use this")`);
   await p.waitForTimeout(150);
   r = await resultText();
-  if (!r.startsWith('3') || !r.includes('Surprisingly deep.')) problems.push(`${tag}: d3 result "${r}"`);
+  console.log(`${tag}: d3 typed 5 → "${r}"`);
+  if (!r.startsWith('5 → 3') || !r.includes('Surprisingly deep.')) problems.push(`${tag}: d3 result "${r}"`);
   await p.click(`${pane} .rolling button:has-text("Roll for me")`);
   await p.waitForTimeout(900);
   r = await resultText();
-  if (!/^[1-3]\b/.test(r)) problems.push(`${tag}: d3 animated roll "${r}"`);
+  const d3m = r.match(/^([1-6]) → ([1-3])\b/);
+  if (!d3m || Math.ceil(Number(d3m[1]) / 2) !== Number(d3m[2])) problems.push(`${tag}: d3 animated roll "${r}"`);
   await shot('77-d3.png', p);
 
   // 7. A list has no Roll button.
@@ -2969,6 +2976,272 @@ for (const reduced of [false, true]) {
     if (!rowDiffers) problems.push(`${tag}: the footprint trail did not show at all (check is not testing anything)`);
     if (!labelSame) problems.push(`${tag}: footprints show through the label of room ${room.number}`);
   }
+  await ctx.close();
+}
+
+// 22. The dice roller: the 🎲 toolbar button opens a floating panel over the map's top-right corner;
+// each die rolls with the animated dice and totals ("= 9", "34" for D66); the last five rolls are
+// listed; rolling adds no History step; the panel stays while switching sidebar tabs and while
+// placing a room, and the map still pans outside it. "Roll a D6" in encounter text and "Roll a D3"
+// in a reference table are buttons that open the panel on that die with one roll. × and 🎲 close it.
+{
+  const ctx = await browser.newContext({ viewport: { width: 1180, height: 820 }, deviceScaleFactor: 2, hasTouch: true });
+  await ctx.addInitScript(() => localStorage.setItem('2d6.installHintDismissed', '1'));
+  const p = await ctx.newPage();
+  p.on('pageerror', (e) => errors.push(e.message));
+  p.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
+  await p.goto(url, { waitUntil: 'load' });
+  await p.waitForTimeout(800);
+  const tag = 'dice';
+  const panel = '[data-testid=dice-panel]';
+  const diceBtn = 'header.toolbar button[aria-label="Dice"]';
+  const ROLL_MS = 1700; // two dice: spin, stagger, hold
+  const tap = async (x, y) => {
+    const at = await p.$eval('canvas', (c, [wx, wy]) => {
+      const [cx, cy, sc] = (c.dataset.camera ?? '').split(',').map(Number);
+      const r = c.getBoundingClientRect();
+      return { x: r.left + (wx - cx) * sc, y: r.top + (wy - cy) * sc };
+    }, [x, y]);
+    await p.mouse.click(at.x, at.y);
+    await p.waitForTimeout(150);
+  };
+  const btn = (name) => p.click(`aside.panel button:text-is("${name}")`);
+  const wiz = (t) => p.click(`[role=dialog][aria-labelledby=wizard-title] button:text-is("${t}")`);
+  const menu = () => p.click('header.toolbar button[aria-label="Menu"]');
+  const undoText = async () => (await p.textContent('header.toolbar button.history'))?.trim() ?? '';
+  const toolbarHeight = () => p.$eval('header.toolbar', (e) => e.getBoundingClientRect().height);
+  const open = () => p.isVisible(panel);
+  const chip = async () => (await p.$$eval(`${panel} .chips button[aria-pressed=true]`, (els) => els.map((e) => e.textContent?.trim()))).join('|');
+  const total = async () => ((await p.textContent(`${panel} [data-testid=dice-total]`).catch(() => null)) ?? '').trim();
+  const faces = () => p.$$eval(`${panel} [data-testid=dice-result] [role=img]`, (els) => els.length);
+  const historyLines = async () => (await p.$$eval(`${panel} [data-testid=dice-history] li`, (els) => els.map((e) => e.textContent?.trim()))) ?? [];
+  const rect = (sel) => p.$eval(sel, (e) => e.getBoundingClientRect().toJSON());
+
+  const ENC = 'Made-up: a hollow rattle. Roll a D6. 1-4= Roll on XX1; on 5-6 nothing stirs.';
+  const fx = JSON.parse(readFileSync('tests/fixtures/dungeon-tables.fixture.json', 'utf8'));
+  const swap = (v) => {
+    if (Array.isArray(v)) v.forEach(swap);
+    else if (v && typeof v === 'object') for (const k of Object.keys(v)) k === 'encounter' && typeof v[k] === 'string' ? (v[k] = ENC) : swap(v[k]);
+  };
+  swap(fx.tables.dungeonLevels);
+  fx.tables.referenceTables.XX1.rows[3].cells = ['A made-up trinket pile. Roll a D3 to count them.'];
+  await p.setInputFiles('input[data-extra="tables"]', { name: 'tables.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(fx)) });
+  await p.waitForTimeout(500);
+
+  // The toolbar with 🎲 still fits on one row at 1180 px, also with the longest Undo and Redo labels.
+  const h0 = await toolbarHeight();
+  const saved = await p.$$eval('header.toolbar button.history .label', (els) => els.map((e) => e.textContent));
+  await p.$$eval('header.toolbar button.history .label', (els) => els.forEach((e, i) => (e.textContent = `${i ? 'Redo' : 'Undo'} Start encounter and then some`)));
+  const hWorst = await toolbarHeight();
+  await p.$$eval('header.toolbar button.history .label', (els, t) => els.forEach((e, i) => (e.textContent = t[i])), saved);
+  console.log(`${tag}: toolbar height ${h0.toFixed(1)}, ${hWorst.toFixed(1)} with long Undo and Redo labels`);
+  if (h0 > 70 || hWorst > 70) problems.push(`${tag}: toolbar wraps at 1180 px with the Dice button (heights ${h0}, ${hWorst})`);
+  const db = await rect(diceBtn);
+  const tb = await rect('header.toolbar button.tables');
+  if (db.width < 44 || db.height < 44) problems.push(`${tag}: Dice button ${db.width}×${db.height}`);
+  if (!(db.left > tb.left && Math.abs(db.top - tb.top) < 2)) problems.push(`${tag}: Dice button is not right of Tables on the same row`);
+  if (await open()) problems.push(`${tag}: panel open before the button was tapped`);
+
+  // Open: over the map's top-right corner, not over the sidebar.
+  await p.click(diceBtn);
+  await p.waitForSelector(panel);
+  if ((await p.getAttribute(diceBtn, 'aria-pressed')) !== 'true') problems.push(`${tag}: Dice button not pressed while open`);
+  const pr = await rect(panel);
+  const cr = await rect('canvas');
+  const side = await rect('aside.panel');
+  console.log(`${tag}: panel ${JSON.stringify({ l: pr.left, t: pr.top, r: pr.right, b: pr.bottom })} canvas right ${cr.right} top ${cr.top}`);
+  if (pr.right > cr.right + 0.5 || pr.left < cr.left || pr.top < cr.top - 0.5 || pr.top > cr.top + 30 || cr.right - pr.right > 30) problems.push(`${tag}: panel is not in the map's top-right corner`);
+  if (pr.right > side.left + 0.5) problems.push(`${tag}: panel covers the sidebar`);
+  if ((await chip()) !== 'D6') problems.push(`${tag}: first open chose "${await chip()}"`);
+  await p.screenshot({ path: join(outDir, 'd1-dice-open.png') });
+  console.log(`Saved ${join(outDir, 'd1-dice-open.png')}`);
+
+  // Every die rolls; check the faces and the total's form.
+  const undo0 = await undoText();
+  const want = { D6: [1, /^= [1-6]$/], '2D6': [2, /^= ([2-9]|1[0-2])$/], D66: [2, /^[1-6][1-6]$/], D3: [1, /^([1-6]) → ([1-3])$/] };
+  for (const [label, [n, re]] of Object.entries(want)) {
+    await p.click(`${panel} .chips button:text-is("${label}")`);
+    if ((await chip()) !== label) problems.push(`${tag}: chip ${label} not highlighted ("${await chip()}")`);
+    await p.click(`${panel} button.roll`);
+    await p.waitForTimeout(200);
+    if (!(await p.isDisabled(`${panel} button.roll`))) problems.push(`${tag}: Roll not disabled while ${label} spins`);
+    await p.waitForTimeout(ROLL_MS);
+    const t = await total();
+    console.log(`${tag}: ${label} → ${t} (${await faces()} faces)`);
+    if (!re.test(t)) problems.push(`${tag}: ${label} total "${t}"`);
+    if (label === 'D3') {
+      const [, face, d3] = t.match(re) ?? [];
+      if (Math.ceil(Number(face) / 2) !== Number(d3)) problems.push(`${tag}: D3 read "${t}" (1-2 = 1, 3-4 = 2, 5-6 = 3)`);
+      await shot('d3b-dice-d3.png', p);
+    }
+    if ((await faces()) !== n) problems.push(`${tag}: ${label} shows ${await faces()} dice`);
+    if (label === '2D6') await shot('d2-dice-2d6.png', p);
+    if (label === 'D66') await shot('d3-dice-d66.png', p);
+  }
+  // Two more: six rolls, five listed, newest first.
+  await p.click(`${panel} .chips button:text-is("2D6")`);
+  await p.click(`${panel} button.roll`);
+  await p.waitForTimeout(ROLL_MS);
+  await p.click(`${panel} button.roll`);
+  await p.waitForTimeout(ROLL_MS);
+  const hist = await historyLines();
+  console.log(`${tag}: history ${JSON.stringify(hist)}`);
+  if (hist.length !== 5) problems.push(`${tag}: history has ${hist.length} lines`);
+  if (!/^2D6: [1-6] \+ [1-6] = \d+$/.test(hist[0] ?? '') || !/^2D6: /.test(hist[1] ?? '') || !/^D3: [1-6] → [1-3]$/.test(hist[2] ?? '') || !/^D66: [1-6][1-6]$/.test(hist[3] ?? '') || !/^2D6: /.test(hist[4] ?? '')) problems.push(`${tag}: history ${JSON.stringify(hist)}`);
+  const [a, b] = (hist[0] ?? '').match(/(\d) \+ (\d) = (\d+)/)?.slice(1, 4).map(Number) ?? [];
+  if ((hist[0] ?? '').match(/= (\d+)$/)?.[1] !== String(a + b)) problems.push(`${tag}: 2D6 sum wrong in "${hist[0]}"`);
+  if (`= ${(hist[0] ?? '').split('= ')[1]}` !== (await total())) problems.push(`${tag}: total "${await total()}" is not the newest history line "${hist[0]}"`);
+  if ((await undoText()) !== undo0) problems.push(`${tag}: rolling added a History step ("${await undoText()}", was "${undo0}")`);
+  const small = await p.$$eval(`${panel} button`, (els) => els.map((e) => ({ t: e.getAttribute('aria-label') ?? e.textContent?.trim(), r: e.getBoundingClientRect() })).filter((x) => x.r.width < 44 || x.r.height < 44).map((x) => `${x.t} ${x.r.width}×${x.r.height}`));
+  for (const s of small) problems.push(`${tag}: panel button too small: ${s}`);
+  await shot('d4-dice-history.png', p);
+
+  // The map pans with a drag beside the panel (the panel only covers its own box); the panel stays.
+  const cam0 = await p.getAttribute('canvas', 'data-camera');
+  const from = { x: pr.left - 60, y: pr.top + 40 };
+  const hitCanvas = await p.evaluate(([x, y]) => document.elementFromPoint(x, y)?.tagName, [from.x, from.y]);
+  const hitPanel = await p.evaluate(([x, y]) => !!document.elementFromPoint(x, y)?.closest('[data-testid=dice-panel]'), [pr.left + 20, pr.top + 20]);
+  if (hitCanvas !== 'CANVAS' || !hitPanel) problems.push(`${tag}: hit-testing beside/inside the panel gave ${hitCanvas} / ${hitPanel}`);
+  await p.mouse.move(from.x, from.y);
+  await p.mouse.down();
+  await p.mouse.move(from.x - 120, from.y + 80, { steps: 8 });
+  await p.mouse.up();
+  await p.waitForTimeout(200);
+  if ((await p.getAttribute('canvas', 'data-camera')) === cam0) problems.push(`${tag}: dragging the map beside the panel did not pan`);
+  if (!(await open())) problems.push(`${tag}: panning the map closed the panel`);
+  // A one-finger (touch pointer) drag beside the panel pans too.
+  const cam1 = await p.getAttribute('canvas', 'data-camera');
+  await p.$eval('canvas', (c, [a, b]) => {
+    const fire = (type, q) => c.dispatchEvent(new PointerEvent(type, { pointerId: 9, pointerType: 'touch', isPrimary: true, bubbles: true, clientX: q.x, clientY: q.y, buttons: type === 'pointerup' ? 0 : 1, button: 0 }));
+    c.setPointerCapture = () => {};
+    fire('pointerdown', a);
+    for (let i = 1; i <= 8; i++) fire('pointermove', { x: a.x + ((b.x - a.x) * i) / 8, y: a.y + ((b.y - a.y) * i) / 8 });
+    fire('pointerup', b);
+  }, [from, { x: from.x - 80, y: from.y + 60 }]);
+  await p.waitForTimeout(200);
+  if ((await p.getAttribute('canvas', 'data-camera')) === cam1) problems.push(`${tag}: a one-finger drag beside the panel did not pan`);
+  await p.click('header.toolbar button[aria-label="Menu"]');
+  await p.click('[role=menuitem]:text-is("Fit map to screen")');
+  await p.waitForTimeout(300);
+
+  // A hero (the wizard covers everything; the panel is still there afterwards).
+  await menu();
+  await p.click('[role=menuitem]:text-is("New game…")');
+  await wiz('Next');
+  await p.fill('[aria-labelledby=wizard-title] input[type=text]', 'Pip Dicer');
+  await wiz('Next');
+  await p.click('.weapon:has-text("Practice Sword")');
+  await p.click('.mtable .row:has-text("Wobbly Poke")');
+  await p.click('.mtable .row:has-text("Gentle Swipe")');
+  await wiz('Next');
+  await p.click('.option:has-text("Padded Tablecloth")');
+  await wiz('Next');
+  await p.click('.option:has-text("Scroll of Mild Glow")');
+  await wiz('Next');
+  await wiz('Begin');
+  await p.waitForTimeout(500);
+  if (await p.isVisible('[role=alertdialog] button:text-is("Replace")')) await p.click('[role=alertdialog] button:text-is("Replace")');
+  await p.waitForTimeout(800);
+  if (!(await open())) problems.push(`${tag}: panel closed by starting a new game`);
+
+  // Sidebar tabs: Hero, Tables, back to Hero; the panel stays and keeps its history.
+  const histBefore = JSON.stringify(await historyLines());
+  await p.click('header.toolbar button.hero');
+  await p.waitForTimeout(150);
+  await p.click('header.toolbar button.tables');
+  await p.waitForTimeout(150);
+  await p.click('#side-tab-hero');
+  await p.waitForTimeout(150);
+  await p.click('#side-tab-tables');
+  await p.waitForTimeout(150);
+  if (!(await open())) problems.push(`${tag}: switching sidebar tabs closed the panel`);
+  if (JSON.stringify(await historyLines()) !== histBefore) problems.push(`${tag}: switching tabs lost the roll history`);
+  const pr2 = await rect(panel);
+  const side2 = await rect('.side');
+  if (pr2.right > side2.left + 0.5) problems.push(`${tag}: panel covers the wide sidebar`);
+  await shot('d5-dice-with-tables.png', p);
+  await p.click('header.toolbar button.tables'); // put the Tables pane away
+  await p.click('header.toolbar button.hero'); // and the Hero panel
+  await p.waitForTimeout(200);
+
+  // Rooms: entrance, then room 2; while placing, the panel stays and still rolls.
+  const dice = async (...v) => {
+    const ins = await p.$$('aside.panel form.dice input');
+    for (let i = 0; i < v.length; i++) await ins[i].fill(v[i]);
+  };
+  await tap(12.5, 25.5);
+  await dice('3', '4');
+  await btn('Use these');
+  await btn('Place');
+  await btn('Done');
+  await btn('Done');
+  await p.waitForTimeout(1500);
+  await tap(12.5, 20);
+  await dice('3', '4');
+  await btn('Use these');
+  if (!(await open())) problems.push(`${tag}: placing a room closed the panel`);
+  if (await p.isDisabled(diceBtn)) problems.push(`${tag}: Dice button disabled while placing a room`);
+  if (!(await p.isDisabled('header.toolbar button.tool:text-is("Door")'))) problems.push(`${tag}: Door enabled while placing (check is not testing placement)`);
+  await p.click(`${panel} .chips button:text-is("D6")`);
+  await p.click(`${panel} button.roll`);
+  await p.waitForTimeout(ROLL_MS);
+  if (!/^= [1-6]$/.test(await total())) problems.push(`${tag}: rolling while placing gave "${await total()}"`);
+  await shot('d6-dice-while-placing.png', p);
+  await btn('Place');
+  await dice('4');
+  await btn('Use this');
+  await dice('3');
+  await btn('Place for me');
+  await btn('Done');
+  await dice('3', '4');
+  await btn('Use these');
+  await p.waitForSelector('aside.panel [data-testid=encounter-actions]');
+  const labels = await p.$$eval('aside.panel [data-testid=encounter-actions] button', (els) => els.map((e) => e.textContent.trim()));
+  console.log(`${tag}: encounter buttons ${JSON.stringify(labels)}`);
+  if (labels.join('|') !== '🎲 Roll D6|📖 Open XX1') problems.push(`${tag}: encounter buttons ${JSON.stringify(labels)}`);
+  const encText = (await p.textContent('aside.panel [data-testid=encounter-text] .enc-text'))?.trim();
+  if (!encText?.endsWith(ENC)) problems.push(`${tag}: encounter text "${encText}"`);
+
+  // Close with ×, choose 2D6 meanwhile, then "🎲 Roll D6" opens it on D6 with one roll.
+  await p.click(`${panel} .chips button:text-is("2D6")`);
+  await p.click(`${panel} button[aria-label="Close dice"]`);
+  await p.waitForTimeout(150);
+  if (await open()) problems.push(`${tag}: × did not close the panel`);
+  if ((await p.getAttribute(diceBtn, 'aria-pressed')) !== 'false') problems.push(`${tag}: Dice button still pressed after ×`);
+  const undo1 = await undoText();
+  await p.click('aside.panel [data-testid=encounter-actions] button:text-is("🎲 Roll D6")');
+  await p.waitForSelector(panel);
+  await p.waitForTimeout(ROLL_MS);
+  if ((await chip()) !== 'D6') problems.push(`${tag}: text button opened the panel on "${await chip()}"`);
+  const fromText = await historyLines();
+  console.log(`${tag}: after the text button ${JSON.stringify(fromText)} total ${await total()}`);
+  if (fromText.length !== 1 || !/^D6: [1-6]$/.test(fromText[0] ?? '') || !/^= [1-6]$/.test(await total())) problems.push(`${tag}: text button roll ${JSON.stringify(fromText)} / "${await total()}"`);
+  if ((await undoText()) !== undo1) problems.push(`${tag}: the text roll added a History step`);
+  await shot('d7-dice-from-encounter-text.png', p);
+  // A second tap while open rolls again (one more line).
+  await p.click('aside.panel [data-testid=encounter-actions] button:text-is("🎲 Roll D6")');
+  await p.waitForTimeout(ROLL_MS);
+  if ((await historyLines()).length !== 2) problems.push(`${tag}: second text tap gave ${(await historyLines()).length} lines`);
+
+  // "Roll a D3" in a reference-table row is a button too.
+  await p.click('aside.panel [data-testid=encounter-actions] button:text-is("📖 Open XX1")');
+  await p.waitForSelector('.tables-pane h3:has-text("Practice Crate Table")');
+  await p.click('.tables-pane tbody button:text-is("🎲 Roll D3")');
+  await p.waitForTimeout(ROLL_MS);
+  if ((await chip()) !== 'D3' || !/^D3: [1-6] → [1-3]$/.test((await historyLines())[0] ?? '')) problems.push(`${tag}: table D3 button gave chip "${await chip()}" / ${JSON.stringify(await historyLines())}`);
+  const rowText = (await p.textContent('.tables-pane tbody tr:nth-child(4)'))?.replace(/\s+/g, ' ').trim();
+  if (!rowText?.includes('A made-up trinket pile. 🎲 Roll D3 to count them.')) problems.push(`${tag}: table row "${rowText}"`);
+  await shot('d8-dice-from-table.png', p);
+
+  // The open state and die are remembered across a reload; 🎲 closes it.
+  await p.reload({ waitUntil: 'load' });
+  await p.waitForTimeout(1200);
+  if (!(await open()) || (await chip()) !== 'D3') problems.push(`${tag}: after reload open=${await open()} chip "${await chip().catch(() => '')}"`);
+  await p.click(diceBtn);
+  await p.waitForTimeout(150);
+  if (await open()) problems.push(`${tag}: 🎲 did not close the panel`);
+  if ((await p.getAttribute(diceBtn, 'aria-pressed')) !== 'false') problems.push(`${tag}: Dice button pressed while closed`);
+  await shot('d9-dice-closed.png', p);
   await ctx.close();
 }
 

@@ -65,7 +65,7 @@ describe('scanEncounter', () => {
     ]);
   });
   it('leaves ordinary text alone', () => {
-    expect(scanEncounter('Gain 1 FP. Roll a D6.', t)).toEqual([{ kind: 'text', text: 'Gain 1 FP. Roll a D6.' }]);
+    expect(scanEncounter('Gain 1 FP. Then rest.', t)).toEqual([{ kind: 'text', text: 'Gain 1 FP. Then rest.' }]);
   });
   it('gives one text part with no tables', () => {
     expect(scanEncounter('PRAC1 GRUMBLER', null)).toEqual([{ kind: 'text', text: 'PRAC1 GRUMBLER' }]);
@@ -98,8 +98,11 @@ describe('scanEncounter reference tables', () => {
     both.tables.referenceTables.PRAC1 = both.tables.referenceTables.XX1;
     expect(scanEncounter('PRAC1', both)[0]!.kind).toBe('roll');
   });
-  it('dice words are plain text', () => {
-    expect(scanEncounter('Roll 2D6 or a D6', t)).toEqual([{ kind: 'text', text: 'Roll 2D6 or a D6' }]);
+  it('dice words without "roll" are plain text', () => {
+    expect(scanEncounter('Roll 2D6 or a D6', t)).toEqual([
+      { kind: 'dice', text: 'Roll 2D6', dice: '2d6' },
+      { kind: 'text', text: ' or a D6' },
+    ]);
   });
   it('rebuilds the input', () => {
     for (const s of ['roll on XX2 +1.', 'XX1 and PRAC1-1, XX2−3', 'XX1XX2 xx1']) {
@@ -110,6 +113,55 @@ describe('scanEncounter reference tables', () => {
     const bare = JSON.parse(JSON.stringify(t));
     delete bare.tables.referenceTables;
     expect(scanEncounter('roll on XX2 +1', bare)).toEqual([{ kind: 'text', text: 'roll on XX2 +1' }]);
+  });
+});
+
+describe('dice phrases', () => {
+  const dice = (s: string, tb: DungeonTables | null = t) => scanEncounter(s, tb).filter((p) => p.kind === 'dice');
+  it('finds each die after "roll", with or without "a"/"an"', () => {
+    expect(dice('Roll a D6.')).toEqual([{ kind: 'dice', text: 'Roll a D6', dice: 'd6' }]);
+    expect(dice('Roll D6 now')).toEqual([{ kind: 'dice', text: 'Roll D6', dice: 'd6' }]);
+    expect(dice('then roll 2D6')).toEqual([{ kind: 'dice', text: 'roll 2D6', dice: '2d6' }]);
+    expect(dice('Roll a D66')).toEqual([{ kind: 'dice', text: 'Roll a D66', dice: 'd66' }]);
+    expect(dice('Roll a D3')).toEqual([{ kind: 'dice', text: 'Roll a D3', dice: 'd3' }]);
+    expect(dice('ROLL AN d6')).toEqual([{ kind: 'dice', text: 'ROLL AN d6', dice: 'd6' }]);
+    expect(dice('Roll 1D6')).toEqual([{ kind: 'dice', text: 'Roll 1D6', dice: 'd6' }]);
+  });
+  it('D-notation alone, or not a whole word, stays text', () => {
+    expect(dice('a D6 or 2D6 in prose')).toEqual([]);
+    expect(dice('Reroll a D6')).toEqual([]);
+    expect(dice('Roll a D6X')).toEqual([]);
+    expect(dice('Roll a D12')).toEqual([]);
+    expect(dice('Roll on XX1')).toEqual([]);
+  });
+  it('never swallows a following code', () => {
+    expect(scanEncounter('Roll a D6. 1-4= Roll on XX1', t)).toEqual([
+      { kind: 'dice', text: 'Roll a D6', dice: 'd6' },
+      { kind: 'text', text: '. 1-4= Roll on ' },
+      { kind: 'table', text: 'XX1', code: 'XX1', modifier: 0 },
+    ]);
+    expect(scanEncounter('Roll a D6: on 1-3 fight the GRUMBLER, else PRAC1 -1', t).map((p) => p.kind)).toEqual(['dice', 'text', 'fight', 'text', 'roll']);
+  });
+  it('works with no tables and with fights off', () => {
+    expect(scanEncounter('Roll 2D6.', null)).toEqual([
+      { kind: 'dice', text: 'Roll 2D6', dice: '2d6' },
+      { kind: 'text', text: '.' },
+    ]);
+    expect(dice('Roll a D3 or fight the GRUMBLER', t).length).toBe(1);
+  });
+  it('rebuilds the input exactly', () => {
+    for (const s of ['Roll a D6. 1-4= Roll on XX1', 'roll  a  D66 then Roll 2d6 and roll D3', 'Roll a D6Roll a D6', 'ROLL A D6 GRUMBLER']) {
+      expect(scanEncounter(s, t).map((p) => p.text).join('')).toBe(s);
+      expect(scanEncounter(s, null).map((p) => p.text).join('')).toBe(s);
+      expect(scanReference(s, t).map((p) => p.text).join('')).toBe(s);
+    }
+  });
+  it('scanReference keeps dice phrases as buttons', () => {
+    expect(scanReference('Roll a D6. 1-4= XX1', t)).toEqual([
+      { kind: 'dice', text: 'Roll a D6', dice: 'd6' },
+      { kind: 'text', text: '. 1-4= ' },
+      { kind: 'table', text: 'XX1', code: 'XX1', modifier: 0 },
+    ]);
   });
 });
 

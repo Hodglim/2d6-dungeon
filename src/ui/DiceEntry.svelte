@@ -1,10 +1,11 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import DieFace from './DieFace.svelte';
-  import { playClack, playTick, unlockAudio } from './sound';
+  import { animateRoll } from './rollAnimation';
+  import { unlockAudio } from './sound';
 
   interface Props {
-    /** Two dice (d66: red = width, blue = height; 2d6: two dice that are added) or a single D6 or D3 (a die read 1–3). */
+    /** Two dice (d66: red = width, blue = height; 2d6: two dice that are added) or a single D6 or D3 (a D6 read in halves: the face is 1–6). */
     dice: 'd66' | '2d6' | 'd6' | 'd3';
     /** Names of the red and blue dice, when not the size ones. */
     labels?: [string, string];
@@ -26,68 +27,26 @@
   let blue = $state('');
   let blueInput = $state<HTMLInputElement>();
 
-  const CYCLE_MS = 80;
-  const SPIN_MS = 900;
-  const STAGGER_MS = 120;
-  const HOLD_MS = 400;
-  const REDUCED_MS = 300;
-
   /** Faces shown while rolling; null when not rolling. */
   let faces = $state<number[] | null>(null);
-  /** Which dice have landed. */
-  let landed = $state<boolean[]>([]);
-  let timers: ReturnType<typeof setTimeout>[] = [];
-  let ticker: ReturnType<typeof setInterval> | null = null;
+  let cancelRoll: (() => void) | null = null;
+  onDestroy(() => cancelRoll?.());
 
-  function cancel() {
-    for (const t of timers) clearTimeout(t);
-    timers = [];
-    if (ticker !== null) clearInterval(ticker);
-    ticker = null;
-  }
-  onDestroy(cancel);
-
-  /** The animation's faces: 1–3 for a D3, so it settles on a face it could show. */
-  const sides = $derived(dice === 'd3' ? 3 : 6);
   const single = $derived(dice === 'd6' || dice === 'd3');
-
-  function randomFace(prev: number): number {
-    let f = prev;
-    while (f === prev) f = Math.floor(Math.random() * sides) + 1;
-    return f;
-  }
 
   function roll() {
     if (faces !== null) return;
     unlockAudio();
     const finals = onroll();
-    const reduced = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
     faces = [...finals];
-    landed = finals.map(() => reduced);
-    const done = () => {
-      cancel();
-      onrolled(finals);
-    };
-    if (reduced) {
-      playClack();
-      timers.push(setTimeout(done, REDUCED_MS));
-      return;
-    }
-    faces = finals.map((f) => randomFace(f));
-    ticker = setInterval(() => {
-      faces = faces!.map((f, i) => (landed[i] ? finals[i]! : randomFace(f)));
-      playTick();
-    }, CYCLE_MS);
-    finals.forEach((f, i) => {
-      timers.push(
-        setTimeout(() => {
-          landed[i] = true;
-          playClack();
-          faces![i] = f;
-        }, SPIN_MS + i * STAGGER_MS),
-      );
+    cancelRoll = animateRoll(finals, 6, {
+      faces: (f) => (faces = f),
+      land: () => {},
+      done: () => {
+        cancelRoll = null;
+        onrolled(finals);
+      },
     });
-    timers.push(setTimeout(done, SPIN_MS + (finals.length - 1) * STAGGER_MS + HOLD_MS));
   }
 
   const rolling = $derived(faces !== null);

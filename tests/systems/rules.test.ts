@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { mulberry32 } from '../../src/render/rng';
 import {
   clampEntranceArea,
+  d3FromD6,
   classify,
   exitCountFor,
   firstWallIndex,
@@ -15,6 +16,12 @@ import {
 
 const d = (primary: number, secondary: number) => ({ primary, secondary });
 const size = (o: Partial<RoomSize>): RoomSize => ({ w: 0, h: 0, corridor: false, doubled: false, fromDouble: false, ...o });
+
+describe('d3FromD6', () => {
+  it('reads a D6 in halves: 1-2 = 1, 3-4 = 2, 5-6 = 3', () => {
+    expect([1, 2, 3, 4, 5, 6].map(d3FromD6)).toEqual([1, 1, 2, 2, 3, 3]);
+  });
+});
 
 describe('parseDie', () => {
   it('accepts 1..6 only', () => {

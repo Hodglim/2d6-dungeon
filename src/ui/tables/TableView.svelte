@@ -44,15 +44,14 @@
   }
 
   function rollFaces(): number[] {
-    if (table.dice === 'd3') return [Math.floor(Math.random() * 3) + 1];
-    if (table.dice === 'd6') return [rollD6(Math.random)];
+    if (table.dice === 'd3' || table.dice === 'd6') return [rollD6(Math.random)]; // a D3 is a D6 read in halves
     return [rollD6(Math.random), rollD6(Math.random)];
   }
 
   function enter(values: string[]) {
     const faces = values.map((v) => (/^\s*\d+\s*$/.test(v) ? Number(v) : NaN));
     if (!table.dice || naturalTotal(table.dice, faces) === null) {
-      typedError = table.dice === 'd3' ? 'Type a number from 1 to 3.' : table.dice === 'd6' ? 'Type a number from 1 to 6.' : 'Type a number from 1 to 6 on each die.';
+      typedError = table.dice === 'd3' || table.dice === 'd6' ? 'Type a number from 1 to 6.' : 'Type a number from 1 to 6 on each die.';
       return;
     }
     apply(faces);
@@ -70,8 +69,10 @@
 
   const sum = $derived.by(() => {
     if (!result) return '';
-    if (result.modifier === 0) return String(result.natural);
-    return `${result.natural} ${result.modifier < 0 ? '−' : '+'} ${Math.abs(result.modifier)} = ${minus(result.total)}`;
+    // A D3 shows the D6 face and how it reads: "5 → 3".
+    const natural = result.d3Face !== undefined ? `${result.d3Face} → ${result.natural}` : String(result.natural);
+    if (result.modifier === 0) return natural;
+    return `${natural} ${result.modifier < 0 ? '−' : '+'} ${Math.abs(result.modifier)} = ${minus(result.total)}`;
   });
 
   // The matching row comes into view when a result lands.

@@ -58,6 +58,9 @@
   import TablesPane from './tables/TablesPane.svelte';
   import { initialTablesState, openTable, type TablesState } from './tables/tablesState';
   import { findTable } from '../systems/dungeon/referenceTables';
+  import DicePanel from './DicePanel.svelte';
+  import { readDicePrefs, writeDicePrefs, type DiceKind } from './diceRoller';
+  import { provideDiceRoll } from './diceContext';
 
   function activeMap(c: Campaign): DungeonMap {
     const m = c.maps.find((x) => x.id === c.activeMapId) ?? c.maps[0];
@@ -121,6 +124,34 @@
   let started = $state(false);
   /** Set when the saved record can't be loaded: it stays untouched until the user picks Import or Start new game. */
   let loadError = $state<{ kind: 'damaged'; error: string; raw: unknown } | { kind: 'unreadable'; error: string } | null>(null);
+
+  /** The floating dice roller: open or not and the chosen die are remembered on this device; rolls are not. */
+  const storage = (): Storage | undefined => {
+    try {
+      return localStorage;
+    } catch {
+      return undefined;
+    }
+  };
+  const dicePrefs = readDicePrefs(storage());
+  let diceOpen = $state(dicePrefs.open);
+  let diceKind = $state<DiceKind>(dicePrefs.dice);
+  /** A "Roll a D6" button asked the roller to roll; the panel takes it once. */
+  let diceRequest = $state<{ dice: DiceKind; seq: number } | null>(null);
+  let diceSeq = 0;
+  $effect(() => writeDicePrefs(storage(), { open: diceOpen, dice: diceKind }));
+  function onDiceButton() {
+    if (!started || loadError || gameOver !== null) return;
+    diceOpen = !diceOpen;
+  }
+  /** A dice phrase in encounter or table text: open the roller on that die and roll once. */
+  function rollFromText(dice: DiceKind) {
+    if (!started || loadError || gameOver !== null) return;
+    diceKind = dice;
+    diceOpen = true;
+    diceRequest = { dice, seq: ++diceSeq };
+  }
+  provideDiceRoll(rollFromText);
   let importError = $state<string | null>(null);
   let fileInput: HTMLInputElement | undefined;
   let tablesInput: HTMLInputElement | undefined;
@@ -867,6 +898,8 @@
       onhero={onHeroButton}
       onencounter={onEncounterButton}
       ontables={onTablesButton}
+      {diceOpen}
+      ondice={onDiceButton}
     />
     {#if toast}<p class="toast" role="status">{toast}</p>{/if}
     <UpdatePrompt />
@@ -906,6 +939,15 @@
     dragsGhost={step.kind === 'position'}
     ghost={step.kind === 'position' ? step.placement.rect : null}
   />
+  {#if diceOpen && started && !loadError && gameOver === null}
+    <DicePanel
+      dice={diceKind}
+      request={diceRequest}
+      onchoose={(d) => (diceKind = d)}
+      onrequesttaken={() => (diceRequest = null)}
+      onclose={() => (diceOpen = false)}
+    />
+  {/if}
   {#snippet stepPanel(collapsed: boolean)}
     <StepPanel
       {tool}

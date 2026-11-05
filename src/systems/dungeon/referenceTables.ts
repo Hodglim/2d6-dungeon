@@ -1,4 +1,5 @@
 import type { DungeonTables } from './tables';
+import { d3FromD6 } from './rules';
 
 /** Reference tables in the player's table file: types, roll-range parsing and validation. Display and rolling only. */
 
@@ -89,13 +90,14 @@ export function referenceProblem(t: Record<string, unknown>): string | null {
   return null;
 }
 
-export interface RefRoll { natural: number; modifier: number; total: number; clamped: number; row: number | null }
+/** `d3Face`: on a D3 table, the D6 face rolled (the natural total is that face read in halves). */
+export interface RefRoll { natural: number; modifier: number; total: number; clamped: number; row: number | null; d3Face?: number }
 
 const validFace = (f: number): boolean => Number.isInteger(f) && f >= 1 && f <= 6;
 
 /** Natural total of the faces for the dice; null when the faces do not fit the dice. */
 export function naturalTotal(dice: RefDice, faces: number[]): number | null {
-  if (dice === 'd3') return faces.length === 1 && Number.isInteger(faces[0]) && faces[0]! >= 1 && faces[0]! <= 3 ? faces[0]! : null;
+  if (dice === 'd3') return faces.length === 1 && validFace(faces[0]!) ? d3FromD6(faces[0]!) : null;
   if (dice === 'd6') return faces.length === 1 && validFace(faces[0]!) ? faces[0]! : null;
   if (faces.length !== 2 || !faces.every(validFace)) return null;
   return dice === '2d6' ? faces[0]! + faces[1]! : faces[0]! * 10 + faces[1]!;
@@ -119,7 +121,9 @@ export function rollReference(t: RefTable, faces: number[], modifier: number): R
   const offTable = total < lo || total > hi;
   const clamped = offTable && rowOf(natural) >= 0 ? Math.min(Math.max(total, lo), hi) : total;
   const i = rowOf(clamped);
-  return { natural, modifier: mod, total, clamped, row: i < 0 ? null : i };
+  const roll: RefRoll = { natural, modifier: mod, total, clamped, row: i < 0 ? null : i };
+  if (t.dice === 'd3') roll.d3Face = faces[0]!;
+  return roll;
 }
 
 /** Case-insensitive lookup by table id. */

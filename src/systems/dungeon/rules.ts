@@ -21,6 +21,11 @@ export interface RoomSize {
   dice?: D66[];
 }
 
+/** A D3 is a real D6 read in halves: 1-2 = 1, 3-4 = 2, 5-6 = 3. */
+export function d3FromD6(face: number): number {
+  return Math.ceil(face / 2);
+}
+
 export function rollD6(rng: Rng): number {
   return Math.floor(rng() * 6) + 1;
 }
