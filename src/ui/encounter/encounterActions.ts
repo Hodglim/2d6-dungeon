@@ -3,9 +3,8 @@ import { setPlay, updateRoom } from '../../core/commands';
 import { roomAt } from '../../core/query';
 import type { ExecResult, History } from '../../core/history';
 import { addFoe, awardXp, defeatedLine, dropRolled, logThrow, newEncounter, queueRoll, recordRoll, resolveRoll, setFoeHp, setRecovered, totalXp, type Encounter, type ThrowLog } from '../../systems/dungeon/combat';
-import { rollD6, type Rng } from '../../systems/dungeon/rules';
 import { bombDamage, recovers, throwDamage, type CarriedWeapon, type PotionBomb } from '../../systems/dungeon/throwing';
-import { parseDamage, rollDice, rollTotal } from '../diceRoller';
+import { parseDamage, rollTotal } from '../diceRoller';
 import { findCreature, rollCreatureTable, type CreatureRoll } from '../../systems/dungeon/creatures';
 import type { Hero } from '../../systems/dungeon/hero';
 import { addXp } from '../hero/heroActions';
@@ -213,12 +212,11 @@ const minusHp = (e: Encounter, foeId: string, damage: number): Encounter => {
  * the pack (a recovery roll after the fight may put it back), log the throw and take the damage
  * off, all as one step.
  */
-export function throwWeapon(history: History, c: CarriedWeapon, foeId: string, interrupts: readonly CreatureInterrupt[], rng: Rng): ExecResult {
+export function throwWeapon(history: History, c: CarriedWeapon, foeId: string, interrupts: readonly CreatureInterrupt[], faces: number[]): ExecResult {
   const e = history.encounter as Encounter | null;
   const h = history.hero as Hero | null;
   if (!e || !h || !e.foes.some((f) => f.id === foeId)) return { ok: false, reason: 'No fight or no hero' };
   if (h[c.list][c.index] !== c.item) return { ok: false, reason: `${c.item} is no longer in the pack` };
-  const faces = [rollD6(rng), rollD6(rng)];
   const r = throwDamage(faces, c.weapon.damage, c.modifier, interrupts, e.round);
   const log: ThrowLog = {
     kind: 'weapon', name: c.weapon.name, foeId, round: e.round, faces, damage: r.damage,
@@ -229,17 +227,16 @@ export function throwWeapon(history: History, c: CarriedWeapon, foeId: string, i
 }
 
 /** Throw a carried potion bomb at foe `foeId`: used up, its damage (if any) rolled and taken off, as one step. */
-export function throwBomb(history: History, c: { bomb: PotionBomb; index: number }, foeId: string, dungeonLevel: number, rng: Rng): ExecResult {
+export function throwBomb(history: History, c: { bomb: PotionBomb; index: number }, foeId: string, dungeonLevel: number, faces: number[]): ExecResult {
   const e = history.encounter as Encounter | null;
   const h = history.hero as Hero | null;
   if (!e || !h || !e.foes.some((f) => f.id === foeId)) return { ok: false, reason: 'No fight or no hero' };
-  if (!h.potions[c.index]) return { ok: false, reason: `${c.bomb.name} is no longer in the pack` };
+  if (!h.potions[c.index]?.name.toLowerCase().includes(c.bomb.name.toLowerCase())) return { ok: false, reason: `${c.bomb.name} is no longer in the pack` };
   const dice = c.bomb.damage ? parseDamage(c.bomb.damage) : null;
-  const faces = dice ? rollDice(dice.dice, rng) : [];
   const rolled = dice ? Number(rollTotal(dice.dice, faces, dice.modifier)) : null;
   const damage = bombDamage(c.bomb, rolled, dungeonLevel);
   const log: ThrowLog = {
-    kind: 'bomb', name: c.bomb.name, foeId, round: e.round, faces, damage,
+    kind: 'bomb', name: c.bomb.name, foeId, round: e.round, faces: dice ? faces : [], damage,
     ...(c.bomb.noAttack ? { noAttack: true } : {}),
     ...(c.bomb.noMovementInterrupts ? { noMovementInterrupts: true } : {}),
   };

@@ -15,7 +15,11 @@ mkdirSync(outDir, { recursive: true });
 const browser = await firefox.launch();
 // The home-screen hint is tested in step 10; the other steps start with it dismissed so layouts don't shift.
 const mainCtx = await browser.newContext({ viewport: { width: 1180, height: 820 }, deviceScaleFactor: 2, hasTouch: true });
-await mainCtx.addInitScript(() => localStorage.setItem('2d6.installHintDismissed', '1'));
+// The floating dice roller starts open in "Enter my roll" mode: the map-building steps are typed into it.
+await mainCtx.addInitScript(() => {
+  localStorage.setItem('2d6.installHintDismissed', '1');
+  localStorage.setItem('2d6.diceRoller', JSON.stringify({ open: true, dice: 'd6', enter: true }));
+});
 const page = await mainCtx.newPage();
 const errors = [];
 const problems = [];
@@ -83,9 +87,29 @@ const stepIs = async (want, where) => {
   console.log(`Step after ${where}: ${got}`);
   if (got !== want) problems.push(`after ${where}: expected step "${want}", got "${got}"`);
 };
-const typeDice = async (...values) => {
-  const inputs = await page.$$('aside.panel form.dice input');
-  for (let i = 0; i < values.length; i++) await inputs[i].fill(values[i]);
+// The dice are the floating roller's. These open it and set "Enter my roll" explicitly (click the toggle
+// only when its state differs), so a check never inverts what an earlier one left behind.
+const rollerPanel = '[data-testid=dice-panel]';
+const rollerEnterModeOn = async (p, on) => {
+  if (!(await p.isVisible(rollerPanel))) await p.click('header.toolbar button[aria-label="Dice"]');
+  await p.waitForSelector(rollerPanel);
+  const toggle = `${rollerPanel} [data-testid=dice-enter]`;
+  if (((await p.getAttribute(toggle, 'aria-pressed')) === 'true') !== on) await p.click(toggle);
+};
+/** Types the values into the roller's boxes, in order, and clicks "Use these". */
+const rollerEnterOn = async (p, ...values) => {
+  await rollerEnterModeOn(p, true);
+  const boxes = `${rollerPanel} [data-testid=dice-typed] input`;
+  for (let i = 0; i < values.length; i++) await p.fill(`:nth-match(${boxes}, ${i + 1})`, String(values[i]));
+  await p.click(`${rollerPanel} [data-testid=dice-typed] button:text-is("Use these")`);
+  await p.waitForTimeout(200);
+};
+const rollerEnter = (...values) => rollerEnterOn(page, ...values);
+/** In-memory copy of the fixture where a carried kit item can be thrown and a carried potion is a bomb (the file is unchanged). */
+const withThrowing = (fx) => {
+  fx.tables.throwingWeapons = [{ name: 'Bootlace', damage: 3 }];
+  fx.tables.potionBombs = [{ name: 'Mild Cheer', effect: 'Made up.', damage: '2D6 +1' }];
+  return fx;
 };
 const panelButton = (name) => page.click(`aside.panel button:text-is("${name}")`);
 /** The step panel must sit beside the map, never over it; its buttons must be touch-sized. */
@@ -102,10 +126,9 @@ const checkPanel = async (where) => {
 // 2. Entrance: tap the square below the bottom edge at x=12, then type red 3, blue 4.
 await tapWorld(12.5, 25.5);
 await stepIs('size', 'tapping the entrance square');
-await typeDice('3', '4');
 await checkPanel('entrance size');
 await shot('02-entrance-size.png');
-await panelButton('Use these');
+await rollerEnter('3', '4');
 await stepIs('position', 'entering the entrance dice');
 await checkPanel('entrance position');
 await shot('03-position.png');
@@ -134,11 +157,15 @@ await shot('20-after-reload.png');
 // 3. Room 2 from the entrance room's north exit (12,20): doubles 4-4, then 2-1 → 6×5.
 await tapWorld(12.5, 20);
 await stepIs('size', 'tapping the north exit');
-await typeDice('4', '4');
-await panelButton('Use these');
+// An invalid typed roll: the step's own error shows in the roller, the step stays on "size" and nothing is applied.
+await rollerEnter('7', '1');
+const sizeError = (await page.textContent(`${rollerPanel} [data-testid=dice-typed] [role=alert]`).catch(() => null))?.trim() ?? '';
+console.log(`Room size 7/1 error in the roller: "${sizeError}"`);
+if (!sizeError) problems.push('typing 7/1 for the room size showed no error in the roller');
+await stepIs('size', 'typing 7/1 for the room size');
+await rollerEnter('4', '4');
 if (!(await page.isVisible('aside.panel .double'))) problems.push('doubles did not ask for a second roll');
-await typeDice('2', '1');
-await panelButton('Use these');
+await rollerEnter('2', '1');
 await stepIs('position', 'entering room 2 dice');
 
 // 3b. Ghost follows the pointer: mouse hover and a one-finger drag slide it, never pan.
@@ -206,14 +233,24 @@ await shot('13-ghost-follows.png');
 const [tx, ty, tw, th] = (await ghostOf()).split(',').map(Number);
 await tapWorld(tx + tw / 2, ty + th / 2);
 await stepIs('exitCount', 'clicking to place room 2');
-await typeDice('5'); // two exits
-await panelButton('Use this');
+// A 9 for Exits is refused by the step: its error shows in the roller, nothing is recorded, the typed box keeps the 9.
+{
+  const histLines = () => page.$$eval(`${rollerPanel} [data-testid=dice-history] li`, (els) => els.length).catch(() => 0);
+  const before = await histLines();
+  await rollerEnter('9');
+  const err = (await page.textContent(`${rollerPanel} [data-testid=dice-typed] [role=alert]`).catch(() => ''))?.trim();
+  if (err !== 'Enter a whole number from 1 to 6') problems.push(`typed 9 for Exits: error "${err}"`);
+  if ((await histLines()) !== before) problems.push('typed 9 for Exits left a history line');
+  if ((await page.inputValue(`${rollerPanel} [data-testid=dice-typed] input`).catch(() => '')) !== '9') problems.push('typed 9 for Exits cleared the box');
+  await stepIs('exitCount', 'a rejected 9 for Exits');
+  await page.fill(`${rollerPanel} [data-testid=dice-typed] input`, '');
+}
+await rollerEnter('5'); // two exits
 await stepIs('exitType', 'the exit count');
 await page.click('aside.panel button:has-text("Wooden door")');
 await stepIs('exits', 'choosing wooden doors');
 await tapWorld(12.5, 15); // the north wall, by tapping
-await typeDice('2');
-await panelButton('Place for me'); // the other one clockwise from the typed D6
+await rollerEnter('2'); // places the other one clockwise from the typed D6
 await panelButton('Done');
 await stepIs('label', 'placing room 2 exits');
 await page.fill('aside.panel input[type="text"]', 'Lamp Room');
@@ -225,8 +262,7 @@ await shot('06-two-rooms.png');
 
 // 4. Mid-flow rotation: start a room from the west exit, then resize to portrait.
 await tapWorld(10, 22.5);
-await typeDice('3', '2');
-await panelButton('Use these');
+await rollerEnter('3', '2');
 await stepIs('position', 'starting a room from the west exit');
 await page.setViewportSize({ width: 820, height: 1180 });
 await page.waitForTimeout(600);
@@ -1040,10 +1076,7 @@ for (const reduced of [false, true]) {
   const stepNow = () => p.getAttribute('aside.panel .body', 'data-step');
   const waitStep = (want) => p.waitForFunction((w) => document.querySelector('aside.panel .body')?.getAttribute('data-step') === w, want, { timeout: 5000 }).then(() => true, () => false);
   await tap(12.5, 25.5);
-  const ins = await p.$$('aside.panel form.dice input');
-  await ins[0].fill('3');
-  await ins[1].fill('4');
-  await btn('Use these');
+  await rollerEnterOn(p, '3', '4');
   await btn('Place');
   await btn('Done');
   await btn('Done');
@@ -1053,9 +1086,10 @@ for (const reduced of [false, true]) {
   let guard = 0;
   let sampled = new Set();
   while ((await stepNow()) === 'size' && guard++ < 6) {
-    const label = 'aside.panel form.dice .face [role=img]';
-    await p.click('aside.panel button:text-is("🎲 Roll for me")');
-    if (await p.locator('aside.panel form.dice button:disabled').count() < 2) problems.push(`${tag}: buttons not disabled while rolling`);
+    const label = `${rollerPanel} [data-testid=dice-result] [role=img]`;
+    await rollerEnterModeOn(p, false);
+    await p.click('aside.panel [data-testid=roll-card] button');
+    if (await p.locator(`${rollerPanel} button.roll:disabled`).count() < 1) problems.push(`${tag}: roller Roll button not disabled while rolling`);
     if (!reduced && guard === 1) {
       for (let i = 0; i < 8; i++) {
         await p.waitForTimeout(70);
@@ -1087,7 +1121,8 @@ for (const reduced of [false, true]) {
     if (await p.isDisabled('aside.panel button:text-is("Place")')) await btn('Shrink to fit').catch(() => {});
     await btn('Place');
     if (await waitStep('exitCount')) {
-      await p.click('aside.panel button:text-is("🎲 Roll for me")');
+      await rollerEnterModeOn(p, false);
+      await p.click('aside.panel [data-testid=roll-card] button');
       const left = await p.waitForFunction(() => document.querySelector('aside.panel .body')?.getAttribute('data-step') !== 'exitCount', null, { timeout: 5000 }).then(() => true, () => false);
       if (!left) problems.push(`${tag}: exit count roll never advanced`);
     } else problems.push(`${tag}: no exit count step after placing`);
@@ -1128,10 +1163,6 @@ for (const reduced of [false, true]) {
   };
   const btn = (name) => p.click(`aside.panel button:text-is("${name}")`);
   const stepNow = () => p.getAttribute('aside.panel .body', 'data-step');
-  const dice = async (...v) => {
-    const ins = await p.$$('aside.panel form.dice input');
-    for (let i = 0; i < v.length; i++) await ins[i].fill(v[i]);
-  };
   const fixtureObj2 = JSON.parse(readFileSync('tests/fixtures/dungeon-tables.fixture.json').toString());
   const load = async (obj) => {
     await p.setInputFiles('input[data-extra="tables"]', { name: 'tables.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(obj)) });
@@ -1140,26 +1171,21 @@ for (const reduced of [false, true]) {
   const undo = async () => (await p.textContent('header.toolbar button.history'))?.replace(/\s+/g, ' ').trim() ?? '';
   await load(fixtureObj2);
   await tap(12.5, 25.5);
-  await dice('3', '4');
-  await btn('Use these');
+  await rollerEnterOn(p, '3', '4');
   await btn('Place');
   await btn('Done');
   await btn('Done');
   await p.waitForTimeout(1500);
   const roomUndo0 = await undo();
   await tap(12.5, 20);
-  await dice('3', '4');
-  await btn('Use these');
+  await rollerEnterOn(p, '3', '4');
   await btn('Place');
-  await dice('4');
-  await btn('Use this');
+  await rollerEnterOn(p, '4');
   if ((await stepNow()) !== 'exits') problems.push(`${tag}: expected the exits step (no exit type step), got ${await stepNow()}`);
-  await dice('3');
-  await btn('Place for me');
+  await rollerEnterOn(p, '3');
   await btn('Done');
   if ((await stepNow()) !== 'label') problems.push(`${tag}: expected the label step, got ${await stepNow()}`);
-  await dice('3', '4');
-  await btn('Use these');
+  await rollerEnterOn(p, '3', '4');
   const resultText = (await p.textContent('[data-testid=room-result]'))?.replace(/\s+/g, ' ').trim() ?? '';
   console.log(`${tag}: "${resultText}"`);
   if (!resultText.includes('Practice Room 34')) problems.push(`${tag}: result missing the room type: "${resultText}"`);
@@ -1189,15 +1215,12 @@ for (const reduced of [false, true]) {
   delete bare.tables.dungeonLevels;
   await load(bare);
   await tap(12.5, 20);
-  await dice('3', '4');
-  await btn('Use these');
+  await rollerEnterOn(p, '3', '4');
   await btn('Place');
-  await dice('4');
-  await btn('Use this');
+  await rollerEnterOn(p, '4');
   if ((await stepNow()) !== 'exitType') problems.push(`${tag}: no-level table file should keep the exit type step, got ${await stepNow()}`);
   await p.click('aside.panel button:has-text("Wooden door")');
-  await dice('3');
-  await btn('Place for me');
+  await rollerEnterOn(p, '3');
   await btn('Done');
   if (!(await p.isVisible('[data-testid=no-level-tables]'))) problems.push(`${tag}: no-level message missing`);
   await shot('47-no-level-tables.png', p);
@@ -1227,10 +1250,6 @@ for (const reduced of [false, true]) {
   };
   const btn = (name) => p.click(`aside.panel button:text-is("${name}")`);
   const tool = (name) => p.click(`header.toolbar button.tool:text-is("${name}")`);
-  const dice = async (...v) => {
-    const ins = await p.$$('aside.panel form.dice input');
-    for (let i = 0; i < v.length; i++) await ins[i].fill(v[i]);
-  };
   const undo = async () => (await p.textContent('header.toolbar button.history'))?.replace(/\s+/g, ' ').trim() ?? '';
   const doorNow = async (x, y) => {
     await tool('Door');
@@ -1242,20 +1261,16 @@ for (const reduced of [false, true]) {
   await p.setInputFiles('input[data-extra="tables"]', { name: 'tables.json', mimeType: 'application/json', buffer: Buffer.from(readFileSync('tests/fixtures/dungeon-tables.fixture.json')) });
   await p.waitForTimeout(500);
   await tap(12.5, 25.5);
-  await dice('3', '4');
-  await btn('Use these');
+  await rollerEnterOn(p, '3', '4');
   await btn('Place');
   await btn('Done');
   await btn('Done');
   await p.waitForTimeout(1500);
   await tap(12.5, 20);
-  await dice('3', '4');
-  await btn('Use these');
+  await rollerEnterOn(p, '3', '4');
   await btn('Place');
-  await dice('4');
-  await btn('Use this');
-  await dice('3');
-  await btn('Place for me');
+  await rollerEnterOn(p, '4');
+  await rollerEnterOn(p, '3');
   await btn('Done');
   await btn('Skip'); // skip the roll
   await btn('Skip'); // and leave the room unlabelled
@@ -1272,8 +1287,7 @@ for (const reduced of [false, true]) {
   if (!(await p.isVisible('aside.panel button:text-is("Roll for this room")'))) problems.push(`${tag}: no "Roll for this room" button`);
   await shot('48a-roll-later-button.png', p);
   await btn('Roll for this room');
-  await dice('3', '4');
-  await btn('Use these');
+  await rollerEnterOn(p, '3', '4');
   const result = (await p.textContent('[data-testid=room-result]'))?.replace(/\s+/g, ' ').trim() ?? '';
   console.log(`${tag}: "${result}"`);
   if (!result.includes('Practice Room 34') || !/Wooden/i.test(result) || !/locked/.test(result)) problems.push(`${tag}: bad result "${result}"`);
@@ -1321,10 +1335,6 @@ for (const reduced of [false, true]) {
     await p.waitForTimeout(150);
   };
   const btn = (name) => p.click(`aside.panel button:text-is("${name}")`);
-  const dice = async (...v) => {
-    const ins = await p.$$('aside.panel form.dice input');
-    for (let i = 0; i < v.length; i++) await ins[i].fill(v[i]);
-  };
   const wiz = (t) => p.click(`[role=dialog][aria-labelledby=wizard-title] button:text-is("${t}")`);
   const menu = () => p.click('header.toolbar button[aria-label="Menu"]');
   const banner = async (where) => {
@@ -1363,8 +1373,7 @@ for (const reduced of [false, true]) {
   if (await p.isVisible('[role=alertdialog] button:text-is("Replace")')) await p.click('[role=alertdialog] button:text-is("Replace")');
   await p.waitForTimeout(800);
   await tap(12.5, 25.5);
-  await dice('3', '4');
-  await btn('Use these');
+  await rollerEnterOn(p, '3', '4');
   await btn('Place');
   await btn('Done');
   await btn('Done');
@@ -1404,8 +1413,7 @@ for (const reduced of [false, true]) {
   // The new level's entrance: three archways, no doubles (1-1 stays a 1x1... the clamp applies, no second roll).
   await p.click('header.toolbar button.tool:text-is("Play")');
   await tap(12.5, 25.5);
-  await dice('2', '2');
-  await btn('Use these');
+  await rollerEnterOn(p, '2', '2');
   const stepAfter = await p.getAttribute('aside.panel .body', 'data-step');
   if (stepAfter !== 'position') problems.push(`${tag}: doubles on the entrance asked for a second roll (step ${stepAfter})`);
   await btn('Place');
@@ -1495,7 +1503,13 @@ for (const reduced of [false, true]) {
     foes: await p.$$eval(`${pane} .foe`, (els) => els.map((e) => `${e.querySelector('.name span')?.textContent?.trim()}:${e.querySelector('.num')?.textContent?.trim()}`)),
   });
 
-  await p.setInputFiles('input[data-extra="tables"]', { name: 'tables.json', mimeType: 'application/json', buffer: Buffer.from(readFileSync('tests/fixtures/dungeon-tables.fixture.json')) });
+  // In-memory copy only: the hero's Wobbly Poke deals "D6 +1", so its hit offers a damage roll.
+  const withPokeDamage = (fx) => {
+    for (const w of fx.tables.weapons ?? []) for (const m of w.manoeuvres) if (m.name === 'Wobbly Poke') m.damage = 'D6 +1';
+    fx.tables.creatures['Moss Lurker'].prime = 'Made-up spores burst. Lose D6 HP.';
+    return withThrowing(fx);
+  };
+  await p.setInputFiles('input[data-extra="tables"]', { name: 'tables.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(withPokeDamage(JSON.parse(readFileSync('tests/fixtures/dungeon-tables.fixture.json', 'utf8'))))) });
   await p.waitForTimeout(500);
   // A made-up card for one of the fixture creatures, so the pane has a picture to lose later.
   const img = await p.evaluate(() => {
@@ -1532,9 +1546,7 @@ for (const reduced of [false, true]) {
   if (await p.isVisible('[role=alertdialog] button:text-is("Replace")')) await p.click('[role=alertdialog] button:text-is("Replace")');
   await p.waitForTimeout(800);
   await tap(12.5, 25.5);
-  await p.fill('aside.panel form.dice input >> nth=0', '3');
-  await p.fill('aside.panel form.dice input >> nth=1', '4');
-  await btn('Use these');
+  await rollerEnterOn(p, '3', '4');
   await btn('Place');
   await btn('Done');
   await btn('Done');
@@ -1575,47 +1587,121 @@ for (const reduced of [false, true]) {
   await p.fill(`${pane} .foe:has(.name span:text-is("Moss Lurker")) input`, '2.5');
   await p.keyboard.press('Enter');
   if ((await foeHp('Moss Lurker')) !== '6') problems.push(`${tag}: typed 2.5 was not ignored`);
+  // Throws before the attack: they ask the floating roller, and commit one History step.
+  {
+    const tp = `${pane} [data-testid=throw-panel]`;
+    const forText = async () => ((await p.textContent(`${rollerPanel} [data-testid=dice-for]`)) ?? '').replace(/\s+/g, ' ').trim();
+    const throwBtn = `${tp} button:has-text("Throw Spare Bootlace")`;
+    await rollerEnterModeOn(p, true);
+    await p.click(throwBtn);
+    if (!(await forText()).includes('Throw Spare Bootlace at Grumbler')) problems.push(`${tag}: throw not asked of the roller: "${await forText()}"`);
+    await rollerEnterOn(p, '7', '1');
+    if (!(await p.isVisible(`${rollerPanel} [data-testid=dice-typed] [role=alert]`))) problems.push(`${tag}: typed 7 for a throw showed no error`);
+    if (!(await p.isVisible(throwBtn))) problems.push(`${tag}: an invalid typed throw was applied`);
+    await rollerEnterOn(p, '3', '4');
+    if (!(await undoText()).includes('Throw Bootlace')) problems.push(`${tag}: typed throw undo "${await undoText()}"`);
+    if (await p.isVisible(throwBtn)) problems.push(`${tag}: thrown weapon still offered`);
+    await p.keyboard.press('Control+z');
+    await p.waitForTimeout(200);
+    if (!(await p.isVisible(throwBtn))) problems.push(`${tag}: Undo of the throw did not bring the weapon back`);
+    // Rolled in the roller itself.
+    await rollerEnterModeOn(p, false);
+    await p.click(throwBtn);
+    await p.waitForTimeout(1100);
+    if (!(await undoText()).includes('Throw Bootlace')) problems.push(`${tag}: rolled throw undo "${await undoText()}"`);
+    await p.keyboard.press('Control+z');
+    await p.waitForTimeout(200);
+    // A bomb with damage dice asks for them.
+    await p.click(`${tp} button:has-text("Mild Cheer")`);
+    if (!(await forText()).includes('Mild Cheer at Grumbler')) problems.push(`${tag}: bomb not asked of the roller: "${await forText()}"`);
+    await p.waitForTimeout(1100);
+    if (!(await undoText()).includes('Throw Mild Cheer')) problems.push(`${tag}: bomb undo "${await undoText()}"`);
+    await p.keyboard.press('Control+z');
+    await p.waitForTimeout(200);
+    // An un-rolled request does not outlive the turn.
+    await rollerEnterModeOn(p, true);
+    await p.click(throwBtn);
+    await p.click(`${pane} button:text-is("Next turn")`);
+    await p.waitForTimeout(200);
+    if ((await forText()).includes('Throw Spare Bootlace')) problems.push(`${tag}: an unrolled throw was still the roller's target after Next turn`);
+    await p.keyboard.press('Control+z');
+    await p.waitForTimeout(200);
+    await rollerEnterModeOn(p, true);
+  }
   // Turns and the attack dice. The hero (Shift 2) knows Wobbly Poke 1-4 and Gentle Swipe 2-6.
   const td = `${pane} [data-testid=turn-dice]`;
+  const sh = `${rollerPanel} [data-testid=dice-shifter]`;
+  // The attack card hands the dice to the roller: aim the roller at it, then type red and blue there.
   const typeDice = async (a, b) => {
-    await p.fill(`${td} form.dice input >> nth=0`, String(a));
-    await p.fill(`${td} form.dice input >> nth=1`, String(b));
-    await p.click(`${td} form.dice button:text-is("Use these")`);
+    await rollerEnterModeOn(p, true);
+    await p.click(`${td} [data-testid=roll-card] button`);
+    await rollerEnterOn(p, a, b);
   };
   const faces = () => p.$$eval(`${td} [data-testid=attack-die]`, (els) => els.map((e) => e.dataset.value).join('-'));
-  const shiftLeft = async () => (await p.textContent(`${td} [data-testid=shift-left]`))?.trim();
+  const shiftLeft = async () => (await p.textContent(`${sh} [data-testid=shift-left]`))?.trim();
   const lit = () => p.$$eval(`${pane} [data-testid=manoeuvre].match .m-name`, (els) => els.map((e) => e.textContent.trim()).join('|'));
-  const rollNoteText = async () => ((await p.isVisible(`${td} [data-testid=roll-note]`)) ? (await p.textContent(`${td} [data-testid=roll-note]`))?.trim() : null);
+  const rollNoteText = async () => ((await p.isVisible(`${td} [data-testid=roll-note]`)) ? (await p.textContent(`${td} [data-testid=roll-note] p`))?.trim() : null);
   const nextTurn = () => p.click(`${pane} button:text-is("Next turn")`);
   const turnText = async () => (await p.textContent(`${pane} [data-testid=turn]`))?.trim();
   const ms = await p.$$eval(`${pane} [data-testid=manoeuvre] .m-name`, (els) => els.map((e) => e.textContent.trim()).join('|'));
   if (ms !== 'Wobbly Poke|Gentle Swipe') problems.push(`${tag}: hero manoeuvres listed "${ms}"`);
   await typeDice(2, 4);
   if ((await faces()) !== '2-4' || (await shiftLeft()) !== 'Shift left: 2 of 2' || (await lit()) !== '') problems.push(`${tag}: 2-4 rolled: ${await faces()} "${await shiftLeft()}" lit "${await lit()}"`);
-  await p.click(`${td} button[aria-label="Red die down"]`);
+  await p.click(`${sh} button[aria-label="Red die down"]`);
   if ((await faces()) !== '1-4' || (await shiftLeft()) !== 'Shift left: 1 of 2' || (await lit()) !== 'Wobbly Poke') problems.push(`${tag}: one shift down: ${await faces()} "${await shiftLeft()}" lit "${await lit()}"`);
   if ((await rollNoteText()) !== null) problems.push(`${tag}: a shifted match was called "${await rollNoteText()}"`);
+  const histTop = async () => (await p.textContent(`${rollerPanel} [data-testid=dice-history] li >> nth=0`).catch(() => ''))?.trim() ?? '';
+  if (!/\(shifted to 1, 4\)$/.test(await histTop())) problems.push(`${tag}: roller history after a shift "${await histTop()}"`);
+  if ((await p.textContent(`${td}`))?.includes('Shift in the dice roller') !== true) problems.push(`${tag}: pane lacks the "Shift in the dice roller" line`);
   await shot('51a-shift-match.png', p);
   // Left-click the blue die: up one, the pool is spent and nothing matches.
-  await p.click(`${td} [data-testid=attack-die] >> nth=1`);
+  await p.click(`${sh} [data-testid=shift-die] >> nth=1`);
   if ((await faces()) !== '1-5' || (await shiftLeft()) !== 'Shift left: 0 of 2' || (await lit()) !== '') problems.push(`${tag}: blue up: ${await faces()} "${await shiftLeft()}" lit "${await lit()}"`);
-  if (!(await p.isDisabled(`${td} button[aria-label="Blue die up"]`)) || !(await p.isDisabled(`${td} button[aria-label="Red die down"]`))) problems.push(`${tag}: arrows not disabled with the pool spent`);
-  await p.click(`${td} [data-testid=attack-die] >> nth=1`);
+  if (!(await p.isDisabled(`${sh} button[aria-label="Blue die up"]`)) || !(await p.isDisabled(`${sh} button[aria-label="Red die down"]`))) problems.push(`${tag}: arrows not disabled with the pool spent`);
+  await p.click(`${sh} [data-testid=shift-die] >> nth=1`);
   if ((await faces()) !== '1-5') problems.push(`${tag}: shifted past the pool: ${await faces()}`);
   // Right-click the blue die: back down, the point comes back.
-  await p.click(`${td} [data-testid=attack-die] >> nth=1`, { button: 'right' });
+  await p.click(`${sh} [data-testid=shift-die] >> nth=1`, { button: 'right' });
   if ((await faces()) !== '1-4' || (await shiftLeft()) !== 'Shift left: 1 of 2' || (await lit()) !== 'Wobbly Poke') problems.push(`${tag}: right-click refund: ${await faces()} "${await shiftLeft()}" lit "${await lit()}"`);
-  const smallTd = await p.$$eval(`${td} button`, (els) => els.map((e) => ({ t: e.getAttribute('aria-label') ?? e.textContent?.trim(), r: e.getBoundingClientRect() })).filter((b) => b.r.width > 0 && (b.r.width < 44 || b.r.height < 44)).map((b) => b.t));
+  // A free roll sets the roller loose from the attack; the pane's button points it back and the shifter returns.
+  await p.click(`${rollerPanel} button[aria-label="Roll freely"]`);
+  if (await p.isVisible(sh)) problems.push(`${tag}: shifter still shown after a free roll took the roller`);
+  await p.click(`${td} button:text-is("Shift in the dice roller")`);
+  if (!(await p.isVisible(sh)) || (await faces()) !== '1-4' || (await shiftLeft()) !== 'Shift left: 1 of 2') problems.push(`${tag}: re-aiming at the attack: shifter ${await p.isVisible(sh)} ${await faces()} "${await shiftLeft()}"`);
+  if (!(await p.textContent(`${rollerPanel} [data-testid=dice-for]`))?.includes('Your attack')) problems.push(`${tag}: roller not back on the attack: "${await p.textContent(`${rollerPanel} [data-testid=dice-for]`)}"`);
+  const smallTd = await p.$$eval(`${sh} button`, (els) => els.map((e) => ({ t: e.getAttribute('aria-label') ?? e.textContent?.trim(), r: e.getBoundingClientRect() })).filter((b) => b.r.width > 0 && (b.r.width < 44 || b.r.height < 44)).map((b) => b.t));
   if (smallTd.length) problems.push(`${tag}: small attack-dice buttons ${smallTd.join(', ')}`);
   // A natural match is an Exact Strike; a natural 1-1 always misses and can't be shifted.
-  await p.click(`${td} button:text-is("Roll again")`);
+  await p.click(`${sh} button:text-is("Roll again")`);
   await typeDice(1, 4);
   if ((await rollNoteText()) !== 'Exact Strike: add your Shift to the damage' || (await lit()) !== 'Wobbly Poke') problems.push(`${tag}: exact strike "${await rollNoteText()}" lit "${await lit()}"`);
   await shot('51b-exact-strike.png', p);
-  await p.click(`${td} button:text-is("Roll again")`);
+  // A damage button hands its roll to the floating roller and leaves the total beside itself.
+  const dmgBtn = `${pane} [data-testid=manoeuvre].match button.m-roll`;
+  const dmgNote = `${pane} [data-testid=manoeuvre].match [data-testid=damage-note]`;
+  if (!(await p.isVisible(dmgBtn))) problems.push(`${tag}: no damage button on the hit manoeuvre`);
+  else {
+    await rollerEnterModeOn(p, false);
+    await p.click(dmgBtn);
+    await p.waitForTimeout(1100);
+    const noteRolled = (await p.textContent(dmgNote).catch(() => ''))?.trim() ?? '';
+    if (!/^Rolled [1-7] damage$/.test(noteRolled)) problems.push(`${tag}: rolled damage note "${noteRolled}"`);
+    const hist = (await p.textContent(`${rollerPanel} [data-testid=dice-history] li >> nth=0`).catch(() => ''))?.trim() ?? '';
+    if (!hist.startsWith('Wobbly Poke damage')) problems.push(`${tag}: roller history starts "${hist}"`);
+    // Typed: a 7 is refused in the roller; a 4 gives 4 + 1.
+    await rollerEnterModeOn(p, true);
+    await p.click(dmgBtn);
+    await rollerEnterOn(p, '7');
+    if (!(await p.isVisible(`${rollerPanel} >> text=Type a number from 1 to 6.`))) problems.push(`${tag}: typed 7 damage not refused`);
+    await rollerEnterOn(p, '4');
+    const noteTyped = (await p.textContent(dmgNote).catch(() => ''))?.trim() ?? '';
+    if (noteTyped !== 'Rolled 5 damage') problems.push(`${tag}: typed damage note "${noteTyped}"`);
+    await shot('51c-damage-note.png', p);
+  }
+  await p.click(`${sh} button:text-is("Roll again")`);
   await typeDice(1, 1);
-  if ((await rollNoteText()) !== 'Double 1: always a miss' || !(await p.isDisabled(`${td} button[aria-label="Red die up"]`))) problems.push(`${tag}: double 1 "${await rollNoteText()}"`);
-  await p.click(`${td} button:text-is("Roll again")`);
+  if ((await rollNoteText()) !== 'Double 1: always a miss' || !(await p.isDisabled(`${sh} button[aria-label="Red die up"]`))) problems.push(`${tag}: double 1 "${await rollNoteText()}"`);
+  await p.click(`${sh} button:text-is("Roll again")`);
   await typeDice(6, 6);
   if ((await rollNoteText()) !== 'Prime Attack: pick any manoeuvre and add your Shift to the damage') problems.push(`${tag}: hero double 6 "${await rollNoteText()}"`);
   // Next turn: Grumbler (SH 0, round 1: no pool); the dice start afresh.
@@ -1624,8 +1710,16 @@ for (const reduced of [false, true]) {
   if (!(await undoText()).includes('Next turn')) problems.push(`${tag}: Next turn undo "${await undoText()}"`);
   if (!(await p.isVisible(`${pane} .foe.current:has(.name span:text-is("Grumbler"))`))) problems.push(`${tag}: Grumbler's card not marked on its turn`);
   if (await p.isVisible(`${td} [data-testid=attack-die]`)) problems.push(`${tag}: the hero's dice carried into Grumbler's turn`);
+  if (!(await p.isVisible(`${td} [data-testid=roll-card]`)) || (await p.isVisible(sh))) problems.push(`${tag}: Grumbler's turn does not show a fresh waiting card`);
+  if (!(await p.textContent(`${rollerPanel} [data-testid=dice-for]`))?.includes("Grumbler's attack")) problems.push(`${tag}: roller not asked for Grumbler's attack: "${await p.textContent(`${rollerPanel} [data-testid=dice-for]`)}"`);
   await typeDice(6, 6);
-  if ((await rollNoteText()) !== 'Prime Attack: see the bottom of its card' || (await shiftLeft()) !== 'Shift left: 0 of 0' || (await lit()) !== '') problems.push(`${tag}: creature 6-6 "${await rollNoteText()}" "${await shiftLeft()}"`);
+  if ((await rollNoteText()) !== "Prime Attack: see the bottom of its card Armour can't deflect it." || (await shiftLeft()) !== 'Shift left: 0 of 0' || (await lit()) !== '') problems.push(`${tag}: creature 6-6 "${await rollNoteText()}" "${await shiftLeft()}"`);
+  // No roll named on the card: no Roll button in the note. Other dice in the roller leave the attack for a free roll.
+  if (await p.isVisible(`${td} [data-testid=roll-note-roll]`)) problems.push(`${tag}: a Roll button on a note that names no roll`);
+  await p.click(`${rollerPanel} [role=group][aria-label=Die] button:text-is("D6")`);
+  if ((await p.textContent(`${rollerPanel} [data-testid=dice-for]`))?.trim() !== 'Free roll' || !(await p.isVisible(`${td} [data-testid=attack-die]`))) problems.push(`${tag}: D6 during an attack: "${await p.textContent(`${rollerPanel} [data-testid=dice-for]`)}"`);
+  await p.click(`${td} button:text-is("Shift in the dice roller")`);
+  if (!(await p.textContent(`${rollerPanel} [data-testid=dice-for]`))?.includes("Grumbler's attack")) problems.push(`${tag}: roller not back on the attack after a free D6`);
   // The attacking creature's card sits above its dice: its bottom, the dice and Next turn all on screen.
   const seen = await p.evaluate(() => {
     const body = document.querySelector('.encounter-pane .body').getBoundingClientRect();
@@ -1653,6 +1747,15 @@ for (const reduced of [false, true]) {
   if ((await turnText()) !== "Moss Lurker's turn") problems.push(`${tag}: second creature "${await turnText()}"`);
   await typeDice(1, 1);
   if ((await rollNoteText()) !== 'Mishap: see the bottom of its card') problems.push(`${tag}: creature 1-1 "${await rollNoteText()}"`);
+  // Its Prime names a roll: the note rolls it in the roller and shows what it came to.
+  await p.click(`${sh} button:text-is("Roll again")`);
+  await typeDice(6, 6);
+  if (!(await rollNoteText())?.startsWith('Prime Attack: Made-up spores burst. Lose D6 HP.')) problems.push(`${tag}: Moss Lurker 6-6 "${await rollNoteText()}"`);
+  await p.click(`${td} [data-testid=roll-note-roll]`);
+  if (!(await p.textContent(`${rollerPanel} [data-testid=dice-for]`))?.includes('Prime Attack damage · D6')) problems.push(`${tag}: Prime roll not asked of the roller: "${await p.textContent(`${rollerPanel} [data-testid=dice-for]`)}"`);
+  await rollerEnterOn(p, 4);
+  if ((await p.textContent(`${td} [data-testid=roll-note-result]`))?.trim() !== 'Rolled 4 damage') problems.push(`${tag}: Prime roll result "${await p.textContent(`${td} [data-testid=roll-note-result]`).catch(() => null)}"`);
+  if (!(await p.textContent(`${rollerPanel} [data-testid=dice-for]`))?.includes("Moss Lurker's attack")) problems.push(`${tag}: roller not back on the attack after the Prime roll`);
   // Past the last creature: round 2, the Fatigue Die shows 2, back to the hero.
   await nextTurn();
   const r2 = await state();
@@ -1739,6 +1842,13 @@ for (const reduced of [false, true]) {
   const menu = () => p.click('header.toolbar button[aria-label="Menu"]');
   const undoText = async () => (await p.textContent('header.toolbar button.history'))?.trim() ?? '';
   const pane = '.encounter-pane';
+  // The pending roll's card hands the roll to the floating roller: roll there, or type there.
+  const card = `${pane} [data-testid=pending-roll] [data-testid=roll-card]`;
+  const pendingRollerRoll = async (sel = card) => {
+    await rollerEnterModeOn(p, false);
+    await p.click(`${sel} button`);
+    await p.waitForTimeout(1100);
+  };
   const foes = () => p.$$eval(`${pane} .foe`, (els) => els.map((e) => `${e.querySelector('.name span')?.textContent?.trim()}:${e.querySelector('.num')?.textContent?.trim()}`));
   const ENC = 'Made-up: PRAC1 -1 waits here, or PRAC2. A GRUMBLER guards LOOT9; spend 1 FP.';
 
@@ -1772,38 +1882,28 @@ for (const reduced of [false, true]) {
   if (await p.isVisible('[role=alertdialog] button:text-is("Replace")')) await p.click('[role=alertdialog] button:text-is("Replace")');
   await p.waitForTimeout(800);
 
-  const dice = async (...v) => {
-    const ins = await p.$$('aside.panel form.dice input');
-    for (let i = 0; i < v.length; i++) await ins[i].fill(v[i]);
-  };
   await tap(12.5, 25.5);
-  await dice('3', '4');
-  await btn('Use these');
+  await rollerEnterOn(p, '3', '4');
   await btn('Place');
   await btn('Done');
   await btn('Done');
   await p.waitForTimeout(1500);
   // A second room: its room-table result (the label step) shows the text with its buttons.
   await tap(12.5, 20);
-  await dice('3', '4');
-  await btn('Use these');
+  await rollerEnterOn(p, '3', '4');
   await btn('Place');
-  await dice('4');
-  await btn('Use this');
-  await dice('3');
-  await btn('Place for me');
+  await rollerEnterOn(p, '4');
+  await rollerEnterOn(p, '3');
   await btn('Done');
   // Room 11's exit type is random: the name, description and exit roll first; the encounter text
   // (whose Roll and Fight place the room, so need the exit type) only once the exit type is rolled.
-  await dice('1', '1');
-  await btn('Use these');
+  await rollerEnterOn(p, '1', '1');
   await p.waitForSelector('aside.panel [data-testid=room-result]');
   if (await p.isVisible('aside.panel [data-testid=encounter-text]')) problems.push(`${tag}: encounter text shown before the exit type`);
   const pending = (await p.textContent('aside.panel [data-testid=room-result]'))?.replace(/\s+/g, ' ').trim() ?? '';
   if (!pending.includes('Practice Room 11') || !pending.includes('A made-up room, number 11.')) problems.push(`${tag}: room before the exit type "${pending}"`);
   await shot('55a-encounter-waits-for-exit-type.png', p);
-  await dice('1', '1');
-  await btn('Use these');
+  await rollerEnterOn(p, '1', '1');
   await p.waitForSelector('aside.panel [data-testid=encounter-text]');
   if (!(await p.isVisible('aside.panel [data-testid=exit-result]'))) problems.push(`${tag}: no exit result with the encounter text`);
   const encText = (await p.textContent('aside.panel [data-testid=encounter-text] .enc-text'))?.trim();
@@ -1858,9 +1958,15 @@ for (const reduced of [false, true]) {
   await p.waitForSelector(`${pane} [data-testid=pending-roll]`);
   const head = (await p.textContent(`${pane} [data-testid=pending-roll] h3`))?.trim();
   if (head !== 'Roll on PRAC1 −1') problems.push(`${tag}: pending heading "${head}"`);
+  const cardText = (await p.textContent(card))?.replace(/\s+/g, ' ').trim() ?? '';
+  if (!cardText.includes('Roll on PRAC1 · D6 −1')) problems.push(`${tag}: roll card reads "${cardText}"`);
+  // The stored modifier cannot be changed in the roller, in enter mode or out of it.
+  await rollerEnterModeOn(p, true);
+  await p.click(`${card} button`);
+  if ((await p.getAttribute(`${rollerPanel} [data-testid=dice-mod]`, 'readonly')) === null) problems.push(`${tag}: modifier editable for a creature-table roll`);
   await shot('56-encounter-pending-roll.png', p);
   // Roll for me: the sum shown and the creatures added agree with the table.
-  await p.click(`${pane} [data-testid=pending-roll] button:has-text("Roll for me")`);
+  await pendingRollerRoll();
   await p.waitForSelector(`${pane} [data-testid=creature-roll-result]`);
   const res = (await p.textContent(`${pane} [data-testid=creature-roll-result] .line`))?.replace(/\s+/g, ' ').trim();
   console.log(`${tag}: rolled "${res}"`);
@@ -1882,11 +1988,14 @@ for (const reduced of [false, true]) {
   await p.waitForSelector(`${pane} [data-testid=pending-roll]`);
   if ((await foes()).length) problems.push(`${tag}: Undo left foes ${JSON.stringify(await foes())}`);
   if (await p.isVisible(`${pane} [data-testid=creature-roll-result]`)) problems.push(`${tag}: Undo left the roll result showing`);
-  await p.fill(`${pane} [data-testid=pending-roll] input`, '7');
-  await p.click(`${pane} [data-testid=pending-roll] button:text-is("Use this")`);
-  if (!(await p.isVisible(`${pane} [data-testid=pending-roll] >> text=Type the die, 1 to 6.`))) problems.push(`${tag}: typed 7 not refused`);
-  await p.fill(`${pane} [data-testid=pending-roll] input`, '3');
-  await p.click(`${pane} [data-testid=pending-roll] button:text-is("Use this")`);
+  // The pane's attack card is registered too, but a new plain request takes over from it: the roller is already aimed at the restored pending roll.
+  await rollerEnterModeOn(p, true);
+  const aimedAt = (await p.textContent(`${rollerPanel} [data-testid=dice-for]`))?.replace(/\s+/g, ' ').trim() ?? '';
+  if (!aimedAt.includes('Roll on PRAC1')) problems.push(`${tag}: after Undo the roller is aimed at "${aimedAt}", not the pending roll`);
+  await rollerEnterOn(p, '7');
+  if (!(await p.isVisible(`${rollerPanel} >> text=Type the die, 1 to 6.`))) problems.push(`${tag}: typed 7 not refused`);
+  if (!(await p.isVisible(`${pane} [data-testid=pending-roll]`))) problems.push(`${tag}: typed 7 used the pending roll`);
+  await rollerEnterOn(p, '3');
   await p.waitForSelector(`${pane} [data-testid=creature-roll-result]`);
   const typed = (await p.textContent(`${pane} [data-testid=creature-roll-result] .line`))?.replace(/\s+/g, ' ').trim();
   if (typed !== 'PRAC1 −1 3 − 1 = 2: Grumbler, Moss Lurker ×') problems.push(`${tag}: typed result "${typed}"`);
@@ -1903,9 +2012,7 @@ for (const reduced of [false, true]) {
   // PRAC2, typed 3 (no modifier): row 3 adds a Grumbler.
   await roomBtn('🎲 Roll on PRAC2');
   await p.waitForSelector(`${pane} [data-testid=pending-roll]`);
-  await p.fill(`${pane} [data-testid=pending-roll] input`, '3');
-  await p.click(`${pane} [data-testid=pending-roll] button:text-is("Use this")`);
-  await p.waitForTimeout(200);
+  await rollerEnterOn(p, '3');
   const r2 = (await p.textContent(`${pane} [data-testid=creature-roll-result] .line`))?.replace(/\s+/g, ' ').trim();
   if (r2 !== 'PRAC2 3: Grumbler ×') problems.push(`${tag}: PRAC2 result "${r2}"`);
   if ((await foes()).join('|') !== 'Grumbler:4|Moss Lurker:6|Grumbler:4|Grumbler:4') problems.push(`${tag}: PRAC2 foes ${JSON.stringify(await foes())}`);
@@ -1917,9 +2024,7 @@ for (const reduced of [false, true]) {
   const saidNow = async () => (await p.$$eval(`${pane} [data-testid=creature-roll-result] .said`, (els) => els.map((e) => e.textContent.trim()))).includes(echoes);
   await roomBtn('🎲 Roll on PRAC2');
   await p.waitForSelector(`${pane} [data-testid=pending-roll]`);
-  await p.fill(`${pane} [data-testid=pending-roll] input`, '5');
-  await p.click(`${pane} [data-testid=pending-roll] button:text-is("Use this")`);
-  await p.waitForTimeout(200);
+  await rollerEnterOn(p, '5');
   const r5 = (await p.textContent(`${pane} [data-testid=creature-roll-result] .line`))?.replace(/\s+/g, ' ').trim();
   if (r5 !== 'PRAC2 5: ×') problems.push(`${tag}: PRAC2 text result line "${r5}"`);
   if (!(await saidNow())) problems.push(`${tag}: text result not shown`);
@@ -1951,31 +2056,22 @@ for (const reduced of [false, true]) {
   for (let i = 0; i < 2; i++) await roomBtn('🎲 Roll on PRAC1 −1');
   await p.waitForSelector(`${pane} [data-testid=pending-roll] >> nth=1`);
   if ((await p.$$(`${pane} [data-testid=pending-roll]`)).length !== 2) problems.push(`${tag}: two taps did not queue two rolls`);
-  await p.click(`${pane} [data-testid=pending-roll] >> nth=0 >> button:has-text("Roll for me")`);
-  await p.waitForFunction((sel) => document.querySelectorAll(sel).length === 1, `${pane} [data-testid=pending-roll]`);
+  await rollerEnterModeOn(p, false);
+  await p.click(`${rollerPanel} button.roll`);
+  await p.waitForFunction((sel) => document.querySelectorAll(sel).length === 1, `${pane} [data-testid=pending-roll]`, { timeout: 5000 }).catch(() => problems.push(`${tag}: rolling the first did not resolve it`));
+  await p.waitForTimeout(1100);
   const second = `${pane} [data-testid=pending-roll]`;
-  const ready = {
-    input: await p.isVisible(`${second} input`),
-    value: await p.inputValue(`${second} input`).catch(() => '?'),
-    roll: await p.isEnabled(`${second} button:has-text("Roll for me")`),
-    use: await p.isEnabled(`${second} button:text-is("Use this")`),
-    face: (await p.$$(`${second} .face`)).length,
-  };
+  const ready = { card: await p.isVisible(`${second} [data-testid=roll-card]`), faces: (await p.$$(`${second} .face`)).length, target: await p.isVisible(`${rollerPanel} [data-testid=dice-for] >> text=Roll on PRAC1`) };
   console.log(`${tag}: second roll after the first ${JSON.stringify(ready)}`);
-  if (!ready.input || ready.value !== '' || !ready.roll || !ready.use || ready.face !== 0) problems.push(`${tag}: second identical roll not ready ${JSON.stringify(ready)}`);
-  await p.click(`${second} button:has-text("Roll for me")`);
+  if (!ready.card || ready.faces !== 0 || !ready.target) problems.push(`${tag}: second identical roll not ready ${JSON.stringify(ready)}`);
+  await pendingRollerRoll(`${second} [data-testid=roll-card]`);
   await p.waitForFunction((sel) => document.querySelectorAll(sel).length === 0, `${pane} [data-testid=pending-roll]`, { timeout: 5000 }).catch(() => problems.push(`${tag}: second identical roll did not resolve`));
   if ((await p.$$(`${pane} [data-testid=creature-roll-result]`)).length < 2) problems.push(`${tag}: expected two roll results`);
-  // The typed path: a typed die on the first leaves the second's input empty.
+  // The typed path: a typed die goes to the first and leaves the second waiting.
   for (let i = 0; i < 2; i++) await roomBtn('🎲 Roll on PRAC1 −1');
-  await p.fill(`${pane} [data-testid=pending-roll] >> nth=0 >> input`, '3');
-  await p.click(`${pane} [data-testid=pending-roll] >> nth=0 >> button:text-is("Use this")`);
+  await rollerEnterOn(p, '3');
   await p.waitForFunction((sel) => document.querySelectorAll(sel).length === 1, `${pane} [data-testid=pending-roll]`);
-  const left = await p.inputValue(`${pane} [data-testid=pending-roll] input`);
-  if (left !== '') problems.push(`${tag}: typed die carried over to the second roll ("${left}")`);
-  await p.fill(`${pane} [data-testid=pending-roll] input`, '3');
-  await p.click(`${pane} [data-testid=pending-roll] button:text-is("Use this")`);
-  await p.waitForTimeout(200);
+  await rollerEnterOn(p, '3');
   if (await p.isVisible(`${pane} [data-testid=pending-roll]`)) problems.push(`${tag}: second typed roll not resolved`);
   await shot('60-encounter-roll-twice.png', p);
   const beforeFight = (await foes()).length; // while the pane shows
@@ -2049,7 +2145,7 @@ for (const reduced of [false, true]) {
     await p.waitForTimeout(500);
   };
 
-  await p.setInputFiles('input[data-extra="tables"]', { name: 'tables.json', mimeType: 'application/json', buffer: Buffer.from(readFileSync('tests/fixtures/dungeon-tables.fixture.json')) });
+  await p.setInputFiles('input[data-extra="tables"]', { name: 'tables.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(withThrowing(JSON.parse(readFileSync('tests/fixtures/dungeon-tables.fixture.json', 'utf8'))))) });
   await p.waitForTimeout(500);
   await menu();
   await p.click('[role=menuitem]:text-is("New game…")');
@@ -2073,6 +2169,11 @@ for (const reduced of [false, true]) {
 
   // 18b. Win: both foes to 0; the question; Not yet keeps the fight and doesn't loop; a change asks again.
   await addByHand('Moss Lurker');
+  // A throw in round 1 (typed), so the Victory panel offers to get the weapon back.
+  await rollerEnterModeOn(p, true);
+  await p.click(`${pane} [data-testid=throw-panel] button:has-text("Throw Spare Bootlace")`);
+  await rollerEnterOn(p, '1', '1');
+  if (!(await undoText()).includes('Throw Bootlace')) problems.push(`${tag}: throw before the win: undo "${await undoText()}"`);
   await setFoe('Grumbler', 0);
   if (await p.isVisible(winQ)) problems.push(`${tag}: win asked with a foe standing`);
   await setFoe('Moss Lurker', 0);
@@ -2097,6 +2198,17 @@ for (const reduced of [false, true]) {
   const smallV = await p.$$eval(`${pane} .victory button`, (els) => els.map((e) => e.getBoundingClientRect()).filter((r) => r.width < 44 || r.height < 44).length);
   if (smallV) problems.push(`${tag}: ${smallV} Victory buttons under 44 px`);
   await shot('62-victory.png', p);
+  // Getting the thrown weapon back asks the roller for a D6: a bad typed value is refused, a 5 brings it back (one step).
+  const recoverBtn = `${pane} .victory [data-testid=thrown-weapon] button`;
+  await p.click(recoverBtn);
+  const recoverFor = ((await p.textContent(`${rollerPanel} [data-testid=dice-for]`)) ?? '').replace(/\s+/g, ' ').trim();
+  if (!recoverFor.includes('Get back the Bootlace')) problems.push(`${tag}: recovery not asked of the roller: "${recoverFor}"`);
+  await rollerEnterOn(p, '7');
+  if (!(await p.isVisible(`${rollerPanel} [data-testid=dice-typed] [role=alert]`))) problems.push(`${tag}: typed 7 for the recovery showed no error`);
+  if (!(await p.isVisible(recoverBtn))) problems.push(`${tag}: an invalid typed recovery was applied`);
+  await rollerEnterOn(p, '5');
+  if (!(await undoText()).includes('Recover Bootlace')) problems.push(`${tag}: recovery undo "${await undoText()}"`);
+  if (!(await p.textContent(`${pane} .victory [data-testid=thrown-weapon]`))?.includes('recovered, back in your pack')) problems.push(`${tag}: weapon not recovered`);
   await p.click(`${pane} .victory button:text-is("Add 5 XP")`);
   await p.waitForTimeout(200);
   if (!(await undoText()).includes('XP +5')) problems.push(`${tag}: Add XP undo "${await undoText()}"`);
@@ -2257,10 +2369,33 @@ for (const reduced of [false, true]) {
   const toolbarHeight = () => p.$eval('header.toolbar', (e) => e.getBoundingClientRect().height);
   const resultText = async () => ((await p.textContent(`${pane} [data-testid=ref-result]`).catch(() => null)) ?? '').replace(/\s+/g, ' ').trim();
   const hitRow = () => p.$$eval(`${pane} tbody tr`, (rows) => rows.findIndex((r) => r.classList.contains('hit')));
-  const typeD6 = async (v) => {
-    await p.fill(`${pane} input[aria-label="D6"]`, String(v));
-    await p.click(`${pane} .rolling button:text-is("Use this")`);
+  // The dice are the floating roller's: its Dice button opens it, "Enter my roll" types, its Roll button rolls.
+  const panel = '[data-testid=dice-panel]';
+  const rollerOpen = async () => {
+    if (!(await p.isVisible(panel))) await p.click('header.toolbar button[aria-label="Dice"]');
+    await p.waitForSelector(panel);
+  };
+  const enterMode = async (on) => {
+    await rollerOpen();
+    if (((await p.getAttribute(`${panel} [data-testid=dice-enter]`, 'aria-pressed')) === 'true') !== on) await p.click(`${panel} [data-testid=dice-enter]`);
+  };
+  const typedBoxes = `${panel} [data-testid=dice-typed] input`;
+  const useTyped = async (...vals) => {
+    await enterMode(true);
+    for (let i = 0; i < vals.length; i++) await p.fill(`:nth-match(${typedBoxes}, ${i + 1})`, String(vals[i]));
+    await p.click(`${panel} [data-testid=dice-typed] button:text-is("Use these")`);
     await p.waitForTimeout(200);
+  };
+  const typeD6 = (v) => useTyped(v);
+  const rollerRoll = async () => {
+    await enterMode(false);
+    await p.click(`${panel} button.roll`);
+    await p.waitForTimeout(900);
+  };
+  const rollerFor = async () => ((await p.textContent(`${panel} [data-testid=dice-for] .for-text`).catch(() => null)) ?? '').replace(/\s+/g, ' ').trim();
+  const setMod = async (t) => {
+    await p.fill(`${panel} [data-testid=dice-mod]`, t);
+    await p.waitForTimeout(100);
   };
   const smallButtons = async (where) => {
     const small = await p.$$eval(`${pane} button, ${pane} input`, (els) =>
@@ -2336,16 +2471,23 @@ for (const reduced of [false, true]) {
   await p.click(`${pane} .list button:has-text("XX1 —")`);
   await p.waitForSelector(`${pane} .rolling`);
   if (await p.isVisible(`${pane} button:text-is("‹ Back")`)) problems.push(`${tag}: Back shown with nothing to go back to`);
-  await p.click(`${pane} button[aria-label="Modifier down"]`);
-  await p.click(`${pane} button[aria-label="Modifier down"]`);
+  if (await p.isVisible(`${pane} .mod`)) problems.push(`${tag}: the pane still has its own modifier field`);
+  // The card's Roll hands the roll to the roller: the table shows a result and highlights its row.
+  await enterMode(false);
+  await p.click(`${pane} [data-testid=roll-card] button:text-is("🎲 Roll")`);
+  await p.waitForTimeout(900);
+  if (!(await p.isVisible(`${pane} [data-testid=ref-result]`)) || (await hitRow()) < 0) problems.push(`${tag}: the card's Roll gave no result row (hit ${await hitRow()})`);
+  console.log(`${tag}: card Roll "${await resultText()}"`);
+  if (!(await rollerFor()).startsWith('XX1 Practice Crate Table · D6')) problems.push(`${tag}: roller For line "${await rollerFor()}"`);
+  await p.click(`${panel} button[aria-label="Modifier down"]`);
+  await p.click(`${panel} button[aria-label="Modifier down"]`);
   await typeD6(1);
   let r = await resultText();
   console.log(`${tag}: XX1 result "${r}"`);
   if (!r.startsWith('1 − 2 = −1 · counts as 1')) problems.push(`${tag}: clamped result "${r}"`);
   if ((await hitRow()) !== 0) problems.push(`${tag}: clamped roll highlights row ${await hitRow()}`);
   await shot('72-xx1-clamped.png', p);
-  await p.fill(`${pane} .mod input`, '-1');
-  await p.waitForTimeout(100);
+  await setMod('-1');
   await typeD6(2);
   r = await resultText();
   if (!r.startsWith('2 − 1 = 1') || r.includes('counts as')) problems.push(`${tag}: XX1 result "${r}"`);
@@ -2364,31 +2506,38 @@ for (const reduced of [false, true]) {
   await p.waitForTimeout(100);
   const top2 = await p.$eval(`${pane} .body`, (e) => e.scrollTop);
   if (top2 !== 0) problems.push(`${tag}: XX2 opened scrolled to ${top2} (was ${scrolled})`);
-  const mod2 = await p.inputValue(`${pane} .mod input`);
+  const mod2 = await p.inputValue(`${panel} [data-testid=dice-mod]`);
   if (mod2 !== '1') problems.push(`${tag}: XX2 opened with modifier "${mod2}"`);
   if (!(await p.isVisible(`${pane} button:text-is("‹ Back")`))) problems.push(`${tag}: no Back on XX2`);
-  await p.fill(`${pane} input[aria-label="First die"]`, '1');
-  await p.fill(`${pane} input[aria-label="Second die"]`, '3');
-  await p.click(`${pane} .rolling button:text-is("Use this")`);
-  await p.waitForTimeout(200);
+  await useTyped(1, 3);
   r = await resultText();
   if (!r.startsWith('4 + 1 = 5') || !r.includes('No row for 5')) problems.push(`${tag}: gap result "${r}"`);
   if ((await hitRow()) !== -1) problems.push(`${tag}: a gap highlights row ${await hitRow()}`);
   await shot('74-xx2-gap.png', p);
-  await p.click(`${pane} .rolling button:has-text("Roll for me")`);
-  await p.waitForTimeout(900);
+  await rollerRoll();
   r = await resultText();
   if (!/^\d+ \+ 1 = \d+/.test(r)) problems.push(`${tag}: animated roll result "${r}"`);
   console.log(`${tag}: XX2 rolled "${r}"`);
 
   // 4. Back returns to XX1 with its modifier and result.
+  let freeResult = '';
   await p.click(`${pane} button:text-is("‹ Back")`);
   await p.waitForSelector(`${pane} h3:has-text("Practice Crate Table")`);
   r = await resultText();
   if (!r.startsWith('2 − 1 = 1')) problems.push(`${tag}: Back lost XX1's result ("${r}")`);
-  if ((await p.inputValue(`${pane} .mod input`)) !== '−1') problems.push(`${tag}: Back lost XX1's modifier ("${await p.inputValue(`${pane} .mod input`)}")`);
+  // The roller's modifier is the roller's: Back restarts the table's job from the modifier the table state holds.
+  if (!(await rollerFor()).startsWith('XX1 Practice Crate Table · D6')) problems.push(`${tag}: after Back the roller is for "${await rollerFor()}"`);
   if ((await hitRow()) !== 0) problems.push(`${tag}: Back lost the highlight`);
   await shot('75-back-to-xx1.png', p);
+  // With the table open, a free D6 roll (the roller's own Roll after ×) also fills the result and the row.
+  await p.click(`${panel} button[aria-label="Roll freely"]`);
+  await rollerRoll();
+  const freeFace = ((await p.textContent(`${panel} [data-testid=dice-history] li`)) ?? '').match(/^Free D6: (\d)$/)?.[1];
+  r = await resultText();
+  console.log(`${tag}: free D6 "${r}"`);
+  if (!freeFace || !r.startsWith(freeFace) || r.includes('=')) problems.push(`${tag}: free roll ${freeFace} did not reach the table ("${r}")`);
+  if ((await hitRow()) < 0) problems.push(`${tag}: a free D6 roll left no highlighted row`);
+  freeResult = r;
 
   // 5. The Hero tab and back: the pane keeps its state.
   await p.click('header.toolbar button.hero');
@@ -2400,7 +2549,7 @@ for (const reduced of [false, true]) {
   await p.click('#side-tab-tables');
   await p.waitForSelector(pane);
   r = await resultText();
-  if (!(await p.isVisible(`${pane} h3:has-text("Practice Crate Table")`)) || !r.startsWith('2 − 1 = 1')) problems.push(`${tag}: switching tabs lost the table or result ("${r}")`);
+  if (!(await p.isVisible(`${pane} h3:has-text("Practice Crate Table")`)) || r !== freeResult) problems.push(`${tag}: switching tabs lost the table or result ("${r}")`);
   if ((await undoText()) !== undo0) problems.push(`${tag}: rolling added a History step ("${await undoText()}", was "${undo0}")`);
 
   // 6. A d66 table has no modifier field; 2 then 5 is 25.
@@ -2408,11 +2557,9 @@ for (const reduced of [false, true]) {
   await p.fill(`${pane} input[type=search]`, 'echo');
   await p.click(`${pane} .list button:has-text("XX3 —")`);
   await p.waitForSelector(`${pane} .rolling`);
-  if (await p.isVisible(`${pane} .mod`)) problems.push(`${tag}: d66 table shows a modifier field`);
-  await p.fill(`${pane} input[aria-label="Red · tens die"]`, '2');
-  await p.fill(`${pane} input[aria-label="Blue · units die"]`, '5');
-  await p.click(`${pane} .rolling button:text-is("Use this")`);
-  await p.waitForTimeout(200);
+  await rollerOpen();
+  if (await p.isVisible(`${panel} [data-testid=dice-mod]`)) problems.push(`${tag}: d66 table shows a modifier field`);
+  await useTyped(2, 5);
   r = await resultText();
   if (!r.startsWith('25') || !r.includes('Footsteps')) problems.push(`${tag}: d66 result "${r}"`);
   if ((await hitRow()) !== 1) problems.push(`${tag}: d66 highlights row ${await hitRow()}`);
@@ -2423,23 +2570,16 @@ for (const reduced of [false, true]) {
   await p.fill(`${pane} input[type=search]`, 'XX4');
   await p.click(`${pane} .list button:has-text("XX4 —")`);
   await p.waitForSelector(`${pane} .rolling`);
-  await p.fill(`${pane} input[aria-label="D3"]`, '7');
-  await p.click(`${pane} .rolling button:text-is("Use this")`);
-  await p.waitForTimeout(150);
-  if (!(await p.isVisible(`${pane} .rolling [role=alert]`))) problems.push(`${tag}: a typed 7 on a D3 was accepted`);
-  await p.fill(`${pane} input[aria-label="D3"]`, '4');
-  await p.click(`${pane} .rolling button:text-is("Use this")`);
-  await p.waitForTimeout(150);
+  await useTyped(7);
+  if (!(await p.isVisible(`${panel} [data-testid=dice-typed] [role=alert]`))) problems.push(`${tag}: a typed 7 on a D3 was accepted`);
+  await useTyped(4);
   r = await resultText();
   if (!r.startsWith('4 → 2') || (await hitRow()) !== 1) problems.push(`${tag}: d3 typed 4 gave "${r}" (row ${await hitRow()})`);
-  await p.fill(`${pane} input[aria-label="D3"]`, '5');
-  await p.click(`${pane} .rolling button:text-is("Use this")`);
-  await p.waitForTimeout(150);
+  await useTyped(5);
   r = await resultText();
   console.log(`${tag}: d3 typed 5 → "${r}"`);
   if (!r.startsWith('5 → 3') || !r.includes('Surprisingly deep.')) problems.push(`${tag}: d3 result "${r}"`);
-  await p.click(`${pane} .rolling button:has-text("Roll for me")`);
-  await p.waitForTimeout(900);
+  await rollerRoll();
   r = await resultText();
   const d3m = r.match(/^([1-6]) → ([1-3])\b/);
   if (!d3m || Math.ceil(Number(d3m[1]) / 2) !== Number(d3m[2])) problems.push(`${tag}: d3 animated roll "${r}"`);
@@ -2492,6 +2632,7 @@ for (const reduced of [false, true]) {
   const menu = () => p.click('header.toolbar button[aria-label="Menu"]');
   const enc = '.encounter-pane';
   const tp = '.tables-pane';
+  const dicePanel = '[data-testid=dice-panel]';
   const ENC = 'Made-up: a GRUMBLER sits by a crate, see XX1 -1 or practice-shelf.';
   const fx = JSON.parse(readFileSync('tests/fixtures/dungeon-tables.fixture.json', 'utf8'));
   const swap = (v) => {
@@ -2522,28 +2663,19 @@ for (const reduced of [false, true]) {
   await p.waitForTimeout(500);
   if (await p.isVisible('[role=alertdialog] button:text-is("Replace")')) await p.click('[role=alertdialog] button:text-is("Replace")');
   await p.waitForTimeout(800);
-  const dice = async (...v) => {
-    const ins = await p.$$('aside.panel form.dice input');
-    for (let i = 0; i < v.length; i++) await ins[i].fill(v[i]);
-  };
   await tap(12.5, 25.5);
-  await dice('3', '4');
-  await btn('Use these');
+  await rollerEnterOn(p, '3', '4');
   await btn('Place');
   await btn('Done');
   await btn('Done');
   await p.waitForTimeout(1500);
   await tap(12.5, 20);
-  await dice('3', '4');
-  await btn('Use these');
+  await rollerEnterOn(p, '3', '4');
   await btn('Place');
-  await dice('4');
-  await btn('Use this');
-  await dice('3');
-  await btn('Place for me');
+  await rollerEnterOn(p, '4');
+  await rollerEnterOn(p, '3');
   await btn('Done');
-  await dice('3', '4');
-  await btn('Use these');
+  await rollerEnterOn(p, '3', '4');
   await p.waitForSelector('aside.panel [data-testid=encounter-actions]');
   const labels = await p.$$eval('aside.panel [data-testid=encounter-actions] button', (els) => els.map((e) => e.textContent.trim()));
   console.log(`${tag}: buttons ${JSON.stringify(labels)}`);
@@ -2562,7 +2694,11 @@ for (const reduced of [false, true]) {
   const undoBefore = (await p.textContent('header.toolbar button.history'))?.trim();
   await p.click('[data-editor=room] button:text-is("📖 Open XX1 −1")');
   await p.waitForSelector(`${tp} h3:has-text("Practice Crate Table")`);
-  if ((await p.inputValue(`${tp} .mod input`)) !== '−1') problems.push(`${tag}: XX1 opened with modifier "${await p.inputValue(`${tp} .mod input`)}"`);
+  if (!(await p.isVisible(dicePanel))) await p.click('header.toolbar button[aria-label="Dice"]');
+  await p.waitForSelector(dicePanel);
+  const forText = ((await p.textContent(`${dicePanel} [data-testid=dice-for] .for-text`)) ?? '').replace(/\s+/g, ' ').trim();
+  if (!forText.endsWith('· D6 −1') || !forText.includes('XX1')) problems.push(`${tag}: XX1 opened with For line "${forText}"`);
+  if (await p.isVisible(`${tp} .mod`)) problems.push(`${tag}: the pane still has a modifier field`);
   if ((await p.getAttribute('#side-tab-tables', 'aria-selected')) !== 'true') problems.push(`${tag}: Tables tab not selected`);
   if ((await p.textContent('header.toolbar button.history'))?.trim() !== undoBefore) problems.push(`${tag}: opening a table added a History step`);
   await shot('81-table-opened-from-text.png', p);
@@ -2573,7 +2709,7 @@ for (const reduced of [false, true]) {
   await p.waitForSelector(`${tp} h3:has-text("Practice Crate Table")`);
 
   // The modifier field: typing is not rewritten under the caret; every minus form works; blur tidies.
-  const mod = `${tp} .mod input`;
+  const mod = `${dicePanel} [data-testid=dice-mod]`;
   await p.focus(mod);
   await p.fill(mod, '');
   await p.keyboard.type('-1');
@@ -2613,7 +2749,7 @@ for (const reduced of [false, true]) {
   await shot('82-victory-table-button.png', p);
   await p.click(`${enc} .victory button:text-is("📖 Open XX2 +1")`);
   await p.waitForSelector(`${tp} h3:has-text("Practice Trinket Table")`);
-  if ((await p.inputValue(`${tp} .mod input`)) !== '1') problems.push(`${tag}: XX2 opened with modifier "${await p.inputValue(`${tp} .mod input`)}"`);
+  if ((await p.inputValue(`${dicePanel} [data-testid=dice-mod]`)) !== '1') problems.push(`${tag}: XX2 opened with modifier "${await p.inputValue(`${dicePanel} [data-testid=dice-mod]`)}"`);
   await shot('83-table-opened-from-victory.png', p);
   await p.click('#side-tab-encounter');
   await p.waitForSelector(`${enc} .victory`);
@@ -2647,10 +2783,6 @@ for (const reduced of [false, true]) {
   const undo = async () => (await p.textContent('header.toolbar button.history'))?.replace(/\s+/g, ' ').trim() ?? '';
   const token = () => p.getAttribute('canvas', 'data-token');
   const dragCell = () => p.getAttribute('canvas', 'data-token-drag');
-  const dice = async (...v) => {
-    const ins = await p.$$('aside.panel form.dice input');
-    for (let i = 0; i < v.length; i++) await ins[i].fill(v[i]);
-  };
   /** Press at one world point and move (mouse) to another; the caller releases. */
   const pressAndMove = async (from, to) => {
     const a = await screenAt(...from);
@@ -2677,8 +2809,7 @@ for (const reduced of [false, true]) {
   if ((await pressed()) !== 'Play') problems.push(`${tag}: clicking Play in Play left ${await pressed()} pressed`);
 
   await tap(12.5, 25.5);
-  await dice('3', '4');
-  await btn('Use these');
+  await rollerEnterOn(p, '3', '4');
   await btn('Place');
   await btn('Done');
   await btn('Done');
@@ -3076,12 +3207,14 @@ for (const reduced of [false, true]) {
   if (pr.right > cr.right + 0.5 || pr.left < cr.left || pr.top < cr.top - 0.5 || pr.top > cr.top + 30 || cr.right - pr.right > 30) problems.push(`${tag}: panel is not in the map's top-right corner`);
   if (pr.right > side.left + 0.5) problems.push(`${tag}: panel covers the sidebar`);
   if ((await chip()) !== 'D6') problems.push(`${tag}: first open chose "${await chip()}"`);
+  const forLine = async () => ((await p.textContent(`${panel} [data-testid=dice-for]`).catch(() => null)) ?? '').replace(/\s+/g, ' ').replace('×', '').trim();
+  if ((await forLine()) !== 'Free roll') problems.push(`${tag}: For line "${await forLine()}" on first open`);
   await p.screenshot({ path: join(outDir, 'd1-dice-open.png') });
   console.log(`Saved ${join(outDir, 'd1-dice-open.png')}`);
 
   // Every die rolls; check the faces and the total's form.
   const undo0 = await undoText();
-  const want = { D6: [1, /^= [1-6]$/], '2D6': [2, /^= ([2-9]|1[0-2])$/], D66: [2, /^[1-6][1-6]$/], D3: [1, /^([1-6]) → ([1-3])$/] };
+  const want = { D6: [1, /^= [1-6]$/], '2D6': [2, /^[1-6] \+ [1-6] = ([2-9]|1[0-2])$/], D66: [2, /^[1-6][1-6]$/], D3: [1, /^([1-6]) → ([1-3])$/] };
   for (const [label, [n, re]] of Object.entries(want)) {
     await p.click(`${panel} .chips button:text-is("${label}")`);
     if ((await chip()) !== label) problems.push(`${tag}: chip ${label} not highlighted ("${await chip()}")`);
@@ -3110,10 +3243,10 @@ for (const reduced of [false, true]) {
   const hist = await historyLines();
   console.log(`${tag}: history ${JSON.stringify(hist)}`);
   if (hist.length !== 5) problems.push(`${tag}: history has ${hist.length} lines`);
-  if (!/^2D6: [1-6] \+ [1-6] = \d+$/.test(hist[0] ?? '') || !/^2D6: /.test(hist[1] ?? '') || !/^D3: [1-6] → [1-3]$/.test(hist[2] ?? '') || !/^D66: [1-6][1-6]$/.test(hist[3] ?? '') || !/^2D6: /.test(hist[4] ?? '')) problems.push(`${tag}: history ${JSON.stringify(hist)}`);
+  if (!/^Free 2D6: [1-6] \+ [1-6] = \d+$/.test(hist[0] ?? '') || !/^Free 2D6: /.test(hist[1] ?? '') || !/^Free D3: [1-6] → [1-3]$/.test(hist[2] ?? '') || !/^Free D66: [1-6][1-6]$/.test(hist[3] ?? '') || !/^Free 2D6: /.test(hist[4] ?? '')) problems.push(`${tag}: history ${JSON.stringify(hist)}`);
   const [a, b] = (hist[0] ?? '').match(/(\d) \+ (\d) = (\d+)/)?.slice(1, 4).map(Number) ?? [];
   if ((hist[0] ?? '').match(/= (\d+)$/)?.[1] !== String(a + b)) problems.push(`${tag}: 2D6 sum wrong in "${hist[0]}"`);
-  if (`= ${(hist[0] ?? '').split('= ')[1]}` !== (await total())) problems.push(`${tag}: total "${await total()}" is not the newest history line "${hist[0]}"`);
+  if (!(hist[0] ?? '').endsWith(`: ${await total()}`)) problems.push(`${tag}: total "${await total()}" is not the newest history line "${hist[0]}"`);
   if ((await undoText()) !== undo0) problems.push(`${tag}: rolling added a History step ("${await undoText()}", was "${undo0}")`);
   const small = await p.$$eval(`${panel} button`, (els) => els.map((e) => ({ t: e.getAttribute('aria-label') ?? e.textContent?.trim(), r: e.getBoundingClientRect() })).filter((x) => x.r.width < 44 || x.r.height < 44).map((x) => `${x.t} ${x.r.width}×${x.r.height}`));
   for (const s of small) problems.push(`${tag}: panel button too small: ${s}`);
@@ -3188,36 +3321,28 @@ for (const reduced of [false, true]) {
   await p.waitForTimeout(200);
 
   // Rooms: entrance, then room 2; while placing, the panel stays and still rolls.
-  const dice = async (...v) => {
-    const ins = await p.$$('aside.panel form.dice input');
-    for (let i = 0; i < v.length; i++) await ins[i].fill(v[i]);
-  };
   await tap(12.5, 25.5);
-  await dice('3', '4');
-  await btn('Use these');
+  await rollerEnterOn(p, '3', '4');
   await btn('Place');
   await btn('Done');
   await btn('Done');
   await p.waitForTimeout(1500);
   await tap(12.5, 20);
-  await dice('3', '4');
-  await btn('Use these');
+  await rollerEnterOn(p, '3', '4');
   if (!(await open())) problems.push(`${tag}: placing a room closed the panel`);
   if (await p.isDisabled(diceBtn)) problems.push(`${tag}: Dice button disabled while placing a room`);
   if (!(await p.isDisabled('header.toolbar button.tool:text-is("Door")'))) problems.push(`${tag}: Door enabled while placing (check is not testing placement)`);
+  await rollerEnterModeOn(p, false); // this check rolls: the earlier typed steps left enter mode on
   await p.click(`${panel} .chips button:text-is("D6")`);
   await p.click(`${panel} button.roll`);
   await p.waitForTimeout(ROLL_MS);
   if (!/^= [1-6]$/.test(await total())) problems.push(`${tag}: rolling while placing gave "${await total()}"`);
   await shot('d6-dice-while-placing.png', p);
   await btn('Place');
-  await dice('4');
-  await btn('Use this');
-  await dice('3');
-  await btn('Place for me');
+  await rollerEnterOn(p, '4');
+  await rollerEnterOn(p, '3');
   await btn('Done');
-  await dice('3', '4');
-  await btn('Use these');
+  await rollerEnterOn(p, '3', '4');
   await p.waitForSelector('aside.panel [data-testid=encounter-actions]');
   const labels = await p.$$eval('aside.panel [data-testid=encounter-actions] button', (els) => els.map((e) => e.textContent.trim()));
   console.log(`${tag}: encounter buttons ${JSON.stringify(labels)}`);
@@ -3225,6 +3350,7 @@ for (const reduced of [false, true]) {
   const encText = (await p.textContent('aside.panel [data-testid=encounter-text] .enc-text'))?.trim();
   if (!encText?.endsWith(ENC)) problems.push(`${tag}: encounter text "${encText}"`);
 
+  await rollerEnterModeOn(p, false);
   // Close with ×, choose 2D6 meanwhile, then "🎲 Roll D6" opens it on D6 with one roll.
   await p.click(`${panel} .chips button:text-is("2D6")`);
   await p.click(`${panel} button[aria-label="Close dice"]`);
@@ -3238,20 +3364,42 @@ for (const reduced of [false, true]) {
   if ((await chip()) !== 'D6') problems.push(`${tag}: text button opened the panel on "${await chip()}"`);
   const fromText = await historyLines();
   console.log(`${tag}: after the text button ${JSON.stringify(fromText)} total ${await total()}`);
-  if (fromText.length !== 1 || !/^D6: [1-6]$/.test(fromText[0] ?? '') || !/^= [1-6]$/.test(await total())) problems.push(`${tag}: text button roll ${JSON.stringify(fromText)} / "${await total()}"`);
+  if (fromText.length !== 5 || !/^Free D6: [1-6]$/.test(fromText[0] ?? '') || !/^= [1-6]$/.test(await total())) problems.push(`${tag}: text button roll ${JSON.stringify(fromText)} / "${await total()}"`);
   if ((await undoText()) !== undo1) problems.push(`${tag}: the text roll added a History step`);
+  if ((await forLine()) !== 'Free roll') problems.push(`${tag}: For line "${await forLine()}" after a text button`);
+  if (!/^Free D6:/.test(fromText[0] ?? '')) problems.push(`${tag}: history first line "${fromText[0]}" does not start with "Free D6:"`);
   await shot('d7-dice-from-encounter-text.png', p);
   // A second tap while open rolls again (one more line).
   await p.click('aside.panel [data-testid=encounter-actions] button:text-is("🎲 Roll D6")');
   await p.waitForTimeout(ROLL_MS);
-  if ((await historyLines()).length !== 2) problems.push(`${tag}: second text tap gave ${(await historyLines()).length} lines`);
+  const afterSecond = await historyLines();
+  if (afterSecond[1] !== fromText[0] || !/^Free D6: [1-6]$/.test(afterSecond[0] ?? '')) problems.push(`${tag}: second text tap gave ${JSON.stringify(afterSecond)}`);
+
+  // Enter my roll: type a die, "Use these" records it as a free roll; 7 shows the roller's own error.
+  const typedIn = `${panel} [data-testid=dice-typed] input`;
+  await rollerEnterModeOn(p, true);
+  if ((await p.getAttribute(`${panel} [data-testid=dice-enter]`, 'aria-pressed')) !== 'true') problems.push(`${tag}: enter toggle not pressed`);
+  await p.fill(typedIn, '4');
+  await p.click(`${panel} [data-testid=dice-typed] button:text-is("Use these")`);
+  await p.waitForTimeout(150);
+  if ((await historyLines())[0] !== 'Free D6: 4') problems.push(`${tag}: typed free roll gave ${JSON.stringify((await historyLines())[0])}`);
+  await p.fill(typedIn, '7');
+  await p.click(`${panel} [data-testid=dice-typed] button:text-is("Use these")`);
+  await p.waitForTimeout(150);
+  const typedErr = (await p.textContent(`${panel} [data-testid=dice-typed] [role=alert]`).catch(() => ''))?.trim();
+  if (typedErr !== 'Type a number from 1 to 6.') problems.push(`${tag}: typed 7 gave "${typedErr}"`);
+  if ((await historyLines())[0] !== 'Free D6: 4') problems.push(`${tag}: a rejected typed roll changed the history`);
+  await p.fill(typedIn, '');
+  await rollerEnterModeOn(p, false);
+  if ((await p.getAttribute(`${panel} [data-testid=dice-enter]`, 'aria-pressed')) !== 'false') problems.push(`${tag}: enter toggle still pressed`);
+  if ((await historyLines())[1] !== afterSecond[0]) problems.push(`${tag}: typed roll history is ${JSON.stringify(await historyLines())}`);
 
   // "Roll a D3" in a reference-table row is a button too.
   await p.click('aside.panel [data-testid=encounter-actions] button:text-is("📖 Open XX1")');
   await p.waitForSelector('.tables-pane h3:has-text("Practice Crate Table")');
   await p.click('.tables-pane tbody button:text-is("🎲 Roll D3")');
   await p.waitForTimeout(ROLL_MS);
-  if ((await chip()) !== 'D3' || !/^D3: [1-6] → [1-3]$/.test((await historyLines())[0] ?? '')) problems.push(`${tag}: table D3 button gave chip "${await chip()}" / ${JSON.stringify(await historyLines())}`);
+  if ((await chip()) !== 'D3' || !/^Free D3: [1-6] → [1-3]$/.test((await historyLines())[0] ?? '')) problems.push(`${tag}: table D3 button gave chip "${await chip()}" / ${JSON.stringify(await historyLines())}`);
   const rowText = (await p.textContent('.tables-pane tbody tr:nth-child(4)'))?.replace(/\s+/g, ' ').trim();
   if (!rowText?.includes('A made-up trinket pile. 🎲 Roll D3 to count them.')) problems.push(`${tag}: table row "${rowText}"`);
   await shot('d8-dice-from-table.png', p);
@@ -3265,6 +3413,63 @@ for (const reduced of [false, true]) {
   if (await open()) problems.push(`${tag}: 🎲 did not close the panel`);
   if ((await p.getAttribute(diceBtn, 'aria-pressed')) !== 'false') problems.push(`${tag}: Dice button pressed while closed`);
   await shot('d9-dice-closed.png', p);
+  await ctx.close();
+}
+
+// 23. Phone (390×844, dpr 3, touch): with a game running, a reference table open and the roller open,
+// the roller covers at most about half the visible map, every roller control is 44 px or more, and
+// the page does not scroll sideways.
+{
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, hasTouch: true, isMobile: true });
+  await ctx.addInitScript(() => localStorage.setItem('2d6.installHintDismissed', '1'));
+  const p = await ctx.newPage();
+  p.on('pageerror', (e) => errors.push(e.message));
+  p.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
+  await p.goto(url, { waitUntil: 'load' });
+  await p.waitForTimeout(800);
+  const tag = 'phone';
+  const panel = '[data-testid=dice-panel]';
+  await p.setInputFiles('input[data-extra="tables"]', { name: 'tables.json', mimeType: 'application/json', buffer: Buffer.from(readFileSync('tests/fixtures/dungeon-tables.fixture.json')) });
+  await p.waitForTimeout(500);
+  await p.click('header.toolbar button.tables');
+  await p.waitForSelector('.tables-pane');
+  await p.click('header.toolbar button[aria-label="Dice"]');
+  await p.waitForSelector(panel);
+  await p.click(`${panel} button.roll`);
+  await p.waitForTimeout(1200);
+  await p.click(`${panel} button.roll`);
+  await p.waitForTimeout(1200);
+  const rect = (sel) => p.$eval(sel, (e) => e.getBoundingClientRect().toJSON());
+  const pr = await rect(panel);
+  const cr = await rect('canvas');
+  const side = await rect('.shell > .side');
+  const visTop = cr.top;
+  const visBottom = Math.min(cr.bottom, side.top > visTop ? side.top : cr.bottom);
+  const visibleArea = cr.width * Math.max(0, visBottom - visTop);
+  const share = (pr.width * pr.height) / visibleArea;
+  console.log(`${tag}: roller ${pr.width.toFixed(0)}×${pr.height.toFixed(0)} of map ${cr.width.toFixed(0)}×${(visBottom - visTop).toFixed(0)} (${(share * 100).toFixed(0)}%)`);
+  if (share > 0.5) problems.push(`${tag}: roller covers ${(share * 100).toFixed(0)}% of the visible map (limit 50%)`);
+  if (pr.left < cr.left || pr.right > cr.right + 0.5) problems.push(`${tag}: roller is wider than the map`);
+  const small = await p.$$eval(`${panel} button, ${panel} input`, (els) =>
+    els.map((el) => ({ t: el.textContent?.trim() || el.getAttribute('aria-label') || el.tagName, r: el.getBoundingClientRect() })).filter((b) => b.r.width > 0 && (b.r.width < 44 || b.r.height < 44)).map((b) => `${b.t} ${b.r.width.toFixed(1)}×${b.r.height.toFixed(1)}`),
+  );
+  for (const b of small) problems.push(`${tag}: roller control too small: ${b}`);
+  await p.click(`${panel} [data-testid=dice-enter]`);
+  await p.waitForSelector(`${panel} [data-testid=dice-typed]`);
+  const boxes = await p.$$eval(`${panel} [data-testid=dice-typed] input`, (els) => els.map((e) => e.getBoundingClientRect().toJSON()));
+  for (const b of boxes) if (b.width < 52 || b.height < 52) problems.push(`${tag}: typed box ${b.width.toFixed(1)}×${b.height.toFixed(1)} (want 52)`);
+  const pr2 = await rect(panel);
+  const share2 = (pr2.width * pr2.height) / visibleArea;
+  if (share2 > 0.5) problems.push(`${tag}: roller with typed boxes covers ${(share2 * 100).toFixed(0)}% of the visible map`);
+  const chipsTop = await rect(`${panel} .chips`);
+  const modTop = await rect(`${panel} .modifier`);
+  if (Math.abs(chipsTop.top - modTop.top) > 4) problems.push(`${tag}: chips and modifier are not on one row`);
+  const histLines = await p.$$eval(`${panel} [data-testid=dice-history] li`, (els) => els.filter((e) => e.getBoundingClientRect().height > 0).length);
+  if (histLines !== 1) problems.push(`${tag}: ${histLines} history lines shown (want 1)`);
+  const scrollW = await p.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  if (scrollW > 0) problems.push(`${tag}: page scrolls sideways by ${scrollW}px`);
+  await p.screenshot({ path: join(outDir, 'phone-roller.png') });
+  console.log(`Saved ${join(outDir, 'phone-roller.png')}`);
   await ctx.close();
 }
 

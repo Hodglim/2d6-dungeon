@@ -89,6 +89,14 @@ export function parseDamage(text: string): { dice: DiceKind; modifier: number } 
   return { dice, modifier: m[2] === '+' || n === 0 ? n : -n };
 }
 
+/** The first roll card text names ("Lose D6 HP", "2D6+1 damage"), or null. D66 and table codes don't count. */
+export function findDice(text: string): { dice: DiceKind; modifier: number } | null {
+  const m = /(?<![A-Za-z0-9])([23]?d[36])(?!\d)(?:\s*([+\-−])\s*(\d+))?/i.exec(text);
+  if (!m) return null;
+  const n = m[3] ? Number(m[3]) : 0;
+  return { dice: m[1]!.toLowerCase() as DiceKind, modifier: m[2] === '+' || n === 0 ? n : -n };
+}
+
 export const HISTORY_SIZE = 5;
 
 /** Newest first, at most five. */
@@ -101,9 +109,11 @@ export const DICE_PREFS_KEY = '2d6.diceRoller';
 export interface DicePrefs {
   open: boolean;
   dice: DiceKind;
+  /** "Enter my roll": Roll buttons open the roller for typing instead of rolling. */
+  enter: boolean;
 }
 
-const DEFAULT_PREFS: DicePrefs = { open: false, dice: 'd6' };
+const DEFAULT_PREFS: DicePrefs = { open: false, dice: 'd6', enter: false };
 
 type Storage = Pick<globalThis.Storage, 'getItem' | 'setItem'>;
 
@@ -114,7 +124,7 @@ export function readDicePrefs(storage: Storage | undefined): DicePrefs {
     if (!raw) return { ...DEFAULT_PREFS };
     const v = JSON.parse(raw) as Partial<DicePrefs>;
     if (typeof v.open !== 'boolean' || !ALL.some((d) => d.kind === v.dice)) return { ...DEFAULT_PREFS };
-    return { open: v.open, dice: v.dice as DiceKind };
+    return { open: v.open, dice: v.dice as DiceKind, enter: v.enter === true };
   } catch {
     return { ...DEFAULT_PREFS };
   }

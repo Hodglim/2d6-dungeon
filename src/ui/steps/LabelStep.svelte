@@ -2,7 +2,8 @@
   import type { ExecResult } from '../../core/history';
   import type { PlayFlow, Step } from '../../interaction/playflow';
   import { dungeonSystem } from '../../systems/dungeon';
-  import DiceEntry from '../DiceEntry.svelte';
+  import RollCard from '../RollCard.svelte';
+  import type { DiceJob } from '../diceDesk';
   import DieFace from '../DieFace.svelte';
   import EncounterText from '../encounter/EncounterText.svelte';
   import { placingFirst, type EncounterHooks } from '../encounter/encounterActions';
@@ -35,6 +36,40 @@
   const kindName = $derived(step.roll?.kind === 'small' ? 'Small room' : step.roll?.kind === 'large' ? 'Large room' : 'Room');
   const twoD6 = $derived(step.roll !== null && step.roll.kind !== 'rooms');
   const chooseDoor = $derived((step.skipped || (step.roll === null && step.draft.doorsFromTable === true)) && step.chosen.length > 0 && step.draft.sizeClass !== 'small');
+
+  const roomJob: DiceJob = $derived({
+    id: 'room-table',
+    kind: 'request',
+    label: 'Room table',
+    dice: twoD6 ? '2d6' : 'd66',
+    modifier: null,
+    roll: () => {
+      const r = flow.rollRoomTable();
+      rerolled = r?.rerolls ?? 0;
+      return r ? r.dice : [];
+    },
+    rolled: (v) => flow.applyRoomTableResult(v),
+    enter: (v) => {
+      rerolled = 0;
+      flow.enterRoomTable(v);
+      return flow.step.kind === 'label' ? (flow.step.error ?? null) : null;
+    },
+    error: step.error,
+  });
+  const exitJob: DiceJob = $derived({
+    id: 'exit-table',
+    kind: 'request',
+    label: 'Exit type',
+    dice: 'd66',
+    modifier: null,
+    roll: () => flow.rollExitTable(),
+    rolled: (v) => flow.applyExitTableResult(v),
+    enter: (v) => {
+      flow.enterExitTable(v);
+      return flow.step.kind === 'label' ? (flow.step.error ?? null) : null;
+    },
+    error: step.error,
+  });
 
   /**
    * Roll and Fight place the room first (as Done does): the fight is saved, the unplaced room is not.
@@ -80,19 +115,8 @@
   <p data-testid="no-level-tables">{step.error ?? `Your table file has no Level ${step.roll.level} room tables.`}</p>
   <div class="row"><button type="button" onclick={() => flow.skipRoomTable()}>Skip</button></div>
 {:else if step.roll && !step.result}
-  <p>{kindName} roll — {twoD6 ? 'roll two dice, added together' : 'roll the red and blue dice'}, then type them in, or let the app roll.</p>
-  <DiceEntry
-    dice={twoD6 ? '2d6' : 'd66'}
-    labels={twoD6 ? ['Die 1', 'Die 2'] : ['Red', 'Blue']}
-    error={step.error}
-    onenter={(v) => { rerolled = 0; flow.enterRoomTable(v); }}
-    onroll={() => {
-      const r = flow.rollRoomTable();
-      rerolled = r?.rerolls ?? 0;
-      return r ? r.dice : [];
-    }}
-    onrolled={(v) => flow.applyRoomTableResult(v)}
-  />
+  <p>{kindName} roll — {twoD6 ? 'roll two dice, added together' : 'roll the red and blue dice'} in the dice roller — or type your own there.</p>
+  <RollCard job={roomJob} />
   <div class="row"><button type="button" onclick={() => flow.skipRoomTable()}>Skip</button></div>
 {:else if step.roll && step.result}
   {@const r = step.result}
@@ -112,15 +136,7 @@
   </div>
   {#if r.needsExit}
     <p>This room's exit type is random. Roll the Exit Type table.</p>
-    <DiceEntry
-      dice="d66"
-      labels={['Red', 'Blue']}
-      error={step.error}
-      enterLabel="Use these"
-      onenter={(v) => flow.enterExitTable(v)}
-      onroll={() => flow.rollExitTable()}
-      onrolled={(v) => flow.applyExitTableResult(v)}
-    />
+    <RollCard job={exitJob} />
   {:else}
     <div class="row">
       <button type="button" onclick={() => { rerolled = 0; flow.discardRoomRoll(); }}>Roll again</button>

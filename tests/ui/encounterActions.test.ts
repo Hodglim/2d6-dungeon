@@ -430,10 +430,6 @@ describe('placingFirst', () => {
 });
 
 describe('throwing weapons and potion bombs', () => {
-  const rngOf = (...v: number[]) => {
-    let i = 0;
-    return () => v[i++ % v.length]!;
-  };
   /** A fight with one Grumbler and a hero carrying a spike and a bomb. */
   function setup() {
     const h = new History(emptyMap());
@@ -449,7 +445,7 @@ describe('throwing weapons and potion bombs', () => {
     const before = enc(h).foes[0]!.hp;
     // D66 of 3 & 4 against Damp Hide (secondary 4s, −1): 5 + 1 − 1 = 5
     const ints = [{ name: 'Damp Hide', side: 'secondary' as const, dice: [4], modifier: -1 }];
-    expect(throwWeapon(h, spike, 'f1', ints, rngOf(0.4, 0.6))).toEqual({ ok: true });
+    expect(throwWeapon(h, spike, 'f1', ints, [3, 4])).toEqual({ ok: true });
     expect(enc(h).foes[0]!.hp).toBe(Math.max(0, before - 5));
     expect(enc(h).throws).toEqual([
       { kind: 'weapon', name: 'Spike', foeId: 'f1', round: 1, faces: [3, 4], damage: 5, interrupts: ['Damp Hide'], item: 'Spike +1', list: 'largeItems', deflected: true },
@@ -464,15 +460,35 @@ describe('throwing weapons and potion bombs', () => {
   it('a bomb is used up and its rolled damage taken off', () => {
     const h = setup();
     commitEncounter(h, setFoeHp(enc(h), 'f1', 20), 'hp');
-    expect(throwBomb(h, fizz, 'f1', 2, rngOf(0.5, 0))).toEqual({ ok: true }); // 4 + 1 + 1 = 6
+    expect(throwBomb(h, fizz, 'f1', 2, [4, 1])).toEqual({ ok: true }); // 4 + 1 + 1 = 6
     expect(enc(h).foes[0]!.hp).toBe(14);
     expect(enc(h).throws![0]).toMatchObject({ kind: 'bomb', name: 'Fizz Jar', faces: [4, 1], damage: 6 });
     expect((h.hero as Hero).potions).toEqual([]);
   });
 
+  it('a bomb is refused when another potion now sits at its index', () => {
+    const h = setup();
+    commitEncounter(h, enc(h), 'swap', { hero: { ...(h.hero as Hero), potions: [{ name: 'Plain Tonic', effect: '' }] } });
+    const hero0 = h.hero;
+    const enc0 = h.encounter;
+    expect(throwBomb(h, fizz, 'f1', 2, [4, 1])).toEqual({ ok: false, reason: 'Fizz Jar is no longer in the pack' });
+    expect(h.hero).toBe(hero0);
+    expect(h.encounter).toBe(enc0);
+  });
+
+  it('throwBomb with no damage dice ignores faces', () => {
+    const h = setup();
+    commitEncounter(h, setFoeHp(enc(h), 'f1', 20), 'hp');
+    commitEncounter(h, enc(h), 'swap', { hero: { ...(h.hero as Hero), potions: [{ name: 'Smoke Jar', effect: '' }] } });
+    const smoke = { bomb: { name: 'Smoke Jar', effect: '' }, index: 0 };
+    expect(throwBomb(h, smoke, 'f1', 1, [])).toEqual({ ok: true });
+    expect(enc(h).foes[0]!.hp).toBe(20);
+    expect(enc(h).throws![0]).toMatchObject({ kind: 'bomb', name: 'Smoke Jar', faces: [], damage: 0 });
+  });
+
   it('a weapon that was not deflected can be recovered after the fight', () => {
     const h = setup();
-    throwWeapon(h, spike, 'f1', [], rngOf(0.4, 0.6));
+    throwWeapon(h, spike, 'f1', [], [3, 4]);
     expect(recoverThrown(h, 0, 5)).toEqual({ ok: true });
     expect((h.hero as Hero).largeItems).toEqual(['Spike +1']);
     expect(enc(h).throws![0]!.recovered).toBe(true);

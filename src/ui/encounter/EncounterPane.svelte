@@ -13,7 +13,7 @@
 
 <script lang="ts">
   import { onDestroy, tick } from 'svelte';
-  import type { History } from '../../core/history';
+  import type { ExecResult, History } from '../../core/history';
   import { randomId } from '../../core/ids';
   import type { CardPack } from '../../systems/dungeon/cards';
   import {
@@ -38,8 +38,10 @@
   import DiceSet from '../DiceSet.svelte';
   import { deflects } from '../../systems/dungeon/armour';
   import { interruptHits, interruptLapsed } from '../../systems/dungeon/creatureCombat';
-  import { useDiceRoll } from '../diceContext';
-  import { parseDamage, rollLabel } from '../diceRoller';
+  import type { CarriedWeapon, PotionBomb } from '../../systems/dungeon/throwing';
+  import { useDiceDesk } from '../diceDeskContext';
+  import { parseDamage, rollLabel, rollTotal } from '../diceRoller';
+  import type { DiceKind } from '../diceRoller';
   import { adjustHp, commitHero } from '../hero/heroActions';
   import { shouldAskWin } from '../endings';
   import VictoryPanel from './VictoryPanel.svelte';
@@ -106,7 +108,76 @@
   }: Props = $props();
 
   /** The shell's dice roller: a hit manoeuvre rolls its damage there. */
-  const diceRoll = useDiceRoll();
+  const desk = useDiceDesk();
+
+  /** One-shot requests this pane asked the roller for and that may still be waiting for a roll. */
+  const outstanding = new Set<string>();
+  function dropOutstanding() {
+    for (const id of outstanding) desk?.remove(id);
+    outstanding.clear();
+  }
+  onDestroy(dropOutstanding);
+
+  /** Typed dice read as faces, or the text to show when one is not a number from 1 to 6. */
+  function typedFaces(values: string[]): number[] | string {
+    const faces = values.map((v) => (/^\s*[1-6]\s*$/.test(v) ? Number(v) : NaN));
+    if (faces.some(Number.isNaN)) return values.length === 1 ? 'Type a number from 1 to 6.' : 'Type a number from 1 to 6 on each die.';
+    return faces;
+  }
+
+  /** Ask the roller for one roll that `apply` takes, rolled or typed; a typed roll is checked first. */
+  function askOnce(
+    id: string,
+    label: string,
+    dice: DiceKind,
+    modifier: number,
+    apply: (faces: number[], modifier: number) => ExecResult | void,
+    modifierEditable = true,
+  ) {
+    outstanding.add(id);
+    desk?.ask({
+      id,
+      kind: 'request',
+      label,
+      dice,
+      modifier: modifier || null,
+      modifierEditable,
+      oneShot: true,
+      rolled: apply,
+      enter: (values, mod) => {
+        const faces = typedFaces(values);
+        if (typeof faces === 'string') return faces;
+        const r = apply(faces, mod);
+        if (r && !r.ok) return r.reason;
+      },
+    });
+  }
+
+  /** The total of the last damage roll, beside the manoeuvre that rolled it, for this turn only. */
+  let damageNote = $state<{ key: string; name: string; text: string } | null>(null);
+  function askDamage(name: string, damage: { dice: DiceKind; modifier: number }) {
+    const key = turnKey;
+    askOnce(`damage:${key}:${name}`, `${name} damage`, damage.dice, damage.modifier, (faces, modifier) => {
+      damageNote = { key, name, text: `Rolled ${rollTotal(damage.dice, faces, modifier)} damage` };
+    });
+  }
+
+  const foeNamed = (id: string) => encounter?.foes.find((x) => x.id === id)?.name ?? '';
+  function askThrowWeapon(c: CarriedWeapon, foeId: string) {
+    const name = foeNamed(foeId);
+    const interrupts = findCreature(tables, name)?.stats.interrupts ?? [];
+    askOnce(`throw:${c.list}:${c.index}`, `Throw ${c.item} at ${name}`, 'd66', 0, (faces) => throwWeapon(history, c, foeId, interrupts, faces));
+  }
+  function askThrowBomb(c: { bomb: PotionBomb; index: number }, foeId: string) {
+    const dice = c.bomb.damage ? parseDamage(c.bomb.damage) : null;
+    if (!dice) return void throwBomb(history, c, foeId, dungeonLevel, []);
+    askOnce(`bomb:${c.index}`, `${c.bomb.name} at ${foeNamed(foeId)}`, dice.dice, dice.modifier, (faces) => throwBomb(history, c, foeId, dungeonLevel, faces), false);
+  }
+  function askRecover(i: number) {
+    const t = encounter?.throws?.[i];
+    if (!t) return;
+    askOnce(`recover:${i}`, `Get back the ${t.name}`, 'd6', 0, (faces) => recoverThrown(history, i, faces[0]!));
+  }
 
   const askingWin = $derived(!holdWin && !win.victory && shouldAskWin(encounter, win.dismissed));
   const showVictory = $derived(win.victory && encounter !== null);
@@ -159,6 +230,7 @@
     const first = seenKey === '';
     seenKey = k;
     dice = null;
+    dropOutstanding();
     if (!first && k) void tick().then(() => diceBox?.scrollIntoView({ block: foeTurn ? 'end' : 'nearest' }));
   });
   function setDice(s: DiceState | null) {
@@ -300,7 +372,7 @@
     if (!r.ok) rollError = { index, text: r.reason };
   }
 
-  // Each pending roll (and each result) object gets its own key, so its DiceEntry is never handed
+  // Each pending roll (and each result) object gets its own key, so its roll card is never handed
   // to another roll (two queued "PRAC1 −1" rolls are distinct; Undo brings back the original
   // object, which mounts fresh).
   const objectKeys = new WeakMap<object, number>();
@@ -458,7 +530,7 @@
       <ul class="manoeuvres" aria-label="{f.name} manoeuvres">
         {#each stats.manoeuvres as m, i (i)}
           {@const hit = attacking && foeHits.has(i)}
-          {@const damage = hit && diceRoll ? parseDamage(m.damage) : null}
+          {@const damage = hit && desk ? parseDamage(m.damage) : null}
           {#snippet body()}
             <span class="faces">
               <DieFace value={m.dice[0]!} colour="red" size={28} />
@@ -474,8 +546,9 @@
                 type="button"
                 class="m-roll"
                 aria-label={`${m.name}: roll damage ${rollLabel(damage.dice, damage.modifier)}`}
-                onclick={() => diceRoll?.(damage.dice, damage.modifier)}
+                onclick={() => askDamage(m.name, damage)}
               >{@render body()}<span class="m-dice" aria-hidden="true">🎲</span></button>
+{#if damageNote && damageNote.key === turnKey && damageNote.name === m.name}<span class="m-note" data-testid="damage-note" role="status">{damageNote.text}</span>{/if}
             {:else}
               {@render body()}
             {/if}
@@ -553,14 +626,14 @@
             hasHero={hero !== null}
             onaddxp={addVictoryXp}
             ondone={winDone}
-            onrecover={(i) => recoverThrown(history, i, Math.floor(Math.random() * 6) + 1)}
+            onrecover={askRecover}
           />
         </div>
       {/if}
 
       {#if encounter && askingFor === null}
         {#each encounter.pending as p, i (keyOf(p))}
-          <PendingRollView roll={p} error={rollError?.index === i ? rollError.text : null} ondie={(d) => void resolvePending(i, d)} onremove={() => removePending(i)} />
+          <PendingRollView roll={p} index={i} error={rollError?.index === i ? rollError.text : null} ondie={(d) => void resolvePending(i, d)} onremove={() => removePending(i)} />
         {/each}
       {/if}
 
@@ -602,8 +675,8 @@
             {encounter}
             {hero}
             {tables}
-            onweapon={(c, id) => throwWeapon(history, c, id, findCreature(tables, encounter?.foes.find((x) => x.id === id)?.name ?? '')?.stats.interrupts ?? [], Math.random)}
-            onbomb={(c, id) => throwBomb(history, c, id, dungeonLevel, Math.random)}
+            onweapon={askThrowWeapon}
+            onbomb={askThrowBomb}
           />
         {/if}
         {#if blindedBy}
@@ -614,6 +687,8 @@
           {#key turnKey}
             <TurnDice
               who={foeTurn ? 'creature' : 'hero'}
+              {turnKey}
+              foeName={foeTurn?.name}
               {pool}
               unknownShift={foeTurn !== null && foeTurn.shift === null}
               manoeuvres={!foeTurn && hero ? hero.manoeuvres : []}
@@ -621,6 +696,8 @@
               onchange={setDice}
               mishap={attacker?.mishap}
               prime={attacker?.prime}
+              onrollnote={desk ? (name, roll) => askDamage(name, roll) : undefined}
+              noteResult={damageNote && damageNote.key === turnKey && (damageNote.name === 'Mishap' || damageNote.name === 'Prime Attack') ? damageNote.text : null}
             />
           {/key}
         </div>
@@ -638,7 +715,7 @@
               <ul class="manoeuvres" aria-label="Manoeuvres">
                 {#each hero.manoeuvres as m, i (i)}
                   {@const hit = matched.has(i)}
-                  {@const damage = hit && diceRoll ? parseDamage(m.modifier) : null}
+                  {@const damage = hit && desk ? parseDamage(m.modifier) : null}
                   {#snippet body()}
                     <span class="faces">
                       {#if m.dice[0]}<DieFace value={m.dice[0]} colour="red" size={28} />{/if}
@@ -654,8 +731,9 @@
                         type="button"
                         class="m-roll"
                         aria-label={`${m.name}: roll damage ${rollLabel(damage.dice, damage.modifier)}`}
-                        onclick={() => diceRoll?.(damage.dice, damage.modifier)}
+                        onclick={() => askDamage(m.name, damage)}
                       >{@render body()}<span class="m-dice" aria-hidden="true">🎲</span></button>
+{#if damageNote && damageNote.key === turnKey && damageNote.name === m.name}<span class="m-note" data-testid="damage-note" role="status">{damageNote.text}</span>{/if}
                     {:else}
                       {@render body()}
                     {/if}
@@ -974,6 +1052,12 @@
   .m-roll:focus-visible {
     outline: 3px solid var(--accent);
     outline-offset: 2px;
+  }
+  .m-note {
+    align-self: center;
+    padding: 0 10px;
+    font-weight: 700;
+    white-space: nowrap;
   }
   .m-dice {
     margin-left: auto;
