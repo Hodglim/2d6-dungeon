@@ -363,7 +363,7 @@
     if (!r.ok) rollError = { index, text: r.reason };
   }
 
-  // Each pending roll (and each result) object gets its own key, so its DiceEntry is never handed
+  // Each pending roll (and each result) object gets its own key, so its roll card is never handed
   // to another roll (two queued "PRAC1 −1" rolls are distinct; Undo brings back the original
   // object, which mounts fresh).
   const objectKeys = new WeakMap<object, number>();

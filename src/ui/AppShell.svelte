@@ -59,7 +59,7 @@
   import { initialTablesState, openTable, type TablesState } from './tables/tablesState';
   import { findTable } from '../systems/dungeon/referenceTables';
   import DicePanel from './DicePanel.svelte';
-  import { readDicePrefs, writeDicePrefs } from './diceRoller';
+  import { readDicePrefs, writeDicePrefs, type DiceKind } from './diceRoller';
   import { DiceDesk, type DeskView } from './diceDesk';
   import { provideDiceDesk } from './diceDeskContext';
 
@@ -146,7 +146,20 @@
     if (!started || loadError || gameOver !== null) return;
     desk.setOpen(!diceView.open);
   }
-  provideDiceDesk(desk);
+  // Text buttons ("Roll a D6") reach the desk through context; outside a live game they do nothing.
+  const liveDesk = new Proxy(desk, {
+    get(target, prop) {
+      if (prop === 'rollFree') {
+        return (dice: DiceKind, modifier = 0) => {
+          if (!started || loadError || gameOver !== null) return;
+          target.rollFree(dice, modifier);
+        };
+      }
+      const v = Reflect.get(target, prop, target);
+      return typeof v === 'function' ? v.bind(target) : v;
+    },
+  });
+  provideDiceDesk(liveDesk);
   let importError = $state<string | null>(null);
   let fileInput: HTMLInputElement | undefined;
   let tablesInput: HTMLInputElement | undefined;
@@ -879,7 +892,7 @@
 
 <!-- Under Game Over or the death question, nothing behind them can be focused or used (keyboard included).
      The wizard and dialogs are siblings of the shell, so they stay usable. -->
-<div class="shell" class:collapsed={panelCollapsed && !sideShown} class:wide={sideShown} inert={gameOver !== null || askingDeath}>
+<div class="shell" class:collapsed={panelCollapsed && !sideShown} class:wide={sideShown} class:dicing={diceView.open} inert={gameOver !== null || askingDeath}>
   <div class="top">
     <Toolbar
       view={$view}
@@ -1213,6 +1226,11 @@
     }
     .shell > .side {
       max-height: 60dvh;
+    }
+    /* With the roller open the map keeps room for it: the side pane gives up some height. */
+    .shell.dicing > :global(.panel),
+    .shell.dicing > .side {
+      max-height: 22dvh;
     }
   }
 

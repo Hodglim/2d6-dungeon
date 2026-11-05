@@ -3382,6 +3382,63 @@ for (const reduced of [false, true]) {
   await ctx.close();
 }
 
+// 23. Phone (390×844, dpr 3, touch): with a game running, a reference table open and the roller open,
+// the roller covers at most about half the visible map, every roller control is 44 px or more, and
+// the page does not scroll sideways.
+{
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, hasTouch: true, isMobile: true });
+  await ctx.addInitScript(() => localStorage.setItem('2d6.installHintDismissed', '1'));
+  const p = await ctx.newPage();
+  p.on('pageerror', (e) => errors.push(e.message));
+  p.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
+  await p.goto(url, { waitUntil: 'load' });
+  await p.waitForTimeout(800);
+  const tag = 'phone';
+  const panel = '[data-testid=dice-panel]';
+  await p.setInputFiles('input[data-extra="tables"]', { name: 'tables.json', mimeType: 'application/json', buffer: Buffer.from(readFileSync('tests/fixtures/dungeon-tables.fixture.json')) });
+  await p.waitForTimeout(500);
+  await p.click('header.toolbar button.tables');
+  await p.waitForSelector('.tables-pane');
+  await p.click('header.toolbar button[aria-label="Dice"]');
+  await p.waitForSelector(panel);
+  await p.click(`${panel} button.roll`);
+  await p.waitForTimeout(1200);
+  await p.click(`${panel} button.roll`);
+  await p.waitForTimeout(1200);
+  const rect = (sel) => p.$eval(sel, (e) => e.getBoundingClientRect().toJSON());
+  const pr = await rect(panel);
+  const cr = await rect('canvas');
+  const side = await rect('.shell > .side');
+  const visTop = cr.top;
+  const visBottom = Math.min(cr.bottom, side.top > visTop ? side.top : cr.bottom);
+  const visibleArea = cr.width * Math.max(0, visBottom - visTop);
+  const share = (pr.width * pr.height) / visibleArea;
+  console.log(`${tag}: roller ${pr.width.toFixed(0)}×${pr.height.toFixed(0)} of map ${cr.width.toFixed(0)}×${(visBottom - visTop).toFixed(0)} (${(share * 100).toFixed(0)}%)`);
+  if (share > 0.5) problems.push(`${tag}: roller covers ${(share * 100).toFixed(0)}% of the visible map (limit 50%)`);
+  if (pr.left < cr.left || pr.right > cr.right + 0.5) problems.push(`${tag}: roller is wider than the map`);
+  const small = await p.$$eval(`${panel} button, ${panel} input`, (els) =>
+    els.map((el) => ({ t: el.textContent?.trim() || el.getAttribute('aria-label') || el.tagName, r: el.getBoundingClientRect() })).filter((b) => b.r.width > 0 && (b.r.width < 44 || b.r.height < 44)).map((b) => `${b.t} ${b.r.width.toFixed(1)}×${b.r.height.toFixed(1)}`),
+  );
+  for (const b of small) problems.push(`${tag}: roller control too small: ${b}`);
+  await p.click(`${panel} [data-testid=dice-enter]`);
+  await p.waitForSelector(`${panel} [data-testid=dice-typed]`);
+  const boxes = await p.$$eval(`${panel} [data-testid=dice-typed] input`, (els) => els.map((e) => e.getBoundingClientRect().toJSON()));
+  for (const b of boxes) if (b.width < 52 || b.height < 52) problems.push(`${tag}: typed box ${b.width.toFixed(1)}×${b.height.toFixed(1)} (want 52)`);
+  const pr2 = await rect(panel);
+  const share2 = (pr2.width * pr2.height) / visibleArea;
+  if (share2 > 0.5) problems.push(`${tag}: roller with typed boxes covers ${(share2 * 100).toFixed(0)}% of the visible map`);
+  const chipsTop = await rect(`${panel} .chips`);
+  const modTop = await rect(`${panel} .modifier`);
+  if (Math.abs(chipsTop.top - modTop.top) > 4) problems.push(`${tag}: chips and modifier are not on one row`);
+  const histLines = await p.$$eval(`${panel} [data-testid=dice-history] li`, (els) => els.filter((e) => e.getBoundingClientRect().height > 0).length);
+  if (histLines !== 1) problems.push(`${tag}: ${histLines} history lines shown (want 1)`);
+  const scrollW = await p.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  if (scrollW > 0) problems.push(`${tag}: page scrolls sideways by ${scrollW}px`);
+  await p.screenshot({ path: join(outDir, 'phone-roller.png') });
+  console.log(`Saved ${join(outDir, 'phone-roller.png')}`);
+  await ctx.close();
+}
+
 await browser.close();
 if (errors.length) problems.push('page errors:\n' + errors.join('\n'));
 if (problems.length) {

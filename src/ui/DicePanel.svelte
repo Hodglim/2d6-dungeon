@@ -103,8 +103,8 @@
   let boxes: (HTMLInputElement | undefined)[] = [];
   $effect(() => {
     const n = count;
-    kind;
-    target?.id;
+    void kind; // a new die or a new target starts the boxes over
+    void target?.id;
     untrack(() => {
       values = Array.from({ length: n }, () => '');
       typedError = null;
@@ -119,7 +119,10 @@
     if (rolling) return;
     const err = desk.settleTyped([...values]);
     typedError = err;
-    if (!err) values = Array.from({ length: count }, () => '');
+    if (!err) {
+      values = Array.from({ length: count }, () => '');
+      shown = null; // the faces on show are no longer the newest history line
+    }
   }
 
   let handledFocus = untrack(() => view.focusSeq);
@@ -145,6 +148,7 @@
       <span class="for-text">{forLine(target, view.kind, view.modifier)}</span>
       {#if target}<button type="button" class="free" aria-label="Roll freely" disabled={rolling} onclick={() => desk.clearTarget()}>×</button>{/if}
     </div>
+    <div class="row">
     <div class="chips" role="group" aria-label="Die">
       {#each DICE as d (d.kind)}
         <button type="button" aria-pressed={kind === d.kind} disabled={rolling || (target !== null && target.dice !== d.kind)} onclick={() => desk.choose(d.kind)}>{d.label}</button>
@@ -168,6 +172,7 @@
         <button type="button" aria-label="Modifier up" disabled={rolling || modifierLocked} onclick={() => stepModifier(1)}>+</button>
       </div>
     {/if}
+    </div>
     <button type="button" class="roll" disabled={rolling} onclick={rollButton}>🎲 Roll {rollLabel(kind, hasModifier ? view.modifier : 0)}</button>
     <button type="button" class="enter" aria-pressed={view.enterMode} data-testid="dice-enter" onclick={() => desk.setEnterMode(!view.enterMode)}>Enter my roll</button>
     {#if target?.shift?.state && !rolling}
@@ -247,6 +252,9 @@
   h2 {
     margin: 0;
     font-size: 19px;
+  }
+  .row {
+    display: contents; /* one row only on a phone */
   }
   button {
     min-width: 44px;
@@ -381,9 +389,87 @@
     color: var(--danger);
     font-size: 14px;
   }
-  @media (max-width: 699px) {
+  /* Phone: the full map width less a 16 px gutter each side; chips and modifier share a row, only the
+     newest history line shows, and the typed boxes grow to 52 px. */
+  @media (max-width: 699.98px) {
+    .dice-panel {
+      width: calc(100% - 32px);
+      justify-self: center;
+      margin: 8px 16px;
+      padding: 4px 10px 6px;
+      gap: 4px 6px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      align-items: stretch;
+    }
+    .dice-panel > :global(*) {
+      grid-column: 1 / -1;
+    }
+    .dice-panel > header {
+      grid-row: 1;
+      grid-column: 2;
+      justify-content: flex-end;
+    }
+    .dice-panel > .for {
+      grid-row: 1;
+      grid-column: 1;
+    }
+    h2 {
+      position: absolute; /* the For line is the visible label; the heading stays for assistive tech */
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+    }
+    .dice-panel > .roll,
+    .dice-panel > .enter {
+      grid-column: auto;
+    }
+    .row {
+      display: flex;
+      gap: 6px;
+    }
+    .row .chips {
+      flex: 1;
+      min-width: 0;
+    }
+    .row .modifier {
+      flex: 0 0 140px;
+    }
+    .result {
+      min-height: 44px;
+    }
+    .roll {
+      min-height: 44px;
+    }
+    .history {
+      padding-top: 0;
+      border-top: 0;
+      font-size: 13px;
+      line-height: 1.3;
+    }
+    .typed {
+      flex-direction: row;
+      align-items: stretch;
+      flex-wrap: wrap;
+    }
+    .boxes {
+      flex: 1 1 0;
+      min-width: 0;
+    }
+    .typed > button {
+      flex: 0 0 120px;
+    }
+    .typed .error {
+      order: 3;
+    }
     .history li:not(:first-child) {
       display: none;
+    }
+    .boxes input {
+      width: 52px;
+      min-height: 52px;
+      min-width: 52px;
     }
   }
   .history li:first-child {
