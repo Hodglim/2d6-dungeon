@@ -752,12 +752,18 @@ if (!(await page.isVisible('text=This replaces your current game.'))) problems.p
   if (!(await p.isVisible(`${panel} [role=alert]:has-text("Your backpack holds 2 large items")`))) problems.push('limit warning missing');
   await wshot('37-hero-limit-warning.png');
   await p.click(`${panel} [role=alert] button:text-is("Cancel")`);
-  await p.click(`${panel} #hero-tab-items`);
+  await p.click(`${panel} #hero-tab-pack`);
   if ((await p.$$eval(`${panel} .slots li:not(.over) .grow:not(.empty)`, (e) => e.length)) !== 2) problems.push('Cancel did not leave the items alone');
   await p.fill(`${panel} [aria-label="New large item"]`, 'Anvil');
-  await p.click(`${panel} .page form button:text-is("Add")`);
+  await p.click(`${panel} .page form:has([aria-label="New large item"]) button:text-is("Add")`);
   await p.click(`${panel} [role=alert] button:text-is("Add anyway")`);
   if ((await p.$$eval(`${panel} .slots li`, (e) => e.length)) !== 3) problems.push('Add anyway did not add the item');
+  {
+    const w = (sel) => p.$eval(`${panel} ${sel}`, (e) => Math.round(e.getBoundingClientRect().width));
+    const [large, small] = [await w('[aria-label="New large item"]'), await w('[aria-label="Small items: new entry"]')];
+    if (Math.abs(large - small) > 1) problems.push(`small item box ${small}px wide, large item box ${large}px`);
+    if (await p.isVisible(`${panel} [aria-label="Rations note"]`)) problems.push('rations note still showing');
+  }
   await wshot('36-hero-items.png');
   await smallHero('items tab');
 
@@ -769,8 +775,8 @@ if (!(await page.isVisible('text=This replaces your current game.'))) problems.p
   await p.click(`${panel} .offer button:text-is("Level up")`);
   if (await p.isVisible(`${panel} .offer`)) problems.push('level-up offer still showing at the top level');
 
-  // Stats page: manoeuvres offered from the loaded table file.
-  await p.click(`${panel} #hero-tab-stats`);
+  // Combat page: manoeuvres offered from the loaded table file.
+  await p.click(`${panel} #hero-tab-combat`);
   if (!(await p.isVisible(`${panel} button[aria-label="Add Grand Wave"]`))) problems.push('weapon manoeuvres not offered');
   await p.click(`${panel} button[aria-label="Add Cheerful Flourish"]`);
   if (await p.isVisible(`${panel} [role=alert]`)) problems.push('warning shown within the manoeuvre limit');
@@ -832,8 +838,9 @@ if (!(await page.isVisible('text=This replaces your current game.'))) problems.p
     await p.screenshot({ path: join(outDir, '42-die-faces.png'), clip: { x: 0, y: 0, width: 640, height: 220 } });
     await p.evaluate(() => document.getElementById('all-faces')?.remove());
   }
-  await smallHero('stats tab');
+  await smallHero('combat tab');
   // Identity fields are editable by hand: one commit each, no automatic stat changes.
+  await p.click(`${panel} #hero-tab-hero`);
   {
     const shiftSel = `${panel} label:has(.cap:text-is("shift")) input`;
     const shiftBefore = await p.inputValue(shiftSel);
@@ -854,14 +861,29 @@ if (!(await page.isVisible('text=This replaces your current game.'))) problems.p
     await p.press(`${panel} [aria-label="HP baseline"]`, 'Tab');
   }
 
-  await p.click(`${panel} #hero-tab-potions`);
   await p.click(`${panel} button[aria-label="Scraped Up box 2"]`);
   await p.click(`${panel} button[aria-label="Old Mossbeard favour box 3"]`);
-  await wshot('35-hero-potions.png');
-  await smallHero('potions tab');
-  await p.click(`${panel} #hero-tab-story`);
-  await p.fill(`${panel} textarea`, 'Found a very small door.');
-  await p.click(`${panel} #hero-tab-items`);
+  // Conditions and Favour: every row's boxes start on one line, whatever the length of its name.
+  const tracksAligned = async (where) => {
+    const xs = await p.$$eval(`${panel} [data-testid=conditions] .boxes, ${panel} [data-testid=favour] .boxes`, (gs) => gs.map((g) => Math.round(g.getBoundingClientRect().x)));
+    if (xs.length < 3 || new Set(xs).size !== 1) problems.push(`condition and favour boxes ${where} not lined up: ${xs}`);
+    const fx = await p.$$eval(`${panel} [data-testid=conditions] .effect`, (es) => es.map((e) => Math.round(e.getBoundingClientRect().x)));
+    if (new Set(fx).size !== 1) problems.push(`condition effects ${where} not lined up: ${fx}`);
+    if (await p.$eval(panel, (e) => e.scrollWidth > e.clientWidth + 1)) problems.push(`hero tab ${where}: panel scrolls sideways`);
+  };
+  await tracksAligned('wide');
+  await wshot('35-hero-conditions.png');
+  await p.$eval(panel, (e) => { e.style.setProperty('width', '420px', 'important'); e.style.setProperty('flex', 'none', 'important'); });
+  await p.waitForTimeout(200);
+  await tracksAligned('at 420');
+  await p.$eval(`${panel} [data-testid=favour]`, (e) => e.scrollIntoView({ block: 'center' }));
+  await p.screenshot({ path: join(outDir, '35b-hero-conditions-narrow.png') });
+  await p.$eval(panel, (e) => { e.style.removeProperty('width'); e.style.removeProperty('flex'); });
+  await p.waitForTimeout(200);
+  await smallHero('hero tab');
+  await p.click(`${panel} #hero-tab-journal`);
+  await p.fill(`${panel} textarea[aria-label="Narrative"]`, 'Found a very small door.');
+  await p.click(`${panel} #hero-tab-pack`);
   await p.waitForTimeout(1500);
   const savedHero = await readSaved();
 
@@ -1004,11 +1026,12 @@ if (!(await page.isVisible('text=This replaces your current game.'))) problems.p
   if ((await statusOf('tables')) !== 'No table file loaded') problems.push('table file came back after Remove and reload');
   await p.click('header.toolbar button.hero');
   await p.waitForSelector('.hero-panel');
+  await p.click('.hero-panel #hero-tab-combat');
   if (!(await p.isVisible('.hero-panel >> text=Load your table file to choose manoeuvres'))) problems.push('no-tables manoeuvre hint missing');
 
   // Typed text, then the app is backgrounded without any blur: the text is kept.
-  await p.click('.hero-panel #hero-tab-story');
-  await p.fill('.hero-panel textarea', 'typed, then the app was backgrounded');
+  await p.click('.hero-panel #hero-tab-journal');
+  await p.fill('.hero-panel textarea[aria-label="Narrative"]', 'typed, then the app was backgrounded');
   await p.evaluate(() => {
     Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
     document.dispatchEvent(new Event('visibilitychange'));
@@ -1018,31 +1041,31 @@ if (!(await page.isVisible('text=This replaces your current game.'))) problems.p
   await p.waitForTimeout(1000);
   await p.click('header.toolbar button.hero');
   await p.waitForSelector('.hero-panel');
-  await p.click('.hero-panel #hero-tab-story');
-  if ((await p.inputValue('.hero-panel textarea')) !== 'typed, then the app was backgrounded') problems.push('typed narrative lost when the app was backgrounded');
+  await p.click('.hero-panel #hero-tab-journal');
+  if ((await p.inputValue('.hero-panel textarea[aria-label="Narrative"]')) !== 'typed, then the app was backgrounded') problems.push('typed narrative lost when the app was backgrounded');
 
   // Typed text with no blur, then another edit, then a tab switch: both survive.
-  await p.click('.hero-panel #hero-tab-story');
-  await p.fill('.hero-panel textarea', 'typed before an HP tap');
+  await p.click('.hero-panel #hero-tab-journal');
+  await p.fill('.hero-panel textarea[aria-label="Narrative"]', 'typed before an HP tap');
   const hpNow = Number(await val('HP'));
   await p.evaluate(() => document.querySelector('.hero-panel [aria-label="HP down"]').click());
-  await p.evaluate(() => document.querySelector('.hero-panel #hero-tab-items').click());
+  await p.evaluate(() => document.querySelector('.hero-panel #hero-tab-pack').click());
   await p.waitForTimeout(1500);
   const rebased = await readSaved();
   if (!rebased.includes('typed before an HP tap')) problems.push('typed narrative lost after another edit');
   if (Number(await val('HP')) !== hpNow - 1) problems.push('HP tap lost when rebasing typed text');
 
-  // Teardown with typed text: New game without a hero while the Story tab is open must not crash.
+  // Teardown with typed text: New game without a hero while the Loot & Story tab is open must not crash.
   const errorsBefore = errors.length;
-  await p.click('.hero-panel #hero-tab-story');
-  await p.fill('.hero-panel textarea', 'typed, then the game goes away');
+  await p.click('.hero-panel #hero-tab-journal');
+  await p.fill('.hero-panel textarea[aria-label="Narrative"]', 'typed, then the game goes away');
   await openMenu();
   await p.click('[role=menuitem]:text-is("New game…")');
   await wiz('Start without a hero');
   await p.waitForTimeout(300);
   if (await p.isVisible('[role=alertdialog] button:text-is("Replace")')) await p.click('[role=alertdialog] button:text-is("Replace")');
   await p.waitForTimeout(500);
-  if (!(await p.isVisible('.panel[aria-label="Step panel"]'))) problems.push('step panel missing after the hero went away on the Story tab');
+  if (!(await p.isVisible('.panel[aria-label="Step panel"]'))) problems.push('step panel missing after the hero went away on the Loot & Story tab');
   if (await p.isVisible('.hero-panel')) problems.push('hero panel still showing with no hero');
   if (errors.length !== errorsBefore) problems.push('page error when the hero went away: ' + errors.slice(errorsBefore).join(' | '));
 

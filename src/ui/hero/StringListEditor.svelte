@@ -31,7 +31,7 @@
     <p class="empty">None</p>
   {/if}
   <form class="row" onsubmit={(e) => { e.preventDefault(); add(); }}>
-    <input type="text" bind:value={text} {placeholder} aria-label="{title}: new entry" />
+    <input type="text" class="grow" bind:value={text} {placeholder} aria-label="{title}: new entry" />
     <button type="submit" disabled={!text.trim()}>Add</button>
   </form>
 </section>

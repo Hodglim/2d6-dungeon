@@ -1,4 +1,5 @@
 <script lang="ts">
+  /** What the hero fights with: manoeuvres (offered from the weapon in the table file) and armour. */
   import { listLimit, overLimit, type Hero, type ListKey } from '../../systems/dungeon/hero';
   import type { DungeonTables } from '../../systems/dungeon/tables';
   import DieFace from '../DieFace.svelte';
@@ -19,46 +20,11 @@
     weapon && row ? weapon.manoeuvres.filter((m) => m.level <= row.maxManoeuvreLevel && !hero.manoeuvres.some((x) => x.name === m.name)) : [],
   );
 
-  type Stat = 'shift' | 'discipline' | 'precision';
-  const stats: Stat[] = ['shift', 'discipline', 'precision'];
-
-  function setStat(e: Event, key: Stat) {
-    const el = e.currentTarget as HTMLInputElement;
-    const n = Number(el.value.trim());
-    if (el.value.trim() === '' || !Number.isInteger(n) || n < 0) {
-      el.value = String(hero[key]);
-      return;
-    }
-    if (n !== hero[key]) onedit({ ...hero, [key]: n });
-  }
-  type TextKey = 'name' | 'weapon' | 'title';
-  type WholeKey = 'level' | 'hpBaseline' | 'xp';
-  /** Free text: one commit per change, no mergeKey. */
-  function setText(e: Event, key: TextKey) {
-    const v = (e.currentTarget as HTMLInputElement).value;
-    if (v !== hero[key]) onedit({ ...hero, [key]: v });
-  }
-  /** A whole number at or above `min`; anything else snaps back. Level changes no other stat. */
-  function setWhole(e: Event, key: WholeKey, min: number) {
-    const el = e.currentTarget as HTMLInputElement;
-    const n = Number(el.value.trim());
-    if (el.value.trim() === '' || !Number.isInteger(n) || n < min) {
-      el.value = String(hero[key]);
-      return;
-    }
-    if (n !== hero[key]) onedit({ ...hero, [key]: n });
-  }
-  function setRunes(e: Event) {
-    const v = (e.currentTarget as HTMLInputElement).value;
-    if (v !== hero.appliedRunes) onedit({ ...hero, appliedRunes: v });
-  }
-
   // typed rows
   const blank = () => ({ name: '', d1: 1, d2: 0, modifier: '' });
   let mDraft = $state(blank());
   let aDraft = $state({ name: '', set: '', modifier: '' });
   const aDice = $derived(parseDiceSet(aDraft.set));
-  let sDraft = $state({ name: '', orbit: '', dispelDoubles: '', effectModifier: '' });
   const diceOf = (d: { d1: number; d2: number }) => (d.d2 ? [d.d1, d.d2] : [d.d1]);
 
   function addManoeuvre() {
@@ -76,13 +42,8 @@
   function addOffered(m: { name: string; dice: number[]; damage: string }) {
     onedit({ ...hero, manoeuvres: [...hero.manoeuvres, { name: m.name, dice: [...m.dice], modifier: m.damage }] }, { limit: 'manoeuvres' });
   }
-  function removeRow(key: 'manoeuvres' | 'armour' | 'scrolls', i: number) {
+  function removeRow(key: 'manoeuvres' | 'armour', i: number) {
     onedit({ ...hero, [key]: hero[key].filter((_, j) => j !== i) });
-  }
-  function addScroll() {
-    if (!sDraft.name.trim()) return;
-    onedit({ ...hero, scrolls: [...hero.scrolls, { name: sDraft.name.trim(), orbit: sDraft.orbit.trim(), dispelDoubles: sDraft.dispelDoubles.trim(), effectModifier: sDraft.effectModifier.trim() }] }, { limit: 'scrolls' });
-    sDraft = { name: '', orbit: '', dispelDoubles: '', effectModifier: '' };
   }
 </script>
 
@@ -102,37 +63,6 @@
 {/snippet}
 
 <div class="page">
-  <section>
-    <div class="row ident">
-      <label class="grow"><span class="cap">Name</span><input type="text" aria-label="Hero name" value={hero.name} onchange={(e) => setText(e, 'name')} /></label>
-      <label class="grow"><span class="cap">Weapon</span><input type="text" aria-label="Hero weapon" value={hero.weapon} onchange={(e) => setText(e, 'weapon')} /></label>
-    </div>
-    <div class="row ident">
-      <label><span class="cap">Level</span><input class="num" type="text" inputmode="numeric" aria-label="Hero level" value={hero.level} onchange={(e) => setWhole(e, 'level', 1)} /></label>
-      <label class="grow"><span class="cap">Title</span><input type="text" aria-label="Hero title" value={hero.title} onchange={(e) => setText(e, 'title')} /></label>
-      <label><span class="cap">HP baseline</span><input class="num" type="text" inputmode="numeric" aria-label="HP baseline" value={hero.hpBaseline} onchange={(e) => setWhole(e, 'hpBaseline', 0)} /></label>
-      <label><span class="cap">XP</span><input class="num" type="text" inputmode="numeric" aria-label="XP total" value={hero.xp} onchange={(e) => setWhole(e, 'xp', 0)} /></label>
-    </div>
-    <div class="row stats">
-      {#each stats as s (s)}
-        <label>
-          <span class="cap">{s}</span>
-          <input class="num" type="text" inputmode="numeric" value={hero[s]} onchange={(e) => setStat(e, s)} />
-        </label>
-      {/each}
-    </div>
-    <label class="wide">
-      <span class="cap">Applied runes</span>
-      <input type="text" value={hero.appliedRunes} onchange={setRunes} />
-    </label>
-    <div class="cond legend">
-      <span class="cap">Legend level</span>
-      <button aria-label="Legend level down" disabled={hero.legendLevel === 0} onclick={() => onedit({ ...hero, legendLevel: hero.legendLevel - 1 })}>−</button>
-      <strong class="total">{hero.legendLevel}</strong>
-      <button aria-label="Legend level up" disabled={hero.legendLevel >= 10} onclick={() => onedit({ ...hero, legendLevel: hero.legendLevel + 1 })}>+</button>
-    </div>
-  </section>
-
   <section>
     <h3 class:over={overLimit(hero, 'manoeuvres')}>Manoeuvres {hero.manoeuvres.length} / {listLimit(hero, 'manoeuvres')}</h3>
     <div class="dgrid">
@@ -199,25 +129,6 @@
     {#if aDraft.set.trim() !== '' && !aDice}
       <p class="empty">Write the dice set as printed: 4, 6 & 5, or 4 & 3 + 1.</p>
     {/if}
-  </section>
-
-  <section>
-    <h3 class:over={overLimit(hero, 'scrolls')}>Scrolls {hero.scrolls.length} / {listLimit(hero, 'scrolls')}</h3>
-    <ul>
-      {#each hero.scrolls as s, i (i)}
-        <li class="scroll">
-          <span class="grow"><strong>{s.name}</strong> · orbit {s.orbit} · dispel doubles {s.dispelDoubles} · effect {s.effectModifier}</span>
-          <button aria-label="Remove {s.name}" onclick={() => removeRow('scrolls', i)}>Remove</button>
-        </li>
-      {/each}
-    </ul>
-    <form class="row" onsubmit={(e) => { e.preventDefault(); addScroll(); }}>
-      <input type="text" class="grow" placeholder="Name" aria-label="New scroll name" bind:value={sDraft.name} />
-      <input type="text" class="short" placeholder="Orbit" aria-label="New scroll orbit" bind:value={sDraft.orbit} />
-      <input type="text" class="short" placeholder="Dispel doubles" aria-label="New scroll dispel doubles" bind:value={sDraft.dispelDoubles} />
-      <input type="text" class="short" placeholder="Effect mod" aria-label="New scroll effect modifier" bind:value={sDraft.effectModifier} />
-      <button type="submit" disabled={!sDraft.name.trim()}>Add</button>
-    </form>
   </section>
 </div>
 

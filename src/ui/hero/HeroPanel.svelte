@@ -4,10 +4,10 @@
   import type { DungeonTables } from '../../systems/dungeon/tables';
   import { commitHero } from './heroActions';
   import QuickStrip from './QuickStrip.svelte';
-  import SheetItems from './SheetItems.svelte';
-  import SheetNarrative from './SheetNarrative.svelte';
-  import SheetPotions from './SheetPotions.svelte';
-  import SheetStats from './SheetStats.svelte';
+  import SheetCombat from './SheetCombat.svelte';
+  import SheetHero from './SheetHero.svelte';
+  import SheetJournal from './SheetJournal.svelte';
+  import SheetPack from './SheetPack.svelte';
 
   interface Props {
     hero: Hero;
@@ -25,12 +25,12 @@
   }
 
   const TABS = [
-    { id: 'stats', label: 'Stats' },
-    { id: 'potions', label: 'Potions' },
-    { id: 'story', label: 'Story' },
-    { id: 'items', label: 'Items' },
+    { id: 'hero', label: 'Hero' },
+    { id: 'combat', label: 'Combat' },
+    { id: 'pack', label: 'Pack' },
+    { id: 'journal', label: 'Loot & Story' },
   ] as const;
-  let tab = $state<(typeof TABS)[number]['id']>('stats');
+  let tab = $state<(typeof TABS)[number]['id']>('hero');
   let pending = $state.raw<{ next: Hero; opts: EditOpts; message: string } | null>(null);
 
   // An undo or redo under an open warning makes it stale.
@@ -115,22 +115,22 @@
     <QuickStrip {hero} onedit={edit} />
 
     <div class="tabs" role="tablist" aria-label="Hero sheet pages">
-      {#each TABS as t, i (t.id)}
+      {#each TABS as t (t.id)}
         <button role="tab" id="hero-tab-{t.id}" aria-selected={tab === t.id} aria-controls="hero-page" onclick={() => (tab = t.id)}>
-          {i + 1}. {t.label}
+          {t.label}
         </button>
       {/each}
     </div>
 
     <div id="hero-page" role="tabpanel" aria-labelledby="hero-tab-{tab}">
-      {#if tab === 'stats'}
-        <SheetStats {hero} {tables} onedit={edit} />
-      {:else if tab === 'potions'}
-        <SheetPotions {hero} {tables} onedit={edit} />
-      {:else if tab === 'story'}
-        <SheetNarrative {hero} ontext={editText} />
+      {#if tab === 'hero'}
+        <SheetHero {hero} onedit={edit} />
+      {:else if tab === 'combat'}
+        <SheetCombat {hero} {tables} onedit={edit} />
+      {:else if tab === 'pack'}
+        <SheetPack {hero} {tables} onedit={edit} />
       {:else}
-        <SheetItems {hero} onedit={edit} ontext={editText} />
+        <SheetJournal {hero} onedit={edit} ontext={editText} />
       {/if}
     </div>
   </div>
@@ -259,8 +259,19 @@
     flex-direction: column;
     gap: 16px;
   }
+  /* Each section of a page is its own panel, like a ruled box on a paper character sheet. */
+  .hero-panel :global(.page > section),
+  .hero-panel :global(.tracks > section) {
+    padding: 10px 14px 14px;
+    background: var(--paper-dim);
+    border: 2px solid var(--rule);
+    border-radius: 8px;
+  }
+  .hero-panel :global(.page > section > :last-child) {
+    margin-bottom: 0;
+  }
   .hero-panel :global(h3) {
-    margin: 0 0 6px;
+    margin: 0 0 8px;
     font-size: 19px;
   }
   .hero-panel :global(h3.over) {
