@@ -19,6 +19,24 @@
   const xp = $derived(totalXp(encounter));
   /** XP not yet added to the hero (kept in the encounter, so Undo and reloads agree with the sheet). */
   const toAdd = $derived(Math.max(0, xp - encounter.xpAwarded));
+  /** Done was tapped with XP still to add: ask before closing the fight without it. */
+  let confirming = $state(false);
+  const unadded = $derived(hasHero && toAdd > 0);
+  $effect(() => {
+    if (!unadded) confirming = false;
+  });
+
+  function done() {
+    if (unadded && !confirming) {
+      confirming = true;
+      return;
+    }
+    ondone();
+  }
+  function addAndDone() {
+    onaddxp();
+    ondone();
+  }
 </script>
 
 <section class="victory" aria-labelledby="victory-title">
@@ -35,8 +53,18 @@
     {#if hasHero && xp > 0}
       <button type="button" disabled={toAdd === 0} onclick={onaddxp}>{toAdd === 0 ? `${xp} XP added` : `Add ${toAdd} XP`}</button>
     {/if}
-    <button type="button" class="primary" onclick={ondone}>Done</button>
+    <button type="button" class="primary" onclick={done}>Done</button>
   </div>
+  {#if confirming}
+    <div class="confirm" role="alert">
+      <p>You haven't added the {toAdd} XP to your hero yet.</p>
+      <div class="row">
+        <button type="button" class="primary" onclick={addAndDone}>Add {toAdd} XP and finish</button>
+        <button type="button" onclick={ondone}>Finish without XP</button>
+        <button type="button" onclick={() => (confirming = false)}>Back</button>
+      </div>
+    </div>
+  {/if}
 </section>
 
 <style>
@@ -87,6 +115,20 @@
     border-radius: 6px;
     cursor: pointer;
     touch-action: manipulation;
+  }
+  .confirm {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 8px 10px;
+    background: var(--paper);
+    border: 2px solid var(--ink);
+    border-radius: 6px;
+  }
+  .confirm p {
+    margin: 0;
+    font-size: 17px;
+    font-weight: 600;
   }
   button.primary {
     color: var(--paper);

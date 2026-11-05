@@ -317,6 +317,26 @@
     if (askingWin || showVictory) confirmingEnd = false;
   });
 
+  /**
+   * The win question and the Victory panel sit at the top of the pane, but the last HP tap that
+   * brings them up is usually down at the creature cards: bring each into view as it appears, with
+   * its main button focused.
+   */
+  let winBox = $state<HTMLElement>();
+  let victoryBox = $state<HTMLElement>();
+  function reveal(el: HTMLElement | undefined) {
+    if (!el) return;
+    const still = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    el.scrollIntoView({ block: 'start', behavior: still ? 'auto' : 'smooth' });
+    el.querySelector<HTMLButtonElement>('button.primary')?.focus({ preventScroll: true });
+  }
+  $effect(() => {
+    if (askingWin) void tick().then(() => reveal(winBox));
+  });
+  $effect(() => {
+    if (showVictory) void tick().then(() => reveal(victoryBox));
+  });
+
   function confirmWin() {
     onwin({ ...win, victory: true });
   }
@@ -432,7 +452,7 @@
       {/if}
 
       {#if askingWin}
-        <div class="confirm win" role="alert">
+        <div class="confirm win" role="alert" bind:this={winBox}>
           <p>All creatures defeated: win the fight?</p>
           <div class="row">
             <button class="primary" onclick={confirmWin}>Win the fight</button>
@@ -442,7 +462,9 @@
       {/if}
 
       {#if showVictory && encounter}
-        <VictoryPanel {encounter} {tables} {onopentable} hasHero={hero !== null} onaddxp={addVictoryXp} ondone={winDone} />
+        <div bind:this={victoryBox}>
+          <VictoryPanel {encounter} {tables} {onopentable} hasHero={hero !== null} onaddxp={addVictoryXp} ondone={winDone} />
+        </div>
       {/if}
 
       {#if encounter && askingFor === null}
@@ -567,7 +589,7 @@
 
       <div class="row">
         {#if askingFor === null}<button onclick={() => ((adding = true), (confirmingEnd = false))}>Add creature</button>{/if}
-        {#if encounter && !showVictory}<button onclick={end}>End encounter</button>{/if}
+        {#if encounter && !showVictory && !askingWin}<button onclick={end}>End encounter</button>{/if}
       </div>
       {#if confirmingEnd}
         <div class="confirm" role="alert">
