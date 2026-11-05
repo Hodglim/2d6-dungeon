@@ -47,7 +47,33 @@ export interface LevelTables {
 }
 
 export type CreatureTableEntry = { creatures: string[] } | { text: string };
-export interface CreatureStats { level: number; hp: number; xp: number; shift: number; treasure: string }
+/** One attack off a creature card: hit when the attack dice (after shifting) read `dice`, red then blue. */
+export interface CreatureManoeuvre { name: string; dice: Dice; damage: string }
+/**
+ * One Interrupt off a creature card: when your successful attack's `side` die (red for primary,
+ * blue for secondary) shows one of `dice`, take `modifier` (0 or less) off your damage. `movement`:
+ * it moves the creature or an item, so it stops counting from round 7.
+ */
+export interface CreatureInterrupt {
+  name: string;
+  side: 'primary' | 'secondary';
+  dice: number[];
+  modifier: number;
+  effect?: string;
+  movement?: boolean;
+}
+export interface CreatureStats {
+  level: number;
+  hp: number;
+  xp: number;
+  shift: number;
+  treasure: string;
+  /** The card's combat details (optional): its attacks, Interrupts and Mishap/Prime results. */
+  manoeuvres?: CreatureManoeuvre[];
+  interrupts?: CreatureInterrupt[];
+  mishap?: string;
+  prime?: string;
+}
 
 export interface DungeonTables {
   format: 1;
@@ -211,6 +237,41 @@ const roomEntry = (r: Record<string, unknown>, at: string, hasExit: boolean, has
 
 const SIX_KEYS = ['1', '2', '3', '4', '5', '6'];
 
+const isFace = (v: unknown): boolean => isInt(v) && (v as number) >= 1 && (v as number) <= 6;
+
+/** The optional card details on one creature. */
+function creatureCombatProblem(c: Record<string, unknown>, at: string): string | null {
+  const list = (key: string, each: (r: Record<string, unknown>, rat: string) => string | null): string | null => {
+    const v = c[key];
+    if (v === undefined) return null;
+    if (!Array.isArray(v)) return `${at} ${key}`;
+    for (const [i, r] of v.entries()) {
+      const rat = `${at} ${key} ${i + 1}`;
+      if (!isObj(r)) return rat;
+      const p = each(r, rat);
+      if (p) return p;
+    }
+    return null;
+  };
+  return (
+    list('manoeuvres', (r, rat) =>
+      named(r, rat, ['name']) ??
+      (Array.isArray(r.dice) && r.dice.length === 2 && r.dice.every(isFace) ? null : `${rat} dice`) ??
+      field(r, rat, ['damage'], isStr),
+    ) ??
+    list('interrupts', (r, rat) =>
+      named(r, rat, ['name']) ??
+      (r.side === 'primary' || r.side === 'secondary' ? null : `${rat} side`) ??
+      (Array.isArray(r.dice) && r.dice.length >= 1 && r.dice.every(isFace) ? null : `${rat} dice`) ??
+      (isInt(r.modifier) && (r.modifier as number) <= 0 ? null : `${rat} modifier`) ??
+      (r.effect === undefined || isStr(r.effect) ? null : `${rat} effect`) ??
+      (r.movement === undefined || typeof r.movement === 'boolean' ? null : `${rat} movement`),
+    ) ??
+    (c.mishap === undefined || isStr(c.mishap) ? null : `${at} mishap`) ??
+    (c.prime === undefined || isStr(c.prime) ? null : `${at} prime`)
+  );
+}
+
 /** `creatures` is checked first so the names in `creatureTables` have something to match. */
 function creatureProblem(t: Record<string, unknown>): string | null {
   const known = new Set<string>();
@@ -221,7 +282,7 @@ function creatureProblem(t: Record<string, unknown>): string | null {
       const at = `Creatures ${name}`;
       if (!isObj(c)) return at;
       if (!isInt(c.level) || c.level < 1 || c.level > 10) return `${at} level (must be a whole number from 1 to 10)`;
-      const p = field(c, at, ['hp', 'xp'], isCount) ?? field(c, at, ['shift'], isInt) ?? field(c, at, ['treasure'], isStr);
+      const p = field(c, at, ['hp', 'xp'], isCount) ?? field(c, at, ['shift'], isInt) ?? field(c, at, ['treasure'], isStr) ?? creatureCombatProblem(c, at);
       if (p) return p;
       known.add(name.toLowerCase());
     }

@@ -212,6 +212,42 @@ describe('creature tables and creatures', () => {
     const d = clone(); d.tables.creatures.Grumbler.treasure = 3;
     expect(err(parse(d))).toBe(D + 'Creatures Grumbler treasure');
   });
+  it('takes optional combat details from the creature card', () => {
+    const o = clone();
+    o.tables.creatures.Grumbler = {
+      ...o.tables.creatures.Grumbler,
+      manoeuvres: [{ name: 'Pebble Toss', dice: [3, 4], damage: 'D6 -2 damage' }],
+      interrupts: [
+        { name: 'Moss Cloak', side: 'secondary', dice: [2, 5], modifier: -1 },
+        { name: 'Hop Aside', side: 'primary', dice: [6], modifier: -2, movement: true, effect: 'Made-up: it lands behind you.' },
+      ],
+      mishap: 'Made-up: it trips.',
+      prime: 'Made-up: it shouts.',
+    };
+    const r = parse(o);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.tables.tables.creatures!.Grumbler!.interrupts![1]!.movement).toBe(true);
+  });
+  it('checks the combat details', () => {
+    const at = 'Creatures Grumbler';
+    const bad = (patch: Record<string, unknown>, msg: string) => {
+      const o = clone();
+      Object.assign(o.tables.creatures.Grumbler, patch);
+      expect(err(parse(o))).toBe(D + `${at} ${msg}`);
+    };
+    bad({ manoeuvres: {} }, 'manoeuvres');
+    bad({ manoeuvres: [{ name: 'x', dice: [3], damage: 'D6' }] }, 'manoeuvres 1 dice');
+    bad({ manoeuvres: [{ name: '', dice: [3, 4], damage: 'D6' }] }, 'manoeuvres 1 name (empty)');
+    bad({ manoeuvres: [{ name: 'x', dice: [3, 4] }] }, 'manoeuvres 1 damage');
+    bad({ interrupts: [{ name: 'x', side: 'left', dice: [1], modifier: -1 }] }, 'interrupts 1 side');
+    bad({ interrupts: [{ name: 'x', side: 'primary', dice: [], modifier: -1 }] }, 'interrupts 1 dice');
+    bad({ interrupts: [{ name: 'x', side: 'primary', dice: [7], modifier: -1 }] }, 'interrupts 1 dice');
+    bad({ interrupts: [{ name: 'x', side: 'primary', dice: [1], modifier: 1 }] }, 'interrupts 1 modifier');
+    bad({ interrupts: [{ name: 'x', side: 'primary', dice: [1], modifier: -1, movement: 'yes' }] }, 'interrupts 1 movement');
+    bad({ interrupts: [{ name: 'x', side: 'primary', dice: [1], modifier: -1, effect: 3 }] }, 'interrupts 1 effect');
+    bad({ mishap: 3 }, 'mishap');
+    bad({ prime: null }, 'prime');
+  });
   it('still parses a file with neither key', () => {
     const o = clone(); delete o.tables.creatureTables; delete o.tables.creatures;
     expect(parse(o).ok).toBe(true);

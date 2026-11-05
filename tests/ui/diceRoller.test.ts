@@ -62,6 +62,11 @@ describe('dice roller helper', () => {
     expect(parseDamage('')).toBeNull();
     expect(parseDamage('D66')).toBeNull();
     expect(parseDamage('D6 x2')).toBeNull();
+    // As printed on a creature card: a trailing "damage" and any special effect are ignored.
+    expect(parseDamage('D6 -2 damage')).toEqual({ dice: 'd6', modifier: -2 });
+    expect(parseDamage('2D6 +3 damage + special attack - made-up effect')).toEqual({ dice: '2d6', modifier: 3 });
+    expect(parseDamage('2D6 + special attack - made-up effect')).toEqual({ dice: '2d6', modifier: 0 });
+    expect(parseDamage('3D6 +8 damage')).toBeNull();
   });
   it('adds a modifier to the total, the label and the history line', () => {
     expect(rollTotal('d6', [4], -1)).toBe('3');

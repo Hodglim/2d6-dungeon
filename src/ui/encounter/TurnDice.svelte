@@ -16,8 +16,11 @@
     manoeuvres?: readonly { dice: readonly number[] }[];
     dice: DiceState | null;
     onchange: (s: DiceState | null) => void;
+    /** The creature card's Mishap and Prime results, when the table file has them. */
+    mishap?: string;
+    prime?: string;
   }
-  let { who, pool, unknownShift = false, manoeuvres = [], dice, onchange }: Props = $props();
+  let { who, pool, unknownShift = false, manoeuvres = [], dice, onchange, mishap, prime }: Props = $props();
 
   let error = $state<string | null>(null);
   const d6 = () => Math.floor(Math.random() * 6) + 1;
@@ -58,8 +61,8 @@
       if (n === 'exact') return 'Exact Strike: add your Shift to the damage';
       return null;
     }
-    if (n === 'mishap') return 'Mishap: see the bottom of its card';
-    if (n === 'prime') return 'Prime Attack: see the bottom of its card';
+    if (n === 'mishap') return `Mishap: ${mishap || 'see the bottom of its card'}`;
+    if (n === 'prime') return `Prime Attack: ${prime || 'see the bottom of its card'} Armour can't deflect it.`;
     return null;
   });
 

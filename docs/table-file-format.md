@@ -315,6 +315,12 @@ Where to find them: Codex p. 38 for Level 1; the creature cards for the stats. B
 - `shift`: a whole number. It may be negative.
 - `treasure`: text (may be empty).
 
+Each creature may also carry its card's combat details. They are all optional. With them, the encounter pane lists the creature's attacks and Interrupts, marks a hit on its turn and an Interrupt on yours, and shows the Mishap and Prime results:
+
+- `manoeuvres`: a list of `{ "name", "dice", "damage" }`. `dice` is the red and blue die, such as `[3, 4]`; `damage` is the text as printed, such as `"D6 -2 damage"`.
+- `interrupts`: a list of `{ "name", "side", "dice", "modifier" }`, plus optional `effect` and `movement`. `side` is `"primary"` (matched against the red die) or `"secondary"` (the blue die). `dice` lists the faces that set it off. `modifier` is the damage taken off, 0 or less. `effect` is any extra text. `movement: true` marks one that moves the creature or an item, which stops counting from round 7.
+- `mishap` and `prime`: the text of the Mishap and Prime Attack results.
+
 A made-up example:
 
 ```text
@@ -328,7 +334,16 @@ A made-up example:
 },
 "creatures": {
   "Grumbler": { "level": 1, "hp": 4, "xp": 2, "shift": 0, "treasure": "Made-up: a pouch of pebbles." },
-  "Moss Lurker": { "level": 1, "hp": 6, "xp": 3, "shift": -1, "treasure": "" }
+  "Moss Lurker": {
+    "level": 1, "hp": 6, "xp": 3, "shift": -1, "treasure": "",
+    "manoeuvres": [{ "name": "Spore Puff", "dice": [3, 4], "damage": "D6 -2 damage" }],
+    "interrupts": [
+      { "name": "Damp Hide", "side": "secondary", "dice": [2, 5], "modifier": -1 },
+      { "name": "Roll Aside", "side": "primary", "dice": [6], "modifier": -2, "movement": true }
+    ],
+    "mishap": "Made-up: it slips on its own moss.",
+    "prime": "Made-up: it bursts in a cloud of spores. Lose 1 HP."
+  }
 }
 ```
 

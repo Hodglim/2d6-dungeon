@@ -53,9 +53,13 @@ export function describeRoll(kind: DiceKind, faces: number[], modifier = 0): str
   return mod ? `${label}: ${faces[0]}${mod} = ${total}` : `${label}: ${total}`;
 }
 
-/** A damage text such as "D6 -1" or "2D6 +7" as a die and a modifier; null for a fixed number or anything else. */
+/**
+ * A damage text such as "D6 -1" or "2D6 +7" as a die and a modifier; null for a fixed number or
+ * dice the roller doesn't have. A card's "D6 -2 damage + special attack - …" reads as D6 −2.
+ */
 export function parseDamage(text: string): { dice: DiceKind; modifier: number } | null {
-  const m = /^\s*(2d6|d6|d3)\s*(?:([+\-−])\s*(\d+))?\s*$/i.exec(text);
+  const plain = text.replace(/\s*\+\s*special\b.*$/i, '').replace(/\s*damage\b.*$/i, '');
+  const m = /^\s*(2d6|d6|d3)\s*(?:([+\-−])\s*(\d+))?\s*$/i.exec(plain);
   if (!m) return null;
   const dice = m[1]!.toLowerCase() as DiceKind;
   const n = m[3] ? Number(m[3]) : 0;

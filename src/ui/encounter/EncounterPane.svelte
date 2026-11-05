@@ -31,11 +31,12 @@
   import { findCard, findCreature, rollCreatureTable } from '../../systems/dungeon/creatures';
   import type { CreatureTableEntry } from '../../systems/dungeon/tables';
   import type { Hero } from '../../systems/dungeon/hero';
-  import type { DungeonTables } from '../../systems/dungeon/tables';
+  import type { CreatureInterrupt, DungeonTables } from '../../systems/dungeon/tables';
   import { foePool, heroPool, locked, matches, type DiceState } from '../../systems/dungeon/shift';
   import DieFace from '../DieFace.svelte';
   import DiceSet from '../DiceSet.svelte';
   import { deflects } from '../../systems/dungeon/armour';
+  import { interruptHits, interruptLapsed } from '../../systems/dungeon/creatureCombat';
   import { useDiceRoll } from '../diceContext';
   import { parseDamage, rollLabel } from '../diceRoller';
   import { adjustHp, commitHero } from '../hero/heroActions';
@@ -158,12 +159,28 @@
     if (s) void tick().then(() => diceBox?.scrollIntoView({ block: 'nearest' }));
   }
   /** Manoeuvres the hero's attack dice match now (none on a creature's turn, before a roll, or on a natural double 1/6). */
+  /** A creature's card details from the table file (manoeuvres, Interrupts, Mishap, Prime), when it has them. */
+  const statsOf = (f: Foe) => findCreature(tables, f.name)?.stats ?? null;
+  const attacker = $derived(foeTurn ? statsOf(foeTurn) : null);
+  /** On a creature's turn, its manoeuvres the attack dice (after shifting) hit. */
+  const foeHits = $derived(
+    attacker?.manoeuvres && turnDice && foeTurn && !locked(turnDice) ? new Set(matches(turnDice.faces, attacker.manoeuvres)) : new Set<number>(),
+  );
   /**
-   * On a creature's turn, the armour its attack dice (after shifting) would deflect. A natural
-   * double (Mishap or Prime) is never deflected.
+   * On a creature's turn, the armour its attack dice (after shifting) would deflect: only a hit
+   * can be deflected (when the card's manoeuvres are known), and never a natural double.
    */
-  const deflected = $derived(hero && turnDice && foeTurn && !locked(turnDice) ? new Set(deflects(turnDice.faces, hero.armour)) : new Set<number>());
+  const deflected = $derived(
+    hero && turnDice && foeTurn && !locked(turnDice) && (!attacker?.manoeuvres?.length || foeHits.size > 0)
+      ? new Set(deflects(turnDice.faces, hero.armour))
+      : new Set<number>(),
+  );
   const matched = $derived(hero && turnDice && !foeTurn && !locked(turnDice) ? new Set(matches(turnDice.faces, hero.manoeuvres)) : new Set<number>());
+  /** On the hero's turn, a hit (not a Prime) sets off a standing creature's Interrupts its dice match. */
+  function interruptsHit(f: Foe, ints: readonly CreatureInterrupt[]): Set<number> {
+    if (!encounter || foeTurn || !turnDice || matched.size === 0 || f.hp <= 0) return new Set();
+    return new Set(interruptHits(turnDice.faces, ints, encounter.round));
+  }
 
   /** Bumped when a newer request takes over the HP prompt: the older run of questions stops. */
   let askRun = 0;
@@ -405,6 +422,8 @@
 
 {#snippet foeCard(f: Foe)}
   {@const card = findCard(cards, f.name)}
+  {@const stats = statsOf(f)}
+  {@const attacking = foeTurn?.id === f.id}
 <li class="foe" class:defeated={f.hp <= 0} class:current={foeTurn?.id === f.id} data-testid="foe">
   {#if card}
     <button class="thumb" aria-label="View {f.name} full screen" onclick={() => (big = { name: f.name, image: card.image })}>
@@ -423,6 +442,56 @@
       <span class="small">XP {f.xp ?? '?'}</span>
       <span class="small">Treasure: {f.treasure === null ? '?' : f.treasure || 'none'}</span>
     </div>
+    {#if stats?.manoeuvres?.length}
+      <h4 class="list-head">Manoeuvres</h4>
+      <ul class="manoeuvres" aria-label="{f.name} manoeuvres">
+        {#each stats.manoeuvres as m, i (i)}
+          {@const hit = attacking && foeHits.has(i)}
+          {@const damage = hit && diceRoll ? parseDamage(m.damage) : null}
+          {#snippet body()}
+            <span class="faces">
+              <DieFace value={m.dice[0]!} colour="red" size={28} />
+              <DieFace value={m.dice[1]!} colour="blue" size={28} />
+            </span>
+            <span class="m-name">{m.name}</span>
+            <span class="m-mod">{m.damage}</span>
+            {#if hit}<span class="tag">Hit</span>{/if}
+          {/snippet}
+          <li class:match={hit} data-testid="foe-manoeuvre">
+            {#if damage}
+              <button
+                type="button"
+                class="m-roll"
+                aria-label={`${m.name}: roll damage ${rollLabel(damage.dice, damage.modifier)}`}
+                onclick={() => diceRoll?.(damage.dice, damage.modifier)}
+              >{@render body()}<span class="m-dice" aria-hidden="true">🎲</span></button>
+            {:else}
+              {@render body()}
+            {/if}
+          </li>
+        {/each}
+      </ul>
+    {/if}
+    {#if stats?.interrupts?.length}
+      {@const hits = interruptsHit(f, stats.interrupts)}
+      <h4 class="list-head">Interrupts</h4>
+      <ul class="manoeuvres" aria-label="{f.name} interrupts">
+        {#each stats.interrupts as it, i (i)}
+          {@const lapsed = encounter ? interruptLapsed(it, encounter.round) : false}
+          <li class:match={hits.has(i)} class:lapsed data-testid="foe-interrupt">
+            <span class="faces" role="img" aria-label="{it.side === 'primary' ? 'Red' : 'Blue'} {it.dice.join(', ')}">
+              {#each it.dice as d (d)}<DieFace value={d} colour={it.side === 'primary' ? 'red' : 'blue'} size={22} />{/each}
+            </span>
+            <span class="m-name">{it.name}</span>
+            {#if it.modifier}<span class="m-mod">{it.modifier} damage</span>{/if}
+            {#if hits.has(i)}<span class="tag">Interrupt</span>{/if}
+            {#if lapsed}<span class="m-mod">No longer counts (round 7+)</span>{/if}
+            {#if it.effect}<span class="effect">{it.effect}</span>{/if}
+          </li>
+        {/each}
+      </ul>
+      {#if hits.size > 1}<p class="small">Only one Interrupt counts each round.</p>{/if}
+    {/if}
   </div>
 </li>
 {/snippet}
@@ -515,6 +584,8 @@
               manoeuvres={!foeTurn && hero ? hero.manoeuvres : []}
               dice={turnDice}
               onchange={setDice}
+              mishap={attacker?.mishap}
+              prime={attacker?.prime}
             />
           {/key}
         </div>
@@ -879,6 +950,14 @@
   }
   .m-name {
     font-size: 17px;
+  }
+  .manoeuvres li.lapsed {
+    opacity: 0.55;
+  }
+  .manoeuvres .effect {
+    flex-basis: 100%;
+    font-size: 14px;
+    color: var(--muted);
   }
   .m-mod {
     font-size: 15px;
