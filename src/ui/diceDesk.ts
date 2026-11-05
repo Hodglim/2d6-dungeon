@@ -25,6 +25,8 @@ export interface DiceJob {
   enter: (values: string[], modifier: number) => string | null | void;
   error?: string | null;
   oneShot?: boolean; // removed after rolled/enter
+  /** A request that stays registered for a whole turn (the attack dice): other requests take over from it, and the roller falls back to it last. */
+  standing?: boolean;
   shift?: ShiftControl;
 }
 
@@ -127,15 +129,15 @@ export class DiceDesk {
     } else {
       this.jobs.push(job);
       const t = this.target;
-      if (!t || (t.kind === 'watcher' && job.kind === 'request')) this.aim(job);
+      if (!t || (t.kind === 'watcher' && job.kind === 'request') || (t.standing && job.kind === 'request' && !job.standing)) this.aim(job);
     }
     this.rebuild();
   }
 
   /** After the target goes: the newest request, then the newest watcher, then a free roll. */
   private fallBack(): void {
-    const newest = (k: DiceJob['kind']) => [...this.jobs].reverse().find((j) => j.kind === k) ?? null;
-    this.aim(newest('request') ?? newest('watcher'));
+    const newest = (ok: (j: DiceJob) => boolean) => [...this.jobs].reverse().find(ok) ?? null;
+    this.aim(newest((j) => j.kind === 'request' && !j.standing) ?? newest((j) => j.kind === 'request') ?? newest((j) => j.kind === 'watcher'));
   }
 
   private drop(id: string): void {

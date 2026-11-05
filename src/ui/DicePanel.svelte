@@ -4,6 +4,7 @@
   // job that was targeted when they started. Never part of the game itself: no History step, no save.
   import { onDestroy, tick, untrack } from 'svelte';
   import DieFace from './DieFace.svelte';
+  import DiceShifter from './DiceShifter.svelte';
   import { DICE, rollDice, rollLabel, rollTotal, rollWorking, type DiceKind } from './diceRoller';
   import { forLine, type DeskView, type DiceDesk } from './diceDesk';
   import { animateRoll } from './rollAnimation';
@@ -169,7 +170,10 @@
     {/if}
     <button type="button" class="roll" disabled={rolling} onclick={rollButton}>🎲 Roll {rollLabel(kind, hasModifier ? view.modifier : 0)}</button>
     <button type="button" class="enter" aria-pressed={view.enterMode} data-testid="dice-enter" onclick={() => desk.setEnterMode(!view.enterMode)}>Enter my roll</button>
-    {#if view.enterMode}
+    {#if target?.shift?.state && !rolling}
+      {@const owner = target}
+      <DiceShifter shift={target.shift} onmoved={(faces) => desk.noteShift(owner.id, faces)} />
+    {:else if view.enterMode}
       <form class="typed" data-testid="dice-typed" onsubmit={useTyped}>
         <div class="boxes">
           {#each values as _, i (i)}

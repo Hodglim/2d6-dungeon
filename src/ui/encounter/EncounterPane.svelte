@@ -639,6 +639,8 @@
           {#key turnKey}
             <TurnDice
               who={foeTurn ? 'creature' : 'hero'}
+              {turnKey}
+              foeName={foeTurn?.name}
               {pool}
               unknownShift={foeTurn !== null && foeTurn.shift === null}
               manoeuvres={!foeTurn && hero ? hero.manoeuvres : []}

@@ -293,3 +293,30 @@ describe('store and prefs', () => {
     expect(d.prefs()).toEqual({ open: true, dice: 'd3', enter: true });
   });
 });
+
+describe('standing requests (the attack dice stay registered all turn)', () => {
+  it('another request takes over from a standing target', () => {
+    const d = fresh();
+    d.put(req('attack', { standing: true, dice: '2d6' }));
+    expect(d.view.target?.id).toBe('attack');
+    d.put(req('size'));
+    expect(d.view.target?.id).toBe('size');
+  });
+  it('a standing request does not take over from another request', () => {
+    const d = fresh();
+    d.put(req('size'));
+    d.put(req('attack', { standing: true }));
+    expect(d.view.target?.id).toBe('size');
+  });
+  it('falls back to a plain request before a standing one, even when the standing one is newer', () => {
+    const d = fresh();
+    d.put(req('a'));
+    d.put(req('b'));
+    d.put(req('attack', { standing: true }));
+    d.rollNow('a');
+    d.remove('a');
+    expect(d.view.target?.id).toBe('b');
+    d.remove('b');
+    expect(d.view.target?.id).toBe('attack');
+  });
+});

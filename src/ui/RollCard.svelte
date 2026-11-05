@@ -20,9 +20,12 @@
   let putId: string | null = null;
   $effect(() => {
     if (!desk) return;
-    if (putId !== null && putId !== job.id) desk.remove(putId);
+    // Register the new id before dropping the old one, so a target that moves with it falls onto the new
+    // job (the newest request) rather than onto some other card that is on screen.
+    const old = putId;
     putId = job.id;
     desk.put(job);
+    if (old !== null && old !== job.id) desk.remove(old);
   });
   // Removed on destroy only: a re-put (new job object) must not drop the target.
   onDestroy(() => {

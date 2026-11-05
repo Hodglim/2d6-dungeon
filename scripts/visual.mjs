@@ -1570,13 +1570,15 @@ for (const reduced of [false, true]) {
   if ((await foeHp('Moss Lurker')) !== '6') problems.push(`${tag}: typed 2.5 was not ignored`);
   // Turns and the attack dice. The hero (Shift 2) knows Wobbly Poke 1-4 and Gentle Swipe 2-6.
   const td = `${pane} [data-testid=turn-dice]`;
+  const sh = `${rollerPanel} [data-testid=dice-shifter]`;
+  // The attack card hands the dice to the roller: aim the roller at it, then type red and blue there.
   const typeDice = async (a, b) => {
-    await p.fill(`${td} form.dice input >> nth=0`, String(a));
-    await p.fill(`${td} form.dice input >> nth=1`, String(b));
-    await p.click(`${td} form.dice button:text-is("Use these")`);
+    await rollerEnterModeOn(p, true);
+    await p.click(`${td} [data-testid=roll-card] button`);
+    await rollerEnterOn(p, a, b);
   };
   const faces = () => p.$$eval(`${td} [data-testid=attack-die]`, (els) => els.map((e) => e.dataset.value).join('-'));
-  const shiftLeft = async () => (await p.textContent(`${td} [data-testid=shift-left]`))?.trim();
+  const shiftLeft = async () => (await p.textContent(`${sh} [data-testid=shift-left]`))?.trim();
   const lit = () => p.$$eval(`${pane} [data-testid=manoeuvre].match .m-name`, (els) => els.map((e) => e.textContent.trim()).join('|'));
   const rollNoteText = async () => ((await p.isVisible(`${td} [data-testid=roll-note]`)) ? (await p.textContent(`${td} [data-testid=roll-note]`))?.trim() : null);
   const nextTurn = () => p.click(`${pane} button:text-is("Next turn")`);
@@ -1585,23 +1587,26 @@ for (const reduced of [false, true]) {
   if (ms !== 'Wobbly Poke|Gentle Swipe') problems.push(`${tag}: hero manoeuvres listed "${ms}"`);
   await typeDice(2, 4);
   if ((await faces()) !== '2-4' || (await shiftLeft()) !== 'Shift left: 2 of 2' || (await lit()) !== '') problems.push(`${tag}: 2-4 rolled: ${await faces()} "${await shiftLeft()}" lit "${await lit()}"`);
-  await p.click(`${td} button[aria-label="Red die down"]`);
+  await p.click(`${sh} button[aria-label="Red die down"]`);
   if ((await faces()) !== '1-4' || (await shiftLeft()) !== 'Shift left: 1 of 2' || (await lit()) !== 'Wobbly Poke') problems.push(`${tag}: one shift down: ${await faces()} "${await shiftLeft()}" lit "${await lit()}"`);
   if ((await rollNoteText()) !== null) problems.push(`${tag}: a shifted match was called "${await rollNoteText()}"`);
+  const histTop = async () => (await p.textContent(`${rollerPanel} [data-testid=dice-history] li >> nth=0`).catch(() => ''))?.trim() ?? '';
+  if (!/\(shifted to 1, 4\)$/.test(await histTop())) problems.push(`${tag}: roller history after a shift "${await histTop()}"`);
+  if ((await p.textContent(`${td}`))?.includes('Shift in the dice roller') !== true) problems.push(`${tag}: pane lacks the "Shift in the dice roller" line`);
   await shot('51a-shift-match.png', p);
   // Left-click the blue die: up one, the pool is spent and nothing matches.
-  await p.click(`${td} [data-testid=attack-die] >> nth=1`);
+  await p.click(`${sh} [data-testid=shift-die] >> nth=1`);
   if ((await faces()) !== '1-5' || (await shiftLeft()) !== 'Shift left: 0 of 2' || (await lit()) !== '') problems.push(`${tag}: blue up: ${await faces()} "${await shiftLeft()}" lit "${await lit()}"`);
-  if (!(await p.isDisabled(`${td} button[aria-label="Blue die up"]`)) || !(await p.isDisabled(`${td} button[aria-label="Red die down"]`))) problems.push(`${tag}: arrows not disabled with the pool spent`);
-  await p.click(`${td} [data-testid=attack-die] >> nth=1`);
+  if (!(await p.isDisabled(`${sh} button[aria-label="Blue die up"]`)) || !(await p.isDisabled(`${sh} button[aria-label="Red die down"]`))) problems.push(`${tag}: arrows not disabled with the pool spent`);
+  await p.click(`${sh} [data-testid=shift-die] >> nth=1`);
   if ((await faces()) !== '1-5') problems.push(`${tag}: shifted past the pool: ${await faces()}`);
   // Right-click the blue die: back down, the point comes back.
-  await p.click(`${td} [data-testid=attack-die] >> nth=1`, { button: 'right' });
+  await p.click(`${sh} [data-testid=shift-die] >> nth=1`, { button: 'right' });
   if ((await faces()) !== '1-4' || (await shiftLeft()) !== 'Shift left: 1 of 2' || (await lit()) !== 'Wobbly Poke') problems.push(`${tag}: right-click refund: ${await faces()} "${await shiftLeft()}" lit "${await lit()}"`);
-  const smallTd = await p.$$eval(`${td} button`, (els) => els.map((e) => ({ t: e.getAttribute('aria-label') ?? e.textContent?.trim(), r: e.getBoundingClientRect() })).filter((b) => b.r.width > 0 && (b.r.width < 44 || b.r.height < 44)).map((b) => b.t));
+  const smallTd = await p.$$eval(`${sh} button`, (els) => els.map((e) => ({ t: e.getAttribute('aria-label') ?? e.textContent?.trim(), r: e.getBoundingClientRect() })).filter((b) => b.r.width > 0 && (b.r.width < 44 || b.r.height < 44)).map((b) => b.t));
   if (smallTd.length) problems.push(`${tag}: small attack-dice buttons ${smallTd.join(', ')}`);
   // A natural match is an Exact Strike; a natural 1-1 always misses and can't be shifted.
-  await p.click(`${td} button:text-is("Roll again")`);
+  await p.click(`${sh} button:text-is("Roll again")`);
   await typeDice(1, 4);
   if ((await rollNoteText()) !== 'Exact Strike: add your Shift to the damage' || (await lit()) !== 'Wobbly Poke') problems.push(`${tag}: exact strike "${await rollNoteText()}" lit "${await lit()}"`);
   await shot('51b-exact-strike.png', p);
@@ -1627,10 +1632,10 @@ for (const reduced of [false, true]) {
     if (noteTyped !== 'Rolled 5 damage') problems.push(`${tag}: typed damage note "${noteTyped}"`);
     await shot('51c-damage-note.png', p);
   }
-  await p.click(`${td} button:text-is("Roll again")`);
+  await p.click(`${sh} button:text-is("Roll again")`);
   await typeDice(1, 1);
-  if ((await rollNoteText()) !== 'Double 1: always a miss' || !(await p.isDisabled(`${td} button[aria-label="Red die up"]`))) problems.push(`${tag}: double 1 "${await rollNoteText()}"`);
-  await p.click(`${td} button:text-is("Roll again")`);
+  if ((await rollNoteText()) !== 'Double 1: always a miss' || !(await p.isDisabled(`${sh} button[aria-label="Red die up"]`))) problems.push(`${tag}: double 1 "${await rollNoteText()}"`);
+  await p.click(`${sh} button:text-is("Roll again")`);
   await typeDice(6, 6);
   if ((await rollNoteText()) !== 'Prime Attack: pick any manoeuvre and add your Shift to the damage') problems.push(`${tag}: hero double 6 "${await rollNoteText()}"`);
   // Next turn: Grumbler (SH 0, round 1: no pool); the dice start afresh.
@@ -1639,8 +1644,10 @@ for (const reduced of [false, true]) {
   if (!(await undoText()).includes('Next turn')) problems.push(`${tag}: Next turn undo "${await undoText()}"`);
   if (!(await p.isVisible(`${pane} .foe.current:has(.name span:text-is("Grumbler"))`))) problems.push(`${tag}: Grumbler's card not marked on its turn`);
   if (await p.isVisible(`${td} [data-testid=attack-die]`)) problems.push(`${tag}: the hero's dice carried into Grumbler's turn`);
+  if (!(await p.isVisible(`${td} [data-testid=roll-card]`)) || (await p.isVisible(sh))) problems.push(`${tag}: Grumbler's turn does not show a fresh waiting card`);
+  if (!(await p.textContent(`${rollerPanel} [data-testid=dice-for]`))?.includes("Grumbler's attack")) problems.push(`${tag}: roller not asked for Grumbler's attack: "${await p.textContent(`${rollerPanel} [data-testid=dice-for]`)}"`);
   await typeDice(6, 6);
-  if ((await rollNoteText()) !== 'Prime Attack: see the bottom of its card' || (await shiftLeft()) !== 'Shift left: 0 of 0' || (await lit()) !== '') problems.push(`${tag}: creature 6-6 "${await rollNoteText()}" "${await shiftLeft()}"`);
+  if ((await rollNoteText()) !== "Prime Attack: see the bottom of its card Armour can't deflect it." || (await shiftLeft()) !== 'Shift left: 0 of 0' || (await lit()) !== '') problems.push(`${tag}: creature 6-6 "${await rollNoteText()}" "${await shiftLeft()}"`);
   // The attacking creature's card sits above its dice: its bottom, the dice and Next turn all on screen.
   const seen = await p.evaluate(() => {
     const body = document.querySelector('.encounter-pane .body').getBoundingClientRect();
@@ -1900,6 +1907,9 @@ for (const reduced of [false, true]) {
   await p.waitForSelector(`${pane} [data-testid=pending-roll]`);
   if ((await foes()).length) problems.push(`${tag}: Undo left foes ${JSON.stringify(await foes())}`);
   if (await p.isVisible(`${pane} [data-testid=creature-roll-result]`)) problems.push(`${tag}: Undo left the roll result showing`);
+  // The pane's attack card is registered too, so aim the roller at the restored pending roll first.
+  await rollerEnterModeOn(p, true);
+  await p.click(`${card} button`);
   await rollerEnterOn(p, '7');
   if (!(await p.isVisible(`${rollerPanel} >> text=Type the die, 1 to 6.`))) problems.push(`${tag}: typed 7 not refused`);
   if (!(await p.isVisible(`${pane} [data-testid=pending-roll]`))) problems.push(`${tag}: typed 7 used the pending roll`);
