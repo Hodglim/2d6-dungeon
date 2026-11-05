@@ -62,6 +62,9 @@ export function isSlug(code: string): boolean {
   return /[a-z]/.test(code);
 }
 
+/** "+ 10 GC" after a code is coins as well as the roll, not a modifier on it: GC, SC, CC or gold. */
+const COINS_AFTER = '(?!\\s*(?:[GSCgsc][Cc]|[Gg]old)(?![A-Za-z0-9]))';
+
 interface Scanner { creatureCodes: Set<string>; re: RegExp | null }
 const scanners = new WeakMap<DungeonTables, Scanner>();
 
@@ -74,7 +77,7 @@ function scannerFor(t: DungeonTables): Scanner {
   const codes = [...new Set([...creatureCodes, ...refCodes])].sort((a, b) => b.length - a.length);
   const re = codes.length === 0
     ? null
-    : new RegExp(`(?<![A-Za-z0-9])(${codes.map(escapeRe).join('|')})(?:\\s*([+\\-−–])\\s*(\\d+))?(?![A-Za-z0-9])`, 'g');
+    : new RegExp(`(?<![A-Za-z0-9])(${codes.map(escapeRe).join('|')})(?:\\s*([+\\-−–])\\s*(\\d+)${COINS_AFTER})?(?![A-Za-z0-9])`, 'g');
   s = { creatureCodes, re };
   scanners.set(t, s);
   return s;

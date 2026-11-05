@@ -85,6 +85,16 @@ describe('scanEncounter reference tables', () => {
       { kind: 'table', text: 'XX2 +1', code: 'XX2', modifier: 1 },
     ]);
   });
+  it('reads coins after a code as a second piece of loot, not a modifier', () => {
+    for (const coins of ['+ 10 GC', '+10GC', '+ 10 gc', '+ 5 SC', '+ 3 CC', '+ 10 gold coins']) {
+      expect(scanEncounter(`Roll on XX2 ${coins}`, t)).toEqual([
+        { kind: 'text', text: 'Roll on ' },
+        { kind: 'table', text: 'XX2', code: 'XX2', modifier: 0 },
+        { kind: 'text', text: ` ${coins}` },
+      ]);
+    }
+    expect(scanEncounter('XX2 +1 GCX', t)[0]).toEqual({ kind: 'table', text: 'XX2 +1', code: 'XX2', modifier: 1 });
+  });
   it('accepts en dash and no modifier', () => {
     const p = scanEncounter('XX1–2 then XX2', t);
     expect(p.filter((x) => x.kind === 'table').map((x) => (x as { modifier: number }).modifier)).toEqual([-2, 0]);
