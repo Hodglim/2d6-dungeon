@@ -1667,11 +1667,7 @@ for (const reduced of [false, true]) {
   if (await p.isVisible(`${pane} .reminder`)) problems.push(`${tag}: round 7 reminder shown at round 4`);
   await typeDice(3, 3);
   if ((await shiftLeft()) !== 'Shift left: 1 of 1') problems.push(`${tag}: Grumbler's round-4 pool "${await shiftLeft()}"`);
-  // The plain roller stays for damage: one die or two.
-  await p.click(`${pane} .combat-dice button:text-is("One die")`);
-  await p.click(`${pane} .combat-dice form.dice button:has-text("Roll")`);
-  await p.waitForTimeout(600);
-  if (!(await p.isVisible(`${pane} [data-testid=dice-result]`))) problems.push(`${tag}: rolled damage dice show no result`);
+  if (await p.isVisible(`${pane} .combat-dice`)) problems.push(`${tag}: the old in-pane roller is back (the floating dice roller replaces it)`);
   await shot('51-encounter-pane.png', p);
 
   // 16b. Reload mid-fight: round, HP and creatures come back, with the pane.

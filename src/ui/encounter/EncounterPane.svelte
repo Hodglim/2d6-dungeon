@@ -37,7 +37,6 @@
   import { adjustHp, commitHero } from '../hero/heroActions';
   import { shouldAskWin } from '../endings';
   import VictoryPanel from './VictoryPanel.svelte';
-  import CombatDice from './CombatDice.svelte';
   import EncounterPicker from './EncounterPicker.svelte';
   import EncounterText from './EncounterText.svelte';
   import HpTracker from './HpTracker.svelte';
@@ -522,8 +521,6 @@
       {:else if askingFor === null}
         <p class="none">No fight yet. Add a creature to start one.</p>
       {/if}
-
-      <CombatDice title={encounter ? 'Other rolls' : 'Dice'} />
 
       <div class="row">
         {#if askingFor === null}<button onclick={() => ((adding = true), (confirmingEnd = false))}>Add creature</button>{/if}
