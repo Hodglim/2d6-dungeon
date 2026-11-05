@@ -1793,9 +1793,19 @@ for (const reduced of [false, true]) {
   await dice('3');
   await btn('Place for me');
   await btn('Done');
-  await dice('3', '4');
+  // Room 11's exit type is random: the name, description and exit roll first; the encounter text
+  // (whose Roll and Fight place the room, so need the exit type) only once the exit type is rolled.
+  await dice('1', '1');
+  await btn('Use these');
+  await p.waitForSelector('aside.panel [data-testid=room-result]');
+  if (await p.isVisible('aside.panel [data-testid=encounter-text]')) problems.push(`${tag}: encounter text shown before the exit type`);
+  const pending = (await p.textContent('aside.panel [data-testid=room-result]'))?.replace(/\s+/g, ' ').trim() ?? '';
+  if (!pending.includes('Practice Room 11') || !pending.includes('A made-up room, number 11.')) problems.push(`${tag}: room before the exit type "${pending}"`);
+  await shot('55a-encounter-waits-for-exit-type.png', p);
+  await dice('1', '1');
   await btn('Use these');
   await p.waitForSelector('aside.panel [data-testid=encounter-text]');
+  if (!(await p.isVisible('aside.panel [data-testid=exit-result]'))) problems.push(`${tag}: no exit result with the encounter text`);
   const encText = (await p.textContent('aside.panel [data-testid=encounter-text] .enc-text'))?.trim();
   if (encText !== ENC) problems.push(`${tag}: label step text "${encText}"`);
   const labels = await p.$$eval('aside.panel [data-testid=encounter-actions] button', (els) => els.map((e) => e.textContent.trim()));
@@ -1807,13 +1817,34 @@ for (const reduced of [false, true]) {
   if (small) problems.push(`${tag}: ${small} encounter buttons under 44 px`);
   await shot('55-encounter-text-buttons.png', p);
 
-  // Roll: a pending roll at the top of the pane, which comes to the front (the step stays a Room tab).
+  // Roll: places the room first (as Done would), then a pending roll at the top of the pane, which
+  // comes to the front. No Room tab is left: the unplaced room is never left behind the saved fight.
   await p.click('aside.panel button:text-is("🎲 Roll on PRAC1 −1")');
   await p.waitForSelector(`${pane} [data-testid=pending-roll]`);
-  if (!(await p.isVisible('#side-tab-room'))) problems.push(`${tag}: no Room tab while the step is open`);
+  if (await p.isVisible('#side-tab-room')) problems.push(`${tag}: Room tab still open after Roll placed the room`);
+  if (!(await undoText()).includes('Roll on PRAC1 −1')) problems.push(`${tag}: Roll undo "${await undoText()}"`);
+  // The placed room's buttons: the Encounter button steps the pane aside, a tap opens the room.
+  const roomButtons = async () => {
+    if (await p.isVisible(pane)) await p.click('header.toolbar button.encounter');
+    await p.waitForTimeout(150);
+    if (!(await p.isVisible('[data-editor=room] [data-testid=encounter-actions]'))) await tap(12.5, 18.5);
+    await p.waitForSelector('[data-editor=room] [data-testid=encounter-actions]', { timeout: 3000 }).catch(() => problems.push(`${tag}: room inspector shows no encounter buttons`));
+  };
+  const roomBtn = async (name) => {
+    await roomButtons();
+    await p.click(`[data-editor=room] button:text-is("${name}")`);
+  };
+  // The bug this guards: a reload right after Roll keeps both the fight and the room.
+  await p.waitForTimeout(1500);
+  await p.reload({ waitUntil: 'load' });
+  await p.waitForSelector(`${pane} [data-testid=pending-roll]`, { timeout: 5000 }).catch(() => problems.push(`${tag}: pending roll not back after reload`));
+  await roomButtons();
+  const placedType = (await p.textContent('[data-editor=room]').catch(() => '')) ?? '';
+  if (!placedType.includes(ENC)) problems.push(`${tag}: room lost on reload after Roll`);
+  await p.click('header.toolbar button.encounter');
+  await p.waitForSelector(`${pane} [data-testid=pending-roll]`);
   const head = (await p.textContent(`${pane} [data-testid=pending-roll] h3`))?.trim();
   if (head !== 'Roll on PRAC1 −1') problems.push(`${tag}: pending heading "${head}"`);
-  if (!(await undoText()).includes('Roll on PRAC1 −1')) problems.push(`${tag}: Roll undo "${await undoText()}"`);
   await shot('56-encounter-pending-roll.png', p);
   // Roll for me: the sum shown and the creatures added agree with the table.
   await p.click(`${pane} [data-testid=pending-roll] button:has-text("Roll for me")`);
@@ -1850,16 +1881,14 @@ for (const reduced of [false, true]) {
   if (!(await undoText()).includes('PRAC1 −1: Grumbler, Moss Lurker')) problems.push(`${tag}: roll undo "${await undoText()}"`);
   await shot('57-encounter-roll-result.png', p);
 
-  // Fight from the step result: the Grumbler joins the same fight.
-  await p.click('#side-tab-room');
-  await p.click('aside.panel button:text-is("⚔ Fight Grumbler")');
+  // Fight from the placed room: the Grumbler joins the same fight.
+  await roomBtn('⚔ Fight Grumbler');
   await p.waitForSelector(pane);
   if ((await foes()).join('|') !== 'Grumbler:4|Moss Lurker:6|Grumbler:4') problems.push(`${tag}: Fight foes ${JSON.stringify(await foes())}`);
   if (!(await undoText()).includes('Add Grumbler')) problems.push(`${tag}: Fight undo "${await undoText()}"`);
 
   // PRAC2, typed 3 (no modifier): row 3 adds a Grumbler.
-  await p.click('#side-tab-room');
-  await p.click('aside.panel button:text-is("🎲 Roll on PRAC2")');
+  await roomBtn('🎲 Roll on PRAC2');
   await p.waitForSelector(`${pane} [data-testid=pending-roll]`);
   await p.fill(`${pane} [data-testid=pending-roll] input`, '3');
   await p.click(`${pane} [data-testid=pending-roll] button:text-is("Use this")`);
@@ -1869,12 +1898,11 @@ for (const reduced of [false, true]) {
   if ((await foes()).join('|') !== 'Grumbler:4|Moss Lurker:6|Grumbler:4|Grumbler:4') problems.push(`${tag}: PRAC2 foes ${JSON.stringify(await foes())}`);
   if (!(await undoText()).includes('PRAC2: Grumbler')) problems.push(`${tag}: PRAC2 undo "${await undoText()}"`);
 
-  // PRAC2, typed 5: a text row. Its text stays shown after switching to the Room tab and back
+  // PRAC2, typed 5: a text row. Its text stays shown after stepping the pane aside and back
   // (it lives in the encounter, not in the pane).
   const echoes = 'Made-up: nothing here but echoes.';
   const saidNow = async () => (await p.$$eval(`${pane} [data-testid=creature-roll-result] .said`, (els) => els.map((e) => e.textContent.trim()))).includes(echoes);
-  await p.click('#side-tab-room');
-  await p.click('aside.panel button:text-is("🎲 Roll on PRAC2")');
+  await roomBtn('🎲 Roll on PRAC2');
   await p.waitForSelector(`${pane} [data-testid=pending-roll]`);
   await p.fill(`${pane} [data-testid=pending-roll] input`, '5');
   await p.click(`${pane} [data-testid=pending-roll] button:text-is("Use this")`);
@@ -1882,9 +1910,10 @@ for (const reduced of [false, true]) {
   const r5 = (await p.textContent(`${pane} [data-testid=creature-roll-result] .line`))?.replace(/\s+/g, ' ').trim();
   if (r5 !== 'PRAC2 5: ×') problems.push(`${tag}: PRAC2 text result line "${r5}"`);
   if (!(await saidNow())) problems.push(`${tag}: text result not shown`);
-  await p.click('#side-tab-room');
-  if (await p.isVisible(pane)) problems.push(`${tag}: Room tab still shows the pane`);
-  await p.click('#side-tab-encounter');
+  await p.click('header.toolbar button.encounter');
+  await p.waitForTimeout(150);
+  if (await p.isVisible(pane)) problems.push(`${tag}: Encounter button did not step the pane aside`);
+  await p.click('header.toolbar button.encounter');
   await p.waitForSelector(pane);
   if (!(await saidNow())) problems.push(`${tag}: text result gone after switching tabs`);
   if ((await p.$$(`${pane} [data-testid=creature-roll-result]`)).length !== 3) problems.push(`${tag}: expected 3 results after the tab switch, got ${(await p.$$(`${pane} [data-testid=creature-roll-result]`)).length}`);
@@ -1898,8 +1927,7 @@ for (const reduced of [false, true]) {
   if (!(await saidNow())) problems.push(`${tag}: Undo did not bring the text result back`);
 
   // × drops an unrolled roll as its own step.
-  await p.click('#side-tab-room');
-  await p.click('aside.panel button:text-is("🎲 Roll on PRAC1 −1")');
+  await roomBtn('🎲 Roll on PRAC1 −1');
   await p.click(`${pane} [data-testid=pending-roll] button[aria-label="Remove roll on PRAC1 −1"]`);
   if (await p.isVisible(`${pane} [data-testid=pending-roll]`)) problems.push(`${tag}: × left the pending roll`);
   if (!(await undoText()).includes('Remove roll on PRAC1 −1')) problems.push(`${tag}: × undo "${await undoText()}"`);
@@ -1907,10 +1935,7 @@ for (const reduced of [false, true]) {
   if (smallPane.length) problems.push(`${tag}: small pane buttons ${smallPane.join(', ')}`);
 
   // The same roll twice ("roll twice": tap again): rolling the first leaves the second ready to roll.
-  for (let i = 0; i < 2; i++) {
-    await p.click('#side-tab-room');
-    await p.click('aside.panel button:text-is("🎲 Roll on PRAC1 −1")');
-  }
+  for (let i = 0; i < 2; i++) await roomBtn('🎲 Roll on PRAC1 −1');
   await p.waitForSelector(`${pane} [data-testid=pending-roll] >> nth=1`);
   if ((await p.$$(`${pane} [data-testid=pending-roll]`)).length !== 2) problems.push(`${tag}: two taps did not queue two rolls`);
   await p.click(`${pane} [data-testid=pending-roll] >> nth=0 >> button:has-text("Roll for me")`);
@@ -1929,10 +1954,7 @@ for (const reduced of [false, true]) {
   await p.waitForFunction((sel) => document.querySelectorAll(sel).length === 0, `${pane} [data-testid=pending-roll]`, { timeout: 5000 }).catch(() => problems.push(`${tag}: second identical roll did not resolve`));
   if ((await p.$$(`${pane} [data-testid=creature-roll-result]`)).length < 2) problems.push(`${tag}: expected two roll results`);
   // The typed path: a typed die on the first leaves the second's input empty.
-  for (let i = 0; i < 2; i++) {
-    await p.click('#side-tab-room');
-    await p.click('aside.panel button:text-is("🎲 Roll on PRAC1 −1")');
-  }
+  for (let i = 0; i < 2; i++) await roomBtn('🎲 Roll on PRAC1 −1');
   await p.fill(`${pane} [data-testid=pending-roll] >> nth=0 >> input`, '3');
   await p.click(`${pane} [data-testid=pending-roll] >> nth=0 >> button:text-is("Use this")`);
   await p.waitForFunction((sel) => document.querySelectorAll(sel).length === 1, `${pane} [data-testid=pending-roll]`);
@@ -1945,17 +1967,8 @@ for (const reduced of [false, true]) {
   await shot('60-encounter-roll-twice.png', p);
   const beforeFight = (await foes()).length; // while the pane shows
 
-  // Finish the room; the room inspector (a tap in Play) shows the same buttons.
-  await p.click('#side-tab-room');
-  await btn('Done');
-  await p.waitForTimeout(300);
-  if (await p.isVisible('aside.panel button:text-is("Done")')) await btn('Done');
-  await p.waitForTimeout(800);
-  if (await p.isVisible('#side-tab-room')) await p.click('#side-tab-room');
-  await p.click('header.toolbar button.encounter');
-  await p.waitForTimeout(200);
-  await tap(12.5, 18.5);
-  await p.waitForSelector('[data-editor=room] [data-testid=encounter-actions]', { timeout: 3000 }).catch(() => problems.push(`${tag}: inspector shows no encounter buttons`));
+  // The room inspector (a tap in Play) shows the same buttons as the room result did.
+  await roomButtons();
   const insp = await p.$$eval('[data-editor=room] [data-testid=encounter-actions] button', (els) => els.map((e) => e.textContent.trim()));
   if (insp.join('|') !== '🎲 Roll on PRAC1 −1|🎲 Roll on PRAC2|⚔ Fight Grumbler') problems.push(`${tag}: inspector buttons ${JSON.stringify(insp)}`);
   await shot('59-encounter-inspector-buttons.png', p);
@@ -2526,14 +2539,18 @@ for (const reduced of [false, true]) {
   if (small) problems.push(`${tag}: ${small} buttons under 44 px`);
   await shot('80-table-button-in-text.png', p);
 
-  // Start the fight, go back to the Room tab and open the table from the text.
+  // Start the fight (it places the room), open the room again and open the table from the text.
   await p.click('aside.panel button:text-is("⚔ Fight Grumbler")');
   await p.waitForSelector(enc);
   const foesNow = () => p.$$eval(`${enc} .foe`, (els) => els.map((e) => `${e.querySelector('.name span')?.textContent?.trim()}:${e.querySelector('.num')?.textContent?.trim()}`));
   if ((await foesNow()).join('|') !== 'Grumbler:4') problems.push(`${tag}: fight ${JSON.stringify(await foesNow())}`);
-  await p.click('#side-tab-room');
+  await p.waitForTimeout(1500); // the token walks into the room Fight placed
+  await p.click('header.toolbar button.encounter');
+  await p.waitForTimeout(150);
+  await tap(12.5, 18.5);
+  await p.waitForSelector('[data-editor=room] [data-testid=encounter-actions]', { timeout: 3000 }).catch(() => problems.push(`${tag}: placed room shows no encounter buttons`));
   const undoBefore = (await p.textContent('header.toolbar button.history'))?.trim();
-  await p.click('aside.panel button:text-is("📖 Open XX1 −1")');
+  await p.click('[data-editor=room] button:text-is("📖 Open XX1 −1")');
   await p.waitForSelector(`${tp} h3:has-text("Practice Crate Table")`);
   if ((await p.inputValue(`${tp} .mod input`)) !== '−1') problems.push(`${tag}: XX1 opened with modifier "${await p.inputValue(`${tp} .mod input`)}"`);
   if ((await p.getAttribute('#side-tab-tables', 'aria-selected')) !== 'true') problems.push(`${tag}: Tables tab not selected`);

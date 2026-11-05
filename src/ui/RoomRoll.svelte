@@ -10,14 +10,15 @@
   import DiceEntry from './DiceEntry.svelte';
   import DieFace from './DieFace.svelte';
   import EncounterText from './encounter/EncounterText.svelte';
-  import type { EncounterHooks } from './encounter/encounterActions';
+  import { placingFirst, type EncounterHooks } from './encounter/encounterActions';
   
   interface Props {
     map: DungeonMap;
     room: Room;
     tables: DungeonTables | null;
     rng?: Rng;
-    onapply: (contents: RoomContents, unique: boolean) => void;
+    /** Saves the result; true when it was saved. */
+    onapply: (contents: RoomContents, unique: boolean) => boolean;
     oncancel: () => void;
     encounter?: EncounterHooks | null;
   }
@@ -28,6 +29,17 @@
   const kind = $derived(room.sizeClass === 'small' ? 'small' : room.sizeClass === 'large' ? 'large' : 'rooms');
   const twoD6 = $derived(kind !== 'rooms');
   const noExits = $derived(kind === 'small' || ownExitDoors(map, room).ids.size === 0);
+  /**
+   * Roll and Fight apply the result first (as Apply does): the fight is saved at once, the result
+   * only on Apply. A random exit type is rolled first: the encounter text shows once it is known.
+   */
+  const resultEncounter = $derived(
+    encounter &&
+      placingFirst(encounter, () => {
+        const r = result;
+        return r?.contents ? onapply($state.snapshot(r.contents), r.unique) : false;
+      }),
+  );
   const doorName = (id: string) => dungeonSystem.doorTypes.find((t) => t.id === id)?.name ?? id;
 
   interface Result {
@@ -117,7 +129,7 @@
       </div>
       <p class="type">{r.type}{#if r.unique}<span class="badge">Unique</span>{/if}</p>
       <p>{r.description}</p>
-      {#if r.encounter}<p data-testid="encounter-text"><strong>Encounter:</strong> {#if encounter}<EncounterText text={r.encounter} {tables} {...encounter} />{:else}{r.encounter}{/if}</p>{/if}
+      {#if r.encounter && r.contents}<p data-testid="encounter-text"><strong>Encounter:</strong> {#if resultEncounter}<EncounterText text={r.encounter} {tables} {...resultEncounter} />{:else}{r.encounter}{/if}</p>{/if}
       {#if r.contents}<p data-testid="exit-result"><strong>Exits:</strong> {doorName(r.contents.door)}{r.contents.locked ? ', locked' : ''}</p>{/if}
       {#if r.capped}<p class="note">No unused rooms left on this table — accepted anyway</p>{/if}
       {#if rerolled > 0 && !r.capped}<p class="note">Re-rolled {rerolled} {rerolled === 1 ? 'time' : 'times'}: unique rooms already on this level.</p>{/if}

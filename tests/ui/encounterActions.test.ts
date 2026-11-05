@@ -5,7 +5,7 @@ import { History } from '../../src/core/history';
 import { setFoeHp, totalXp as totalXpOf, type Encounter } from '../../src/systems/dungeon/combat';
 import { createHero, type Hero } from '../../src/systems/dungeon/hero';
 import type { DungeonTables } from '../../src/systems/dungeon/tables';
-import { applyCreatureRoll, awardVictoryXp, commitEncounter, dismissRolled, dropPendingRoll, queueCreatureRoll, startOrJoin, xpToAward } from '../../src/ui/encounter/encounterActions';
+import { applyCreatureRoll, awardVictoryXp, commitEncounter, dismissRolled, dropPendingRoll, placingFirst, queueCreatureRoll, startOrJoin, xpToAward, type EncounterHooks } from '../../src/ui/encounter/encounterActions';
 import { adjustHp } from '../../src/ui/hero/heroActions';
 import { emptyMap, room } from '../core/fixtures';
 
@@ -355,5 +355,39 @@ describe('encounterActions', () => {
       startOrJoin(h, t, ['Grumbler'], ids(), noAsk);
       expect(awardVictoryXp(h).ok).toBe(false);
     });
+  });
+});
+
+describe('placingFirst', () => {
+  function spyHooks() {
+    const calls: string[] = [];
+    const hooks: EncounterHooks = {
+      onroll: (code, mod) => calls.push(`roll ${code} ${mod}`),
+      onfight: (name) => calls.push(`fight ${name}`),
+      onopentable: (code, mod) => calls.push(`table ${code} ${mod}`),
+    };
+    return { calls, hooks };
+  }
+
+  it('places the room before a Roll or Fight is saved, so a reload never keeps a fight without its room', () => {
+    const { calls, hooks } = spyHooks();
+    const wrapped = placingFirst(hooks, () => (calls.push('place'), true));
+    wrapped.onroll('PRAC1', -1);
+    wrapped.onfight('Grumbler');
+    expect(calls).toEqual(['place', 'roll PRAC1 -1', 'place', 'fight Grumbler']);
+  });
+
+  it('starts nothing when the room could not be placed', () => {
+    const { calls, hooks } = spyHooks();
+    const wrapped = placingFirst(hooks, () => (calls.push('place'), false));
+    wrapped.onroll('PRAC1', 0);
+    wrapped.onfight('Grumbler');
+    expect(calls).toEqual(['place', 'place']);
+  });
+
+  it('opens a table without placing the room (nothing is saved)', () => {
+    const { calls, hooks } = spyHooks();
+    placingFirst(hooks, () => (calls.push('place'), true)).onopentable('XX1', 2);
+    expect(calls).toEqual(['table XX1 2']);
   });
 });

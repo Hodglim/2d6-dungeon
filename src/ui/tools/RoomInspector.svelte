@@ -45,10 +45,12 @@
   }
 
   let rolling = $state(false);
-  function applyRoll(r: Room, contents: RoomContents, isUnique: boolean) {
+  function applyRoll(r: Room, contents: RoomContents, isUnique: boolean): boolean {
     // One undo step: the label, the note, the roll and the room's own exit types.
     const cmd = applyRoomRoll(r, contents, isUnique);
-    if (onexec({ ...cmd, label: `Roll room ${r.number}` })) rolling = false;
+    const ok = onexec({ ...cmd, label: `Roll room ${r.number}` });
+    if (ok) rolling = false;
+    return ok;
   }
 
   const otherTitles: Record<Exclude<Room['kind'], 'room'>, string> = {

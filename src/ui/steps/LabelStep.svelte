@@ -5,7 +5,7 @@
   import DiceEntry from '../DiceEntry.svelte';
   import DieFace from '../DieFace.svelte';
   import EncounterText from '../encounter/EncounterText.svelte';
-  import type { EncounterHooks } from '../encounter/encounterActions';
+  import { placingFirst, type EncounterHooks } from '../encounter/encounterActions';
   import type { DungeonTables } from '../../systems/dungeon/tables';
 
   interface Props {
@@ -33,6 +33,18 @@
   const kindName = $derived(step.roll?.kind === 'small' ? 'Small room' : step.roll?.kind === 'large' ? 'Large room' : 'Room');
   const twoD6 = $derived(step.roll !== null && step.roll.kind !== 'rooms');
   const chooseDoor = $derived((step.skipped || (step.roll === null && step.draft.doorsFromTable === true)) && step.chosen.length > 0 && step.draft.sizeClass !== 'small');
+
+  /**
+   * Roll and Fight place the room first (as Done does): the fight is saved, the unplaced room is not.
+   * A random exit type is rolled first: the encounter text shows once it is known, when Done can run.
+   */
+  const roomEncounter = $derived(
+    encounter &&
+      placingFirst(encounter, () => {
+        oncommit(() => flow.finish(null));
+        return flow.step.kind === 'idle';
+      }),
+  );
 
   const title = $derived(step.draft.source.kind === 'entrance' ? 'Entrance room' : `Room ${step.draft.room.number}`);
 </script>
@@ -86,7 +98,7 @@
     </div>
     <p class="type">{r.entry.type}{#if r.entry.unique}<span class="badge">Unique</span>{/if}</p>
     <p>{r.entry.description}</p>
-    {#if r.entry.encounter}<p data-testid="encounter-text"><strong>Encounter:</strong> {#if encounter}<EncounterText text={r.entry.encounter} {tables} {...encounter} />{:else}{r.entry.encounter}{/if}</p>{/if}
+    {#if r.entry.encounter && !r.needsExit}<p data-testid="encounter-text"><strong>Encounter:</strong> {#if roomEncounter}<EncounterText text={r.entry.encounter} {tables} {...roomEncounter} />{:else}{r.entry.encounter}{/if}</p>{/if}
     {#if r.contents}
       <p data-testid="exit-result"><strong>Exits:</strong> {doorName(r.contents.door)}{r.contents.locked ? ', locked' : ''}</p>
     {/if}

@@ -15,6 +15,24 @@ export interface EncounterHooks {
   onopentable: (code: string, modifier: number) => void;
 }
 
+/**
+ * Hooks for encounter text on a room that isn't placed yet (the room-type result): Roll and Fight
+ * place the room first, and do nothing if it couldn't be placed. A fight is saved at once, but an
+ * unplaced room lives only in memory, so a reload would otherwise keep the fight and lose the room.
+ * Opening a table saves nothing and leaves the room as it is.
+ */
+export function placingFirst(hooks: EncounterHooks, place: () => boolean): EncounterHooks {
+  return {
+    onroll: (code, modifier) => {
+      if (place()) hooks.onroll(code, modifier);
+    },
+    onfight: (name) => {
+      if (place()) hooks.onfight(name);
+    },
+    onopentable: hooks.onopentable,
+  };
+}
+
 const FOE_HP = 'foe-hp:';
 const signed = (d: number) => `${d < 0 ? '−' : '+'}${Math.abs(d)}`;
 /** "PRAC1 −1", or just "PRAC1" with no modifier. */
