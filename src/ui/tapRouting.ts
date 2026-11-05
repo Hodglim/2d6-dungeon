@@ -150,3 +150,12 @@ export function roomExitCount(map: DungeonMap, room: Room): number {
     return d !== undefined && d.id !== room.entryDoorId;
   }).length;
 }
+
+/**
+ * The sidebar's Room tab, beside the open side panes (Encounter, Hero, Tables): the step panel
+ * while a room is being placed, or the room selected in Play, so its text stays one tap from the fight.
+ */
+export function roomTabShown(o: { sideShown: boolean; stepIdle: boolean; tool: Tool; selection: Selection | null }): boolean {
+  if (!o.sideShown) return false;
+  return !o.stepIdle || (o.tool === 'play' && o.selection?.kind === 'room');
+}

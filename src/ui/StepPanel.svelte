@@ -123,7 +123,7 @@
           <ExitsStep {flow} {step} {oncommit} />
         {:else if step.kind === 'label'}
           {#key step.draft.room.id}
-            <LabelStep {flow} {step} {oncommit} {tables} {encounter} />
+            <LabelStep {flow} {step} {oncommit} {tables} {encounter} onplaced={(roomId) => onselect({ kind: 'room', roomId })} />
           {/key}
         {:else if step.kind === 'gap'}
           <GapStep {flow} {step} {oncommit} />

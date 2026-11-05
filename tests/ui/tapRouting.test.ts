@@ -1,7 +1,7 @@
 import type { DungeonMap, Feature } from '../../src/core/types';
 import type { Step } from '../../src/interaction/playflow';
 import { pick } from '../../src/render/hit';
-import { entryNote, nearestEdge, resolveSelection, roomExitCount, routeEditorTap, routePlayTap } from '../../src/ui/tapRouting';
+import { entryNote, nearestEdge, resolveSelection, roomExitCount, roomTabShown, routeEditorTap, routePlayTap } from '../../src/ui/tapRouting';
 import { door, emptyMap, room, withContent } from '../core/fixtures';
 
 /**
@@ -162,5 +162,29 @@ describe('routePlayTap', () => {
     expect(routePlayTap(exits, m, tap(m, 2, 3.5), { x: 2, y: 3.5 }, { ...opts, allowedExits: [allowed] })).toEqual({ kind: 'toggleExit', edge: chosen });
     expect(routePlayTap(exits, m, tap(m, 8, 8), { x: 8, y: 8 }, { ...opts, allowedExits: [allowed] })).toEqual({ kind: 'ignore' });
     expect(routePlayTap({ kind: 'size' } as Step, m, tap(m, 3.5, 3.5), { x: 3.5, y: 3.5 }, opts)).toEqual({ kind: 'ignore' });
+  });
+});
+
+describe('roomTabShown', () => {
+  const room1 = { kind: 'room', roomId: 'r1' } as const;
+  const base = { sideShown: true, stepIdle: true, tool: 'play', selection: null } as const;
+
+  it('shows while a room is being placed, beside the open side panes', () => {
+    expect(roomTabShown({ ...base, stepIdle: false })).toBe(true);
+  });
+
+  it('shows a room selected in Play beside the open side panes (its text next to the fight)', () => {
+    expect(roomTabShown({ ...base, selection: room1 })).toBe(true);
+  });
+
+  it('is not shown with no side panes (the step panel has the whole sidebar), nothing selected, or a note or stairs', () => {
+    expect(roomTabShown({ ...base, sideShown: false, selection: room1 })).toBe(false);
+    expect(roomTabShown({ ...base, sideShown: false, stepIdle: false })).toBe(false);
+    expect(roomTabShown(base)).toBe(false);
+    expect(roomTabShown({ ...base, selection: { kind: 'feature', featureId: 'n1' } })).toBe(false);
+  });
+
+  it('is not shown for a room selection outside Play (the editor tools show their own panel)', () => {
+    expect(roomTabShown({ ...base, tool: 'door', selection: room1 })).toBe(false);
   });
 });

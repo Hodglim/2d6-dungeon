@@ -53,7 +53,7 @@
   import LevelViewer from './LevelViewer.svelte';
   import StairsDialog from './StairsDialog.svelte';
   import StepPanel from './StepPanel.svelte';
-  import { resolveSelection, routeEditorTap, routePlayTap, type Selection } from './tapRouting';
+  import { resolveSelection, roomTabShown, routeEditorTap, routePlayTap, type Selection } from './tapRouting';
   import Toolbar from './Toolbar.svelte';
   import TablesPane from './tables/TablesPane.svelte';
   import { initialTablesState, openTable, type TablesState } from './tables/tablesState';
@@ -168,6 +168,10 @@
     tablesState = initialTablesState;
   });
   let cards = $state.raw<CardPack | null>(null);
+  /** What the Door, Stairs or Note tool, or a Play tap, has picked for the panel to edit. */
+  let selection = $state.raw<Selection | null>(null);
+  /** The selection against the committed map: gone after an Undo that removed its target. */
+  const liveSelection = $derived(resolveSelection($view.map, selection));
   let panelCollapsed = $state(false);
   let step = $state.raw<Step>(flow.step);
   /** The sidebar shows the step panel, or the Encounter and Hero panels (tabs when both are open). */
@@ -186,8 +190,11 @@
   const encShown = $derived(sidebar === 'side' && (fighting || encounterPaneOpen));
   const tablesShown = $derived(sidebar === 'side' && tablesOn);
   const sideShown = $derived(heroShown || encShown || tablesShown);
-  /** While a play-flow step is open, the step panel is a tab too, so Place and Cancel stay one tap away. */
-  const roomTab = $derived(sideShown && step.kind !== 'idle');
+  /**
+   * The step panel as a tab: while a play-flow step is open (Place and Cancel stay one tap away), or
+   * for the room selected in Play (its text stays one tap from the fight).
+   */
+  const roomTab = $derived(roomTabShown({ sideShown, stepIdle: step.kind === 'idle', tool, selection: liveSelection }));
   const tabs = $derived<SideTab[]>([...(roomTab ? ['room' as const] : []), ...(encShown ? ['encounter' as const] : []), ...(heroShown ? ['hero' as const] : []), ...(tablesShown ? ['tables' as const] : [])]);
   const activeTab = $derived<SideTab>(tabs.includes(sideTab) ? sideTab : (tabs[0] ?? 'encounter'));
   /** A short self-clearing message beside the toolbar (no card pack loaded). */
@@ -226,12 +233,8 @@
   let notice = $state<string | null>(null);
   /** The next exit tap starts a gap corridor instead of a room. */
   let gapMode = $state(false);
-  /** What the Door, Stairs or Note tool, or a Play tap, has picked for the panel to edit. */
-  let selection = $state.raw<Selection | null>(null);
   /** The token is being dragged (Play, idle): the pointer's world point. */
   let tokenDragAt = $state.raw<Point | null>(null);
-  /** The selection against the committed map: gone after an Undo that removed its target. */
-  const liveSelection = $derived(resolveSelection($view.map, selection));
 
   flow.subscribe((s) => {
     step = s;
@@ -747,7 +750,9 @@
         return flow.startGap(action.doorId);
       case 'select':
         selection = action.selection;
-        sidebar = 'steps';
+        // A room opens in the Room tab beside the side panes; anything else takes the sidebar.
+        if (sidebar === 'side' && action.selection.kind === 'room') sideTab = 'room';
+        else sidebar = 'steps';
         return;
       case 'slideAndPlace':
         flow.slideTo(action.cell);

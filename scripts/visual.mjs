@@ -1818,16 +1818,28 @@ for (const reduced of [false, true]) {
   await shot('55-encounter-text-buttons.png', p);
 
   // Roll: places the room first (as Done would), then a pending roll at the top of the pane, which
-  // comes to the front. No Room tab is left: the unplaced room is never left behind the saved fight.
+  // comes to the front. The placed room stays selected: a Room tab beside the fight keeps its text.
   await p.click('aside.panel button:text-is("🎲 Roll on PRAC1 −1")');
   await p.waitForSelector(`${pane} [data-testid=pending-roll]`);
-  if (await p.isVisible('#side-tab-room')) problems.push(`${tag}: Room tab still open after Roll placed the room`);
   if (!(await undoText()).includes('Roll on PRAC1 −1')) problems.push(`${tag}: Roll undo "${await undoText()}"`);
-  // The placed room's buttons: the Encounter button steps the pane aside, a tap opens the room.
+  if (!(await p.isVisible('#side-tab-room'))) problems.push(`${tag}: no Room tab beside the fight after Roll placed the room`);
+  else {
+    await p.click('#side-tab-room');
+    await p.waitForSelector('[data-editor=room] [data-testid=encounter-actions]', { timeout: 3000 }).catch(() => problems.push(`${tag}: Room tab shows no encounter buttons`));
+    const roomText = (await p.textContent('[data-editor=room]').catch(() => '')) ?? '';
+    if (!roomText.includes(ENC)) problems.push(`${tag}: Room tab does not show the placed room's encounter text`);
+    await shot('56a-encounter-room-tab.png', p);
+    await p.click('#side-tab-encounter');
+    await p.waitForSelector(`${pane} [data-testid=pending-roll]`);
+  }
+  // The placed room's buttons: its Room tab, or a tap on the room (which opens that tab beside the fight).
   const roomButtons = async () => {
-    if (await p.isVisible(pane)) await p.click('header.toolbar button.encounter');
-    await p.waitForTimeout(150);
-    if (!(await p.isVisible('[data-editor=room] [data-testid=encounter-actions]'))) await tap(12.5, 18.5);
+    if (await p.isVisible('#side-tab-room')) await p.click('#side-tab-room');
+    else {
+      const fightShown = await p.isVisible(pane);
+      await tap(12.5, 18.5);
+      if (fightShown && !(await p.isVisible('#side-tab-encounter'))) problems.push(`${tag}: tapping the room mid-fight closed the Encounter tab`);
+    }
     await p.waitForSelector('[data-editor=room] [data-testid=encounter-actions]', { timeout: 3000 }).catch(() => problems.push(`${tag}: room inspector shows no encounter buttons`));
   };
   const roomBtn = async (name) => {
@@ -1838,10 +1850,11 @@ for (const reduced of [false, true]) {
   await p.waitForTimeout(1500);
   await p.reload({ waitUntil: 'load' });
   await p.waitForSelector(`${pane} [data-testid=pending-roll]`, { timeout: 5000 }).catch(() => problems.push(`${tag}: pending roll not back after reload`));
+  // No selection survives a reload: a tap on the room brings its Room tab back beside the fight.
   await roomButtons();
   const placedType = (await p.textContent('[data-editor=room]').catch(() => '')) ?? '';
   if (!placedType.includes(ENC)) problems.push(`${tag}: room lost on reload after Roll`);
-  await p.click('header.toolbar button.encounter');
+  await p.click('#side-tab-encounter');
   await p.waitForSelector(`${pane} [data-testid=pending-roll]`);
   const head = (await p.textContent(`${pane} [data-testid=pending-roll] h3`))?.trim();
   if (head !== 'Roll on PRAC1 −1') problems.push(`${tag}: pending heading "${head}"`);
@@ -2539,15 +2552,12 @@ for (const reduced of [false, true]) {
   if (small) problems.push(`${tag}: ${small} buttons under 44 px`);
   await shot('80-table-button-in-text.png', p);
 
-  // Start the fight (it places the room), open the room again and open the table from the text.
+  // Start the fight (it places the room), go to its Room tab and open the table from the text.
   await p.click('aside.panel button:text-is("⚔ Fight Grumbler")');
   await p.waitForSelector(enc);
   const foesNow = () => p.$$eval(`${enc} .foe`, (els) => els.map((e) => `${e.querySelector('.name span')?.textContent?.trim()}:${e.querySelector('.num')?.textContent?.trim()}`));
   if ((await foesNow()).join('|') !== 'Grumbler:4') problems.push(`${tag}: fight ${JSON.stringify(await foesNow())}`);
-  await p.waitForTimeout(1500); // the token walks into the room Fight placed
-  await p.click('header.toolbar button.encounter');
-  await p.waitForTimeout(150);
-  await tap(12.5, 18.5);
+  await p.click('#side-tab-room');
   await p.waitForSelector('[data-editor=room] [data-testid=encounter-actions]', { timeout: 3000 }).catch(() => problems.push(`${tag}: placed room shows no encounter buttons`));
   const undoBefore = (await p.textContent('header.toolbar button.history'))?.trim();
   await p.click('[data-editor=room] button:text-is("📖 Open XX1 −1")');

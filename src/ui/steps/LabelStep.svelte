@@ -14,9 +14,11 @@
     oncommit: (run: () => ExecResult | null) => void;
     tables?: DungeonTables | null;
     encounter?: EncounterHooks | null;
+    /** Roll or Fight placed the room: it stays selected, so its text has a Room tab beside the fight. */
+    onplaced?: (roomId: string) => void;
   }
 
-  let { flow, step, oncommit, tables = null, encounter = null }: Props = $props();
+  let { flow, step, oncommit, tables = null, encounter = null, onplaced }: Props = $props();
 
   // Seeded once from the draft (e.g. "Entrance Room"); the step object is stable while labelling.
   // svelte-ignore state_referenced_locally
@@ -41,8 +43,11 @@
   const roomEncounter = $derived(
     encounter &&
       placingFirst(encounter, () => {
+        const roomId = step.draft.room.id;
         oncommit(() => flow.finish(null));
-        return flow.step.kind === 'idle';
+        if (flow.step.kind !== 'idle') return false;
+        onplaced?.(roomId);
+        return true;
       }),
   );
 
