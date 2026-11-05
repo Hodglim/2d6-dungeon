@@ -111,10 +111,8 @@ export class DiceDesk {
   /** Make `job` the target: its dice, and its modifier (0 when it has none). */
   private aim(job: DiceJob | null): void {
     this.targetId = job ? job.id : null;
-    if (job) {
-      this.kind = job.dice;
-      this.modifier = job.modifier ?? 0;
-    }
+    if (job) this.kind = job.dice;
+    this.modifier = job?.modifier ?? 0;
   }
 
   put(job: DiceJob): void {
@@ -183,8 +181,7 @@ export class DiceDesk {
 
   clearTarget(): void {
     if (this.targetId === null) return;
-    this.targetId = null;
-    this.modifier = 0;
+    this.aim(null);
     this.rebuild();
   }
 

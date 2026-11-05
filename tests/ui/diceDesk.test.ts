@@ -191,6 +191,14 @@ describe('modifier', () => {
     d.setModifier(3);
     expect(d.view.modifier).toBe(0);
   });
+  it('removing the only target leaves a free roll with no modifier', () => {
+    const d = fresh();
+    d.put(req('r', { dice: '2d6', modifier: -1 }));
+    expect(d.view.modifier).toBe(-1);
+    d.remove('r');
+    expect(d.view.target).toBeNull();
+    expect(d.view.modifier).toBe(0);
+  });
   it('changed dice on a re-put reset kind and modifier', () => {
     const d = fresh();
     d.put(req('r', { modifier: -1 }));
