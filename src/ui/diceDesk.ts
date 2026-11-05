@@ -196,8 +196,11 @@ export class DiceDesk {
     this.rebuild();
   }
 
+  /** Pick dice. Other dice than the target's switch to a free roll; the job stays registered. */
   choose(kind: DiceKind): void {
-    if (this.targetId !== null) return;
+    const t = this.target;
+    if (t && t.dice === kind) return;
+    this.targetId = null;
     this.kind = kind;
     this.modifier = 0;
     this.rebuild();

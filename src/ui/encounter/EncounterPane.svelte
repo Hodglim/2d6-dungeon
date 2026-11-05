@@ -696,6 +696,8 @@
               onchange={setDice}
               mishap={attacker?.mishap}
               prime={attacker?.prime}
+              onrollnote={desk ? (name, roll) => askDamage(name, roll) : undefined}
+              noteResult={damageNote && damageNote.key === turnKey && (damageNote.name === 'Mishap' || damageNote.name === 'Prime Attack') ? damageNote.text : null}
             />
           {/key}
         </div>

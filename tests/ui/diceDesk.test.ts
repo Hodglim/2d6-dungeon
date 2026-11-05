@@ -93,6 +93,18 @@ describe('routing', () => {
     expect(a.calls.rolled).toHaveLength(0);
     expect(d.view.history).toEqual([`Free D6: ${s.faces[0]}`]);
   });
+  it('picking other dice while aimed at a job switches to a free roll and keeps the job', () => {
+    const d = fresh();
+    d.put(req('atk', { dice: '2d6', standing: true }));
+    d.choose('d6');
+    expect(d.view.target).toBeNull();
+    expect(d.view.kind).toBe('d6');
+    expect(d.view.jobs.map((j) => j.id)).toEqual(['atk']);
+    d.aimAt('atk');
+    expect(d.view.target?.id).toBe('atk');
+    d.choose('2d6');
+    expect(d.view.target?.id).toBe('atk');
+  });
   it('free roll highlights matching watchers only', () => {
     const d = fresh();
     const w6 = watcher('w6', { dice: 'd6' });
@@ -213,11 +225,12 @@ describe('modifier', () => {
     d.setModifier(5);
     expect(d.view.modifier).toBe(1);
   });
-  it('choose is ignored while a target is set and resets the modifier otherwise', () => {
+  it("choose keeps a target's own dice and modifier, and resets the modifier otherwise", () => {
     const d = fresh();
-    d.put(req('r', { dice: '2d6' }));
-    d.choose('d3');
-    expect(d.view.kind).toBe('2d6');
+    d.put(req('r', { dice: '2d6', modifier: 1 }));
+    d.choose('2d6');
+    expect(d.view.target?.id).toBe('r');
+    expect(d.view.modifier).toBe(1);
     d.clearTarget();
     d.setModifier(2);
     d.choose('d3');

@@ -1506,6 +1506,7 @@ for (const reduced of [false, true]) {
   // In-memory copy only: the hero's Wobbly Poke deals "D6 +1", so its hit offers a damage roll.
   const withPokeDamage = (fx) => {
     for (const w of fx.tables.weapons ?? []) for (const m of w.manoeuvres) if (m.name === 'Wobbly Poke') m.damage = 'D6 +1';
+    fx.tables.creatures['Moss Lurker'].prime = 'Made-up spores burst. Lose D6 HP.';
     return withThrowing(fx);
   };
   await p.setInputFiles('input[data-extra="tables"]', { name: 'tables.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(withPokeDamage(JSON.parse(readFileSync('tests/fixtures/dungeon-tables.fixture.json', 'utf8'))))) });
@@ -1639,7 +1640,7 @@ for (const reduced of [false, true]) {
   const faces = () => p.$$eval(`${td} [data-testid=attack-die]`, (els) => els.map((e) => e.dataset.value).join('-'));
   const shiftLeft = async () => (await p.textContent(`${sh} [data-testid=shift-left]`))?.trim();
   const lit = () => p.$$eval(`${pane} [data-testid=manoeuvre].match .m-name`, (els) => els.map((e) => e.textContent.trim()).join('|'));
-  const rollNoteText = async () => ((await p.isVisible(`${td} [data-testid=roll-note]`)) ? (await p.textContent(`${td} [data-testid=roll-note]`))?.trim() : null);
+  const rollNoteText = async () => ((await p.isVisible(`${td} [data-testid=roll-note]`)) ? (await p.textContent(`${td} [data-testid=roll-note] p`))?.trim() : null);
   const nextTurn = () => p.click(`${pane} button:text-is("Next turn")`);
   const turnText = async () => (await p.textContent(`${pane} [data-testid=turn]`))?.trim();
   const ms = await p.$$eval(`${pane} [data-testid=manoeuvre] .m-name`, (els) => els.map((e) => e.textContent.trim()).join('|'));
@@ -1713,6 +1714,12 @@ for (const reduced of [false, true]) {
   if (!(await p.textContent(`${rollerPanel} [data-testid=dice-for]`))?.includes("Grumbler's attack")) problems.push(`${tag}: roller not asked for Grumbler's attack: "${await p.textContent(`${rollerPanel} [data-testid=dice-for]`)}"`);
   await typeDice(6, 6);
   if ((await rollNoteText()) !== "Prime Attack: see the bottom of its card Armour can't deflect it." || (await shiftLeft()) !== 'Shift left: 0 of 0' || (await lit()) !== '') problems.push(`${tag}: creature 6-6 "${await rollNoteText()}" "${await shiftLeft()}"`);
+  // No roll named on the card: no Roll button in the note. Other dice in the roller leave the attack for a free roll.
+  if (await p.isVisible(`${td} [data-testid=roll-note-roll]`)) problems.push(`${tag}: a Roll button on a note that names no roll`);
+  await p.click(`${rollerPanel} [role=group][aria-label=Die] button:text-is("D6")`);
+  if ((await p.textContent(`${rollerPanel} [data-testid=dice-for]`))?.trim() !== 'Free roll' || !(await p.isVisible(`${td} [data-testid=attack-die]`))) problems.push(`${tag}: D6 during an attack: "${await p.textContent(`${rollerPanel} [data-testid=dice-for]`)}"`);
+  await p.click(`${td} button:text-is("Shift in the dice roller")`);
+  if (!(await p.textContent(`${rollerPanel} [data-testid=dice-for]`))?.includes("Grumbler's attack")) problems.push(`${tag}: roller not back on the attack after a free D6`);
   // The attacking creature's card sits above its dice: its bottom, the dice and Next turn all on screen.
   const seen = await p.evaluate(() => {
     const body = document.querySelector('.encounter-pane .body').getBoundingClientRect();
@@ -1740,6 +1747,15 @@ for (const reduced of [false, true]) {
   if ((await turnText()) !== "Moss Lurker's turn") problems.push(`${tag}: second creature "${await turnText()}"`);
   await typeDice(1, 1);
   if ((await rollNoteText()) !== 'Mishap: see the bottom of its card') problems.push(`${tag}: creature 1-1 "${await rollNoteText()}"`);
+  // Its Prime names a roll: the note rolls it in the roller and shows what it came to.
+  await p.click(`${sh} button:text-is("Roll again")`);
+  await typeDice(6, 6);
+  if (!(await rollNoteText())?.startsWith('Prime Attack: Made-up spores burst. Lose D6 HP.')) problems.push(`${tag}: Moss Lurker 6-6 "${await rollNoteText()}"`);
+  await p.click(`${td} [data-testid=roll-note-roll]`);
+  if (!(await p.textContent(`${rollerPanel} [data-testid=dice-for]`))?.includes('Prime Attack damage · D6')) problems.push(`${tag}: Prime roll not asked of the roller: "${await p.textContent(`${rollerPanel} [data-testid=dice-for]`)}"`);
+  await rollerEnterOn(p, 4);
+  if ((await p.textContent(`${td} [data-testid=roll-note-result]`))?.trim() !== 'Rolled 4 damage') problems.push(`${tag}: Prime roll result "${await p.textContent(`${td} [data-testid=roll-note-result]`).catch(() => null)}"`);
+  if (!(await p.textContent(`${rollerPanel} [data-testid=dice-for]`))?.includes("Moss Lurker's attack")) problems.push(`${tag}: roller not back on the attack after the Prime roll`);
   // Past the last creature: round 2, the Fatigue Die shows 2, back to the hero.
   await nextTurn();
   const r2 = await state();

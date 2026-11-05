@@ -4,6 +4,7 @@
   import RollCard from '../RollCard.svelte';
   import type { DeskView, DiceJob } from '../diceDesk';
   import { useDiceDesk } from '../diceDeskContext';
+  import { findDice, rollLabel, type DiceKind } from '../diceRoller';
 
   /**
    * The attack dice for one turn: a card hands the roll (or the typing) to the floating dice roller,
@@ -26,8 +27,12 @@
     /** The creature card's Mishap and Prime results, when the table file has them. */
     mishap?: string;
     prime?: string;
+    /** Rolls the dice a Mishap or Prime result names ("Lose D6 HP") in the floating roller. */
+    onrollnote?: (name: 'Mishap' | 'Prime Attack', roll: { dice: DiceKind; modifier: number }) => void;
+    /** What that roll came to ("Rolled 4 damage"), for this turn. */
+    noteResult?: string | null;
   }
-  let { who, turnKey, foeName, pool, unknownShift = false, manoeuvres = [], dice, onchange, mishap, prime }: Props = $props();
+  let { who, turnKey, foeName, pool, unknownShift = false, manoeuvres = [], dice, onchange, mishap, prime, onrollnote, noteResult = null }: Props = $props();
 
   const desk = useDiceDesk();
   let view = $state.raw<DeskView | null>(desk ? desk.view : null);
@@ -77,6 +82,15 @@
     return null;
   });
 
+  /** A creature's Mishap or Prime that names a roll ("Lose D6 HP") gets a Roll button. */
+  const noteRoll = $derived.by(() => {
+    if (!dice || who !== 'creature' || !onrollnote) return null;
+    const n = rollNote(dice, who, manoeuvres);
+    const text = n === 'mishap' ? mishap : n === 'prime' ? prime : undefined;
+    const roll = text ? findDice(text) : null;
+    return roll ? { name: n === 'mishap' ? ('Mishap' as const) : ('Prime Attack' as const), roll } : null;
+  });
+
   const COLOURS = ['red', 'blue'] as const;
 </script>
 
@@ -99,7 +113,23 @@
       </div>
     {/if}
   </RollCard>
-  {#if note}<p class="note" role="status" data-testid="roll-note">{note}</p>{/if}
+  {#if note}
+    <div class="note" data-testid="roll-note">
+      <p role="status">{note}</p>
+      {#if noteRoll}
+        <span class="note-roll">
+          <button
+            type="button"
+            class="back"
+            data-testid="roll-note-roll"
+            aria-label={`${noteRoll.name}: roll ${rollLabel(noteRoll.roll.dice, noteRoll.roll.modifier)}`}
+            onclick={() => onrollnote?.(noteRoll.name, noteRoll.roll)}>🎲 Roll {rollLabel(noteRoll.roll.dice, noteRoll.roll.modifier)}</button
+          >
+          {#if noteResult}<span class="small" role="status" data-testid="roll-note-result">{noteResult}</span>{/if}
+        </span>
+      {/if}
+    </div>
+  {/if}
 </section>
 
 <style>
@@ -148,5 +178,15 @@
     font-weight: 600;
     background: #f1e3b8;
     border-left: 4px solid var(--ink);
+  }
+  .note p {
+    margin: 0;
+  }
+  .note-roll {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 8px;
+    font-weight: 400;
   }
 </style>

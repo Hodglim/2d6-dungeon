@@ -160,7 +160,7 @@
     <div class="row">
     <div class="chips" role="group" aria-label="Die">
       {#each DICE as d (d.kind)}
-        <button type="button" aria-pressed={kind === d.kind} disabled={rolling || (target !== null && target.dice !== d.kind)} onclick={() => desk.choose(d.kind)}>{d.label}</button>
+        <button type="button" aria-pressed={kind === d.kind} disabled={rolling} onclick={() => desk.choose(d.kind)}>{d.label}</button>
       {/each}
     </div>
     {#if hasModifier}

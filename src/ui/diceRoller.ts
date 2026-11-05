@@ -89,6 +89,14 @@ export function parseDamage(text: string): { dice: DiceKind; modifier: number } 
   return { dice, modifier: m[2] === '+' || n === 0 ? n : -n };
 }
 
+/** The first roll card text names ("Lose D6 HP", "2D6+1 damage"), or null. D66 and table codes don't count. */
+export function findDice(text: string): { dice: DiceKind; modifier: number } | null {
+  const m = /(?<![A-Za-z0-9])([23]?d[36])(?!\d)(?:\s*([+\-−])\s*(\d+))?/i.exec(text);
+  if (!m) return null;
+  const n = m[3] ? Number(m[3]) : 0;
+  return { dice: m[1]!.toLowerCase() as DiceKind, modifier: m[2] === '+' || n === 0 ? n : -n };
+}
+
 export const HISTORY_SIZE = 5;
 
 /** Newest first, at most five. */

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DICE, DICE_PREFS_KEY, addToHistory, describeRoll, diceLabel, parseDamage, readDicePrefs, rollDice, rollLabel, rollTotal, writeDicePrefs } from '../../src/ui/diceRoller';
+import { DICE, DICE_PREFS_KEY, addToHistory, describeRoll, diceLabel, findDice, parseDamage, readDicePrefs, rollDice, rollLabel, rollTotal, writeDicePrefs } from '../../src/ui/diceRoller';
 
 /** An rng that returns the given values in turn. */
 const seq = (...v: number[]) => {
@@ -130,5 +130,18 @@ describe('dice roller helper', () => {
     expect(readDicePrefs(throws)).toEqual({ open: false, dice: 'd6', enter: false });
     expect(() => writeDicePrefs(throws, { open: true, dice: 'd3', enter: false })).not.toThrow();
     expect(readDicePrefs(undefined)).toEqual({ open: false, dice: 'd6', enter: false });
+  });
+});
+
+describe('findDice', () => {
+  it('finds the first dice roll named in card text', () => {
+    expect(findDice('Flames burst up around you. Lose D6 HP.')).toEqual({ dice: 'd6', modifier: 0 });
+    expect(findDice('Lose 2D6+1 HP')).toEqual({ dice: '2d6', modifier: 1 });
+    expect(findDice('take d3 − 1 damage')).toEqual({ dice: 'd3', modifier: -1 });
+  });
+  it('finds nothing when the text names no roll it can make', () => {
+    expect(findDice('You gain an extra attack.')).toBeNull();
+    expect(findDice('Roll on D66 table')).toBeNull();
+    expect(findDice('see AD6 room')).toBeNull();
   });
 });
