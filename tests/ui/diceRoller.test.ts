@@ -74,6 +74,13 @@ describe('dice roller helper', () => {
     expect(describeRoll('2d6', [4, 5], 7)).toBe('2D6 +7: 4 + 5 + 7 = 16');
     expect(describeRoll('d3', [5], 1)).toBe('D3 +1: 5 → 3 + 1 = 4');
   });
+  it('never takes damage below 0, and a 6 on a damage die always does at least 1', () => {
+    expect(rollTotal('d6', [1], -2)).toBe('0');
+    expect(rollTotal('d6', [6], -7)).toBe('1');
+    expect(rollTotal('2d6', [6, 1], -9)).toBe('1');
+    expect(rollTotal('2d6', [2, 1], -9)).toBe('0');
+    expect(describeRoll('d6', [1], -2)).toBe('D6 −2: 1 − 2 = 0');
+  });
   it('keeps the last five rolls, newest first', () => {
     let h: string[] = [];
     for (let i = 1; i <= 7; i++) h = addToHistory(h, `r${i}`);

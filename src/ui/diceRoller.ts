@@ -21,11 +21,17 @@ export function rollDice(kind: DiceKind, rng: Rng): number[] {
   return [rollD6(rng), rollD6(rng)];
 }
 
-/** "9" for 2D6 (the sum), "34" for D66 (red tens, blue units), "3" for D3 (a 5 read in halves), the face for D6; plus any modifier (never on a D66). */
+/**
+ * "9" for 2D6 (the sum), "34" for D66 (red tens, blue units), "3" for D3 (a 5 read in halves), the
+ * face for D6; plus any modifier (never on a D66). A modified roll is a damage roll: it never goes
+ * below 0, and a 6 on a D6 or 2D6 always does at least 1.
+ */
 export function rollTotal(kind: DiceKind, faces: number[], modifier = 0): string {
   if (kind === 'd66') return faces.join('');
   const base = kind === '2d6' ? faces.reduce((a, b) => a + b, 0) : kind === 'd3' ? d3FromD6(faces[0] ?? 0) : (faces[0] ?? 0);
-  return String(base + modifier);
+  if (!modifier) return String(base);
+  const floor = kind !== 'd3' && faces.includes(6) ? 1 : 0;
+  return String(Math.max(floor, base + modifier));
 }
 
 const signed = (n: number) => (n < 0 ? `−${-n}` : `+${n}`);

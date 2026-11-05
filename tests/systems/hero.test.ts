@@ -60,6 +60,10 @@ describe('heroProblem', () => {
     const h = hero();
     expect(heroProblem({ ...h, coins: { ...h.coins, gc: -1 } })).toMatch(/coins/);
     expect(heroProblem({ ...h, manoeuvres: [{ name: 'x', dice: [0, 3], modifier: '1' }] })).toMatch(/dice/);
+    expect(heroProblem({ ...h, manoeuvres: [{ name: 'x', dice: [1, 3, 2], modifier: '1' }] })).toMatch(/dice/);
+    // Armour dice sets run to four dice ("6 & 4 + 3 & 3").
+    expect(heroProblem({ ...h, armour: [{ name: 'x', dice: [6, 4, 3, 3], modifier: '-4 Damage' }] })).toBeNull();
+    expect(heroProblem({ ...h, armour: [{ name: 'x', dice: [6, 4, 3, 3, 1], modifier: '-4 Damage' }] })).toMatch(/dice/);
     expect(heroProblem(null)).not.toBeNull();
     expect(heroProblem({ ...h, hp: -2 })).toBeNull();
     expect(heroProblem({ ...h, hp: 1.5 })).toMatch(/hp/);

@@ -34,6 +34,8 @@
   import type { DungeonTables } from '../../systems/dungeon/tables';
   import { foePool, heroPool, locked, matches, type DiceState } from '../../systems/dungeon/shift';
   import DieFace from '../DieFace.svelte';
+  import DiceSet from '../DiceSet.svelte';
+  import { deflects } from '../../systems/dungeon/armour';
   import { useDiceRoll } from '../diceContext';
   import { parseDamage, rollLabel } from '../diceRoller';
   import { adjustHp, commitHero } from '../hero/heroActions';
@@ -156,6 +158,11 @@
     if (s) void tick().then(() => diceBox?.scrollIntoView({ block: 'nearest' }));
   }
   /** Manoeuvres the hero's attack dice match now (none on a creature's turn, before a roll, or on a natural double 1/6). */
+  /**
+   * On a creature's turn, the armour its attack dice (after shifting) would deflect. A natural
+   * double (Mishap or Prime) is never deflected.
+   */
+  const deflected = $derived(hero && turnDice && foeTurn && !locked(turnDice) ? new Set(deflects(turnDice.faces, hero.armour)) : new Set<number>());
   const matched = $derived(hero && turnDice && !foeTurn && !locked(turnDice) ? new Set(matches(turnDice.faces, hero.manoeuvres)) : new Set<number>());
 
   /** Bumped when a newer request takes over the HP prompt: the older run of questions stops. */
@@ -499,6 +506,7 @@
               <span class="small">{plain(hero.shift)} base {signed(fatigue)} fatigue{momentum ? ` ${signed(momentum)} momentum` : ''}</span>
             </div>
             {#if hero.manoeuvres.length}
+              <h4 class="list-head">Manoeuvres</h4>
               <ul class="manoeuvres" aria-label="Manoeuvres">
                 {#each hero.manoeuvres as m, i (i)}
                   {@const hit = matched.has(i)}
@@ -526,6 +534,22 @@
                   </li>
                 {/each}
               </ul>
+            {/if}
+            {#if hero.armour.length}
+              <h4 class="list-head">Armour</h4>
+              <ul class="manoeuvres armour" aria-label="Armour">
+                {#each hero.armour as a, i (i)}
+                  <li class:match={deflected.has(i)} data-testid="armour">
+                    <span class="faces"><DiceSet dice={a.dice} /></span>
+                    <span class="m-name">{a.name}</span>
+                    {#if a.modifier}<span class="m-mod">Modifier {a.modifier}</span>{/if}
+                    {#if deflected.has(i)}<span class="tag">Deflect</span>{/if}
+                  </li>
+                {/each}
+              </ul>
+              {#if deflected.size > 1}
+                <p class="small">Only one piece deflects each attack: use the one that takes off the most.</p>
+              {/if}
             {/if}
           </div>
         {/if}
@@ -789,6 +813,14 @@
     border-color: var(--ink);
     background: #f1e3b8;
     font-weight: 700;
+  }
+  .list-head {
+    margin: 4px 0 0;
+    font-size: 13px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
   }
   .manoeuvres li:has(> .m-roll) {
     padding: 0;

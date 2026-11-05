@@ -1,5 +1,6 @@
 /** The dungeon hero: model, creation from the player's table file, level-up and sheet-limit rules. */
 import type { DungeonTables, Dice, LevelRow, Limits } from './tables';
+import { isArmourDice } from './armour';
 
 export interface HeroRules {
   limits: Limits;
@@ -188,9 +189,10 @@ export function heroProblem(raw: unknown): string | null {
   const coin = ['gc', 'sc', 'cc'].find((k) => !isCount((h.coins as Record<string, unknown>)[k]));
   if (coin) return fail(`coins ${coin}`);
   const dm = (r: Record<string, unknown>) => strFields(r, ['name', 'modifier']) ?? (isDice(r.dice) ? null : 'dice');
+  const am = (r: Record<string, unknown>) => strFields(r, ['name', 'modifier']) ?? (isArmourDice(r.dice) ? null : 'dice');
   const p =
     listProblem(h, 'manoeuvres', dm) ??
-    listProblem(h, 'armour', dm) ??
+    listProblem(h, 'armour', am) ??
     listProblem(h, 'scrolls', (r) => strFields(r, ['name', 'orbit', 'dispelDoubles', 'effectModifier'])) ??
     listProblem(h, 'potions', (r) => strFields(r, ['name', 'effect'])) ??
     listProblem(h, 'favour', (r) => strFields(r, ['god']) ?? (isCount(r.points) ? null : 'points')) ??

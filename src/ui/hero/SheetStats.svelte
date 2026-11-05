@@ -2,6 +2,8 @@
   import { listLimit, overLimit, type Hero, type ListKey } from '../../systems/dungeon/hero';
   import type { DungeonTables } from '../../systems/dungeon/tables';
   import DieFace from '../DieFace.svelte';
+  import DiceSet from '../DiceSet.svelte';
+  import { parseDiceSet } from '../../systems/dungeon/armour';
 
   interface Props {
     hero: Hero;
@@ -54,16 +56,22 @@
   // typed rows
   const blank = () => ({ name: '', d1: 1, d2: 0, modifier: '' });
   let mDraft = $state(blank());
-  let aDraft = $state(blank());
+  let aDraft = $state({ name: '', set: '', modifier: '' });
+  const aDice = $derived(parseDiceSet(aDraft.set));
   let sDraft = $state({ name: '', orbit: '', dispelDoubles: '', effectModifier: '' });
   const diceOf = (d: { d1: number; d2: number }) => (d.d2 ? [d.d1, d.d2] : [d.d1]);
 
-  function addRow(key: 'manoeuvres' | 'armour') {
-    const d = key === 'manoeuvres' ? mDraft : aDraft;
+  function addManoeuvre() {
+    const d = mDraft;
     if (!d.name.trim()) return;
-    onedit({ ...hero, [key]: [...hero[key], { name: d.name.trim(), dice: diceOf(d), modifier: d.modifier.trim() }] }, { limit: key });
-    if (key === 'manoeuvres') mDraft = blank();
-    else aDraft = blank();
+    onedit({ ...hero, manoeuvres: [...hero.manoeuvres, { name: d.name.trim(), dice: diceOf(d), modifier: d.modifier.trim() }] }, { limit: 'manoeuvres' });
+    mDraft = blank();
+  }
+  /** Armour takes a dice set as printed: "4", "6 & 5", "4 & 3 + 1". */
+  function addArmour() {
+    if (!aDraft.name.trim() || !aDice) return;
+    onedit({ ...hero, armour: [...hero.armour, { name: aDraft.name.trim(), dice: aDice, modifier: aDraft.modifier.trim() }] }, { limit: 'armour' });
+    aDraft = { name: '', set: '', modifier: '' };
   }
   function addOffered(m: { name: string; dice: number[]; damage: string }) {
     onedit({ ...hero, manoeuvres: [...hero.manoeuvres, { name: m.name, dice: [...m.dice], modifier: m.damage }] }, { limit: 'manoeuvres' });
@@ -78,8 +86,8 @@
   }
 </script>
 
-{#snippet adder(key: 'manoeuvres' | 'armour', d: { name: string; d1: number; d2: number; modifier: string })}
-  <form class="row" onsubmit={(e) => { e.preventDefault(); addRow(key); }}>
+{#snippet adder(key: 'manoeuvres', d: { name: string; d1: number; d2: number; modifier: string })}
+  <form class="row" onsubmit={(e) => { e.preventDefault(); addManoeuvre(); }}>
     <input type="text" class="grow" placeholder="Name" aria-label="New {key} name" bind:value={d.name} />
     <select aria-label="New {key} red die" bind:value={d.d1}>
       {#each [1, 2, 3, 4, 5, 6] as n (n)}<option value={n}>{n}</option>{/each}
@@ -163,20 +171,34 @@
   <section>
     <h3 class:over={overLimit(hero, 'armour')}>Armour {hero.armour.length} / {listLimit(hero, 'armour')}</h3>
     <div class="dgrid">
-<div class="drow dhead" aria-hidden="true"><span class="grow">Name</span><span class="dcell">Red</span><span class="dcell">Blue</span><span class="mod">Modifier</span><span></span></div>
+<div class="drow dhead" aria-hidden="true"><span class="grow">Name</span><span class="dset">Dice set</span><span class="mod">Modifier</span><span></span></div>
     <ul>
       {#each hero.armour as a, i (i)}
         <li class="drow">
           <span class="grow">{a.name}</span>
-          <span class="dcell">{#if a.dice[0]}<DieFace value={a.dice[0]} colour="red" />{/if}</span>
-          <span class="dcell">{#if a.dice[1]}<DieFace value={a.dice[1]} colour="blue" />{/if}</span>
+          <span class="dset"><DiceSet dice={a.dice} size={32} /></span>
           <span class="mod">{a.modifier}</span>
           <button aria-label="Remove {a.name}" onclick={() => removeRow('armour', i)}>Remove</button>
         </li>
       {/each}
     </ul>
     </div>
-    {@render adder('armour', aDraft)}
+    <form class="row" onsubmit={(e) => { e.preventDefault(); addArmour(); }}>
+      <input type="text" class="grow" placeholder="Name" aria-label="New armour name" bind:value={aDraft.name} />
+      <input
+        type="text"
+        class="short"
+        placeholder="Dice set, e.g. 4 & 3 + 1"
+        aria-label="New armour dice set"
+        aria-invalid={aDraft.set.trim() !== '' && !aDice}
+        bind:value={aDraft.set}
+      />
+      <input type="text" class="short" placeholder="Modifier" aria-label="New armour modifier" bind:value={aDraft.modifier} />
+      <button type="submit" disabled={!aDraft.name.trim() || !aDice}>Add</button>
+    </form>
+    {#if aDraft.set.trim() !== '' && !aDice}
+      <p class="empty">Write the dice set as printed: 4, 6 & 5, or 4 & 3 + 1.</p>
+    {/if}
   </section>
 
   <section>
@@ -233,6 +255,16 @@
     align-items: center;
   }
   .dhead .dcell {
+    min-height: 0;
+  }
+  /* An armour dice set takes the Red and Blue columns together (it can run to four dice). */
+  .dset {
+    grid-column: span 2;
+    display: flex;
+    align-items: center;
+    min-height: 36px;
+  }
+  .dhead .dset {
     min-height: 0;
   }
   .drow .grow {
