@@ -9,11 +9,11 @@ export type EncounterPart =
   | { kind: 'fight'; text: string; name: string }
   | { kind: 'dice'; text: string; dice: DiceKind };
 
-/** The dice a "Roll a D6" phrase can name. */
-export type DiceKind = 'd6' | '2d6' | 'd66' | 'd3';
+/** The dice a "Roll a D6" phrase can name; the bigger damage dice (2D3, 3D3, 3D6) too. */
+export type DiceKind = 'd6' | '2d6' | 'd66' | 'd3' | '2d3' | '3d3' | '3d6';
 
 /** "Roll a D6", "roll 2D6", "Roll an D66", "Roll D3": "roll" (any case), an optional "a"/"an", then the dice. */
-const DICE_RE = /(?<![A-Za-z0-9])roll\s+(?:an?\s+)?(2d6|d66|1?d6|d3)(?![A-Za-z0-9])/gi;
+const DICE_RE = /(?<![A-Za-z0-9])roll\s+(?:an?\s+)?(3d6|2d6|2d3|3d3|d66|1?d6|d3)(?![A-Za-z0-9])/gi;
 
 function diceKind(notation: string): DiceKind {
   const n = notation.toLowerCase();

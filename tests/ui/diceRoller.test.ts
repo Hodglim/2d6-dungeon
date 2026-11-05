@@ -66,7 +66,6 @@ describe('dice roller helper', () => {
     expect(parseDamage('D6 -2 damage')).toEqual({ dice: 'd6', modifier: -2 });
     expect(parseDamage('2D6 +3 damage + special attack - made-up effect')).toEqual({ dice: '2d6', modifier: 3 });
     expect(parseDamage('2D6 + special attack - made-up effect')).toEqual({ dice: '2d6', modifier: 0 });
-    expect(parseDamage('3D6 +8 damage')).toBeNull();
   });
   it('adds a modifier to the total, the label and the history line', () => {
     expect(rollTotal('d6', [4], -1)).toBe('3');
@@ -85,6 +84,26 @@ describe('dice roller helper', () => {
     expect(rollTotal('2d6', [6, 1], -9)).toBe('1');
     expect(rollTotal('2d6', [2, 1], -9)).toBe('0');
     expect(describeRoll('d6', [1], -2)).toBe('D6 −2: 1 − 2 = 0');
+  });
+  it('rolls the bigger damage dice: 2D3, 3D3 and 3D6', () => {
+    expect(rollDice('3d6', seq(0, 0.5, 0.99))).toEqual([1, 4, 6]);
+    expect(rollDice('2d3', seq(0, 0.99))).toEqual([1, 6]);
+    expect(rollDice('3d3', seq(0, 0.5, 0.99))).toEqual([1, 4, 6]);
+    expect(diceLabel('3d6')).toBe('3D6');
+    expect(rollTotal('3d6', [1, 4, 6])).toBe('11');
+    expect(rollTotal('3d6', [1, 4, 6], 8)).toBe('19');
+    expect(rollTotal('2d3', [1, 6])).toBe('4');
+    expect(rollTotal('3d3', [1, 4, 6], 2)).toBe('8');
+    expect(describeRoll('3d6', [1, 4, 6], 8)).toBe('3D6 +8: 1 + 4 + 6 + 8 = 19');
+    expect(describeRoll('2d3', [1, 6])).toBe('2D3: 1, 6 → 1 + 3 = 4');
+    expect(describeRoll('2d3', [1, 6], 4)).toBe('2D3 +4: 1, 6 → 1 + 3 + 4 = 8');
+    expect(parseDamage('3D6 +8 damage')).toEqual({ dice: '3d6', modifier: 8 });
+    expect(parseDamage('2D3 +4 damage')).toEqual({ dice: '2d3', modifier: 4 });
+    expect(parseDamage('3D3 +2 damage')).toEqual({ dice: '3d3', modifier: 2 });
+    // A request for a bigger die is remembered like a chip die.
+    const s = fakeStorage();
+    writeDicePrefs(s, { open: true, dice: '3d6' });
+    expect(readDicePrefs(s)).toEqual({ open: true, dice: '3d6' });
   });
   it('keeps the last five rolls, newest first', () => {
     let h: string[] = [];

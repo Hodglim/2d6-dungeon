@@ -12,25 +12,37 @@ export const DICE: { kind: DiceKind; label: string }[] = [
   { kind: 'd66', label: 'D66' },
   { kind: 'd3', label: 'D3' },
 ];
+/** Dice a damage roll can ask for that have no chip of their own. */
+const BIGGER: { kind: DiceKind; label: string }[] = [
+  { kind: '2d3', label: '2D3' },
+  { kind: '3d3', label: '3D3' },
+  { kind: '3d6', label: '3D6' },
+];
+const ALL = [...DICE, ...BIGGER];
 
-export const diceLabel = (kind: DiceKind): string => DICE.find((d) => d.kind === kind)?.label ?? kind.toUpperCase();
+export const diceLabel = (kind: DiceKind): string => ALL.find((d) => d.kind === kind)?.label ?? kind.toUpperCase();
 
-/** The faces rolled: one D6 for D6 and D3 (a D6 read in halves), two for 2D6 and D66 (red first). */
+/** How many dice, and whether each is a D3 (a D6 read in halves). D66 is two dice read as tens and units. */
+const COUNT: Record<DiceKind, number> = { d6: 1, d3: 1, '2d6': 2, d66: 2, '2d3': 2, '3d3': 3, '3d6': 3 };
+const isD3 = (kind: DiceKind) => kind === 'd3' || kind === '2d3' || kind === '3d3';
+
+/** The faces rolled: real D6 faces, one per die (red first). A D3 face is read in halves. */
 export function rollDice(kind: DiceKind, rng: Rng): number[] {
-  if (kind === 'd6' || kind === 'd3') return [rollD6(rng)];
-  return [rollD6(rng), rollD6(rng)];
+  return Array.from({ length: COUNT[kind] }, () => rollD6(rng));
 }
+
+const readings = (kind: DiceKind, faces: number[]) => (isD3(kind) ? faces.map(d3FromD6) : faces);
 
 /**
  * "9" for 2D6 (the sum), "34" for D66 (red tens, blue units), "3" for D3 (a 5 read in halves), the
- * face for D6; plus any modifier (never on a D66). A modified roll is a damage roll: it never goes
- * below 0, and a 6 on a D6 or 2D6 always does at least 1.
+ * sum otherwise; plus any modifier (never on a D66). A modified roll is a damage roll: it never
+ * goes below 0, and a 6 on a D6 die always does at least 1.
  */
 export function rollTotal(kind: DiceKind, faces: number[], modifier = 0): string {
   if (kind === 'd66') return faces.join('');
-  const base = kind === '2d6' ? faces.reduce((a, b) => a + b, 0) : kind === 'd3' ? d3FromD6(faces[0] ?? 0) : (faces[0] ?? 0);
+  const base = readings(kind, faces).reduce((a, b) => a + b, 0);
   if (!modifier) return String(base);
-  const floor = kind !== 'd3' && faces.includes(6) ? 1 : 0;
+  const floor = !isD3(kind) && faces.includes(6) ? 1 : 0;
   return String(Math.max(floor, base + modifier));
 }
 
@@ -42,24 +54,35 @@ export function rollLabel(kind: DiceKind, modifier = 0): string {
   return modifier ? `${diceLabel(kind)} ${signed(modifier)}` : diceLabel(kind);
 }
 
+/**
+ * The working after the dice: "4 + 5 = 9", "34" (D66), "4" (one D6), "5 → 3" (one D3),
+ * "1, 6 → 1 + 3 = 4" (2D3), "4 − 1 = 3".
+ */
+export function rollWorking(kind: DiceKind, faces: number[], modifier = 0): string {
+  const total = rollTotal(kind, faces, modifier);
+  if (kind === 'd66') return total;
+  const mod = modifier ? step(modifier) : '';
+  if (isD3(kind)) {
+    const read = readings(kind, faces);
+    if (faces.length === 1 && !mod) return `${faces[0]} → ${total}`;
+    return `${faces.join(', ')} → ${read.join(' + ')}${mod} = ${total}`;
+  }
+  if (faces.length === 1 && !mod) return total;
+  return `${faces.join(' + ')}${mod} = ${total}`;
+}
+
 /** A history line: "2D6: 4 + 5 = 9", "D66: 34", "D6: 4", "D3: 5 → 3", "D6 −1: 4 − 1 = 3". */
 export function describeRoll(kind: DiceKind, faces: number[], modifier = 0): string {
-  const total = rollTotal(kind, faces, modifier);
-  const label = rollLabel(kind, modifier);
-  if (kind === 'd66') return `${label}: ${total}`;
-  const mod = modifier ? step(modifier) : '';
-  if (kind === 'd3') return mod ? `${label}: ${faces[0]} → ${d3FromD6(faces[0] ?? 0)}${mod} = ${total}` : `${label}: ${faces[0]} → ${total}`;
-  if (kind === '2d6') return `${label}: ${faces.join(' + ')}${mod} = ${total}`;
-  return mod ? `${label}: ${faces[0]}${mod} = ${total}` : `${label}: ${total}`;
+  return `${rollLabel(kind, modifier)}: ${rollWorking(kind, faces, modifier)}`;
 }
 
 /**
- * A damage text such as "D6 -1" or "2D6 +7" as a die and a modifier; null for a fixed number or
+ * A damage text such as "D6 -1" or "3D6 +8" as a die and a modifier; null for a fixed number or
  * dice the roller doesn't have. A card's "D6 -2 damage + special attack - …" reads as D6 −2.
  */
 export function parseDamage(text: string): { dice: DiceKind; modifier: number } | null {
   const plain = text.replace(/\s*\+\s*special\b.*$/i, '').replace(/\s*damage\b.*$/i, '');
-  const m = /^\s*(2d6|d6|d3)\s*(?:([+\-−])\s*(\d+))?\s*$/i.exec(plain);
+  const m = /^\s*(3d6|2d6|2d3|3d3|d6|d3)\s*(?:([+\-−])\s*(\d+))?\s*$/i.exec(plain);
   if (!m) return null;
   const dice = m[1]!.toLowerCase() as DiceKind;
   const n = m[3] ? Number(m[3]) : 0;
@@ -90,7 +113,7 @@ export function readDicePrefs(storage: Storage | undefined): DicePrefs {
     const raw = storage?.getItem(DICE_PREFS_KEY);
     if (!raw) return { ...DEFAULT_PREFS };
     const v = JSON.parse(raw) as Partial<DicePrefs>;
-    if (typeof v.open !== 'boolean' || !DICE.some((d) => d.kind === v.dice)) return { ...DEFAULT_PREFS };
+    if (typeof v.open !== 'boolean' || !ALL.some((d) => d.kind === v.dice)) return { ...DEFAULT_PREFS };
     return { open: v.open, dice: v.dice as DiceKind };
   } catch {
     return { ...DEFAULT_PREFS };

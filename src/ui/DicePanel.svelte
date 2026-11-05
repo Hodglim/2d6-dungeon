@@ -3,8 +3,7 @@
   // dice, see the total and the last five rolls. Never part of the game: no History step, no save.
   import { onDestroy, untrack } from 'svelte';
   import DieFace from './DieFace.svelte';
-  import { DICE, addToHistory, describeRoll, rollDice, rollLabel, rollTotal, type DiceKind } from './diceRoller';
-  import { d3FromD6 } from '../systems/dungeon/rules';
+  import { DICE, addToHistory, describeRoll, rollDice, rollLabel, rollTotal, rollWorking, type DiceKind } from './diceRoller';
   import { animateRoll } from './rollAnimation';
   import { unlockAudio } from './sound';
 
@@ -65,15 +64,12 @@
   });
 
   const total = $derived(shown?.settled ? rollTotal(shown.dice, shown.faces, shown.modifier) : null);
-  /** "= 3", or with a modifier "− 1 = 3"; a D3 shows its reading "5 → 3". */
+  /** "= 4" for one plain D6; otherwise the working ("4 + 5 = 9", "5 → 3", "4 − 1 = 3"), or the D66 reading. */
   const totalText = $derived.by(() => {
     if (!shown || total === null) return '';
     if (shown.dice === 'd66') return total;
-    const m = shown.modifier;
-    const mod = m < 0 ? ` − ${-m}` : m > 0 ? ` + ${m}` : '';
-    const read = shown.dice === 'd3' ? `${shown.faces[0]} → ${d3FromD6(shown.faces[0] ?? 0)}` : '';
-    if (shown.dice === 'd3') return mod ? `${read}${mod} = ${total}` : `${read}`;
-    return `${mod} = ${total}`;
+    if (shown.dice === 'd6' && !shown.modifier) return `= ${total}`;
+    return rollWorking(shown.dice, shown.faces, shown.modifier);
   });
 </script>
 
@@ -94,7 +90,7 @@
         {#each shown.faces as f, i (i)}<DieFace value={f} colour={i === 0 ? 'red' : 'blue'} size={48} />{/each}
       </span>
       {#if total !== null}
-        <span class="total" data-testid="dice-total">{totalText}</span>
+        <span class="total" class:long={totalText.length > 9} data-testid="dice-total">{totalText}</span>
       {/if}
     {:else}
       <span class="empty">Choose a die and roll.</span>
@@ -188,6 +184,7 @@
   }
   .result {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 10px;
     min-height: 52px;
@@ -200,6 +197,9 @@
     font-size: 28px;
     font-weight: 700;
     font-variant-numeric: tabular-nums;
+  }
+  .total.long {
+    font-size: 20px;
   }
   .empty {
     color: var(--muted);
