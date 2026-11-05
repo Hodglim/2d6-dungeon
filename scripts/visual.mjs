@@ -783,9 +783,9 @@ if (!(await page.isVisible('text=This replaces your current game.'))) problems.p
   await wshot('34-hero-stats.png');
   // Dice are pip faces labelled for assistive tech; the columns line up across rows.
   {
-    const labels = await p.$$eval(`${panel} .drow [role=img]`, (els) => els.map((e) => e.getAttribute('aria-label')));
+    const labels = await p.$$eval(`${panel} .drow .die[role=img]`, (els) => els.map((e) => e.getAttribute('aria-label')));
     if (!labels.length || labels.some((l) => !/^(red|blue) [1-6]$/.test(l ?? ''))) problems.push(`die labels: ${JSON.stringify(labels)}`);
-    const pips = await p.$$eval(`${panel} .drow [role=img]`, (els) => els.every((e) => e.querySelectorAll('circle').length === Number(e.getAttribute('aria-label').split(' ')[1])));
+    const pips = await p.$$eval(`${panel} .drow .die[role=img]`, (els) => els.every((e) => e.querySelectorAll('circle').length === Number(e.getAttribute('aria-label').split(' ')[1])));
     if (!pips) problems.push('pip count does not match die label');
     const xs = await p.$$eval(`${panel} ul .drow`, (rows) => rows.filter((r) => r.querySelector('.mod')).map((r) => Math.round(r.querySelector('.mod').getBoundingClientRect().x)));
     if (new Set(xs).size > 2) problems.push(`damage column not aligned: ${xs}`);
@@ -812,7 +812,7 @@ if (!(await page.isVisible('text=This replaces your current game.'))) problems.p
     void origW;
     // All six faces, red and blue, rendered in the app's own component styles.
     await p.evaluate(() => {
-      const donor = document.querySelector('.hero-panel .drow [role=img]');
+      const donor = document.querySelector('.hero-panel .drow .die[role=img]');
       const box = document.createElement('div');
       box.id = 'all-faces';
       box.style.cssText = 'position:fixed;left:20px;top:20px;z-index:99999;background:#fff;padding:16px;display:grid;gap:10px';
