@@ -105,6 +105,12 @@ const rollerEnterOn = async (p, ...values) => {
   await p.waitForTimeout(200);
 };
 const rollerEnter = (...values) => rollerEnterOn(page, ...values);
+/** In-memory copy of the fixture where a carried kit item can be thrown and a carried potion is a bomb (the file is unchanged). */
+const withThrowing = (fx) => {
+  fx.tables.throwingWeapons = [{ name: 'Bootlace', damage: 3 }];
+  fx.tables.potionBombs = [{ name: 'Mild Cheer', effect: 'Made up.', damage: '2D6 +1' }];
+  return fx;
+};
 const panelButton = (name) => page.click(`aside.panel button:text-is("${name}")`);
 /** The step panel must sit beside the map, never over it; its buttons must be touch-sized. */
 const checkPanel = async (where) => {
@@ -1488,7 +1494,7 @@ for (const reduced of [false, true]) {
   // In-memory copy only: the hero's Wobbly Poke deals "D6 +1", so its hit offers a damage roll.
   const withPokeDamage = (fx) => {
     for (const w of fx.tables.weapons ?? []) for (const m of w.manoeuvres) if (m.name === 'Wobbly Poke') m.damage = 'D6 +1';
-    return fx;
+    return withThrowing(fx);
   };
   await p.setInputFiles('input[data-extra="tables"]', { name: 'tables.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(withPokeDamage(JSON.parse(readFileSync('tests/fixtures/dungeon-tables.fixture.json', 'utf8'))))) });
   await p.waitForTimeout(500);
@@ -1568,6 +1574,47 @@ for (const reduced of [false, true]) {
   await p.fill(`${pane} .foe:has(.name span:text-is("Moss Lurker")) input`, '2.5');
   await p.keyboard.press('Enter');
   if ((await foeHp('Moss Lurker')) !== '6') problems.push(`${tag}: typed 2.5 was not ignored`);
+  // Throws before the attack: they ask the floating roller, and commit one History step.
+  {
+    const tp = `${pane} [data-testid=throw-panel]`;
+    const forText = async () => ((await p.textContent(`${rollerPanel} [data-testid=dice-for]`)) ?? '').replace(/\s+/g, ' ').trim();
+    const throwBtn = `${tp} button:has-text("Throw Spare Bootlace")`;
+    await rollerEnterModeOn(p, true);
+    await p.click(throwBtn);
+    if (!(await forText()).includes('Throw Spare Bootlace at Grumbler')) problems.push(`${tag}: throw not asked of the roller: "${await forText()}"`);
+    await rollerEnterOn(p, '7', '1');
+    if (!(await p.isVisible(`${rollerPanel} [data-testid=dice-typed] [role=alert]`))) problems.push(`${tag}: typed 7 for a throw showed no error`);
+    if (!(await p.isVisible(throwBtn))) problems.push(`${tag}: an invalid typed throw was applied`);
+    await rollerEnterOn(p, '3', '4');
+    if (!(await undoText()).includes('Throw Bootlace')) problems.push(`${tag}: typed throw undo "${await undoText()}"`);
+    if (await p.isVisible(throwBtn)) problems.push(`${tag}: thrown weapon still offered`);
+    await p.keyboard.press('Control+z');
+    await p.waitForTimeout(200);
+    if (!(await p.isVisible(throwBtn))) problems.push(`${tag}: Undo of the throw did not bring the weapon back`);
+    // Rolled in the roller itself.
+    await rollerEnterModeOn(p, false);
+    await p.click(throwBtn);
+    await p.waitForTimeout(1100);
+    if (!(await undoText()).includes('Throw Bootlace')) problems.push(`${tag}: rolled throw undo "${await undoText()}"`);
+    await p.keyboard.press('Control+z');
+    await p.waitForTimeout(200);
+    // A bomb with damage dice asks for them.
+    await p.click(`${tp} button:has-text("Mild Cheer")`);
+    if (!(await forText()).includes('Mild Cheer at Grumbler')) problems.push(`${tag}: bomb not asked of the roller: "${await forText()}"`);
+    await p.waitForTimeout(1100);
+    if (!(await undoText()).includes('Throw Mild Cheer')) problems.push(`${tag}: bomb undo "${await undoText()}"`);
+    await p.keyboard.press('Control+z');
+    await p.waitForTimeout(200);
+    // An un-rolled request does not outlive the turn.
+    await rollerEnterModeOn(p, true);
+    await p.click(throwBtn);
+    await p.click(`${pane} button:text-is("Next turn")`);
+    await p.waitForTimeout(200);
+    if ((await forText()).includes('Throw Spare Bootlace')) problems.push(`${tag}: an unrolled throw was still the roller's target after Next turn`);
+    await p.keyboard.press('Control+z');
+    await p.waitForTimeout(200);
+    await rollerEnterModeOn(p, true);
+  }
   // Turns and the attack dice. The hero (Shift 2) knows Wobbly Poke 1-4 and Gentle Swipe 2-6.
   const td = `${pane} [data-testid=turn-dice]`;
   const sh = `${rollerPanel} [data-testid=dice-shifter]`;
@@ -1907,9 +1954,10 @@ for (const reduced of [false, true]) {
   await p.waitForSelector(`${pane} [data-testid=pending-roll]`);
   if ((await foes()).length) problems.push(`${tag}: Undo left foes ${JSON.stringify(await foes())}`);
   if (await p.isVisible(`${pane} [data-testid=creature-roll-result]`)) problems.push(`${tag}: Undo left the roll result showing`);
-  // The pane's attack card is registered too, so aim the roller at the restored pending roll first.
+  // The pane's attack card is registered too, but a new plain request takes over from it: the roller is already aimed at the restored pending roll.
   await rollerEnterModeOn(p, true);
-  await p.click(`${card} button`);
+  const aimedAt = (await p.textContent(`${rollerPanel} [data-testid=dice-for]`))?.replace(/\s+/g, ' ').trim() ?? '';
+  if (!aimedAt.includes('Roll on PRAC1')) problems.push(`${tag}: after Undo the roller is aimed at "${aimedAt}", not the pending roll`);
   await rollerEnterOn(p, '7');
   if (!(await p.isVisible(`${rollerPanel} >> text=Type the die, 1 to 6.`))) problems.push(`${tag}: typed 7 not refused`);
   if (!(await p.isVisible(`${pane} [data-testid=pending-roll]`))) problems.push(`${tag}: typed 7 used the pending roll`);
@@ -2063,7 +2111,7 @@ for (const reduced of [false, true]) {
     await p.waitForTimeout(500);
   };
 
-  await p.setInputFiles('input[data-extra="tables"]', { name: 'tables.json', mimeType: 'application/json', buffer: Buffer.from(readFileSync('tests/fixtures/dungeon-tables.fixture.json')) });
+  await p.setInputFiles('input[data-extra="tables"]', { name: 'tables.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(withThrowing(JSON.parse(readFileSync('tests/fixtures/dungeon-tables.fixture.json', 'utf8'))))) });
   await p.waitForTimeout(500);
   await menu();
   await p.click('[role=menuitem]:text-is("New game…")');
@@ -2087,6 +2135,11 @@ for (const reduced of [false, true]) {
 
   // 18b. Win: both foes to 0; the question; Not yet keeps the fight and doesn't loop; a change asks again.
   await addByHand('Moss Lurker');
+  // A throw in round 1 (typed), so the Victory panel offers to get the weapon back.
+  await rollerEnterModeOn(p, true);
+  await p.click(`${pane} [data-testid=throw-panel] button:has-text("Throw Spare Bootlace")`);
+  await rollerEnterOn(p, '1', '1');
+  if (!(await undoText()).includes('Throw Bootlace')) problems.push(`${tag}: throw before the win: undo "${await undoText()}"`);
   await setFoe('Grumbler', 0);
   if (await p.isVisible(winQ)) problems.push(`${tag}: win asked with a foe standing`);
   await setFoe('Moss Lurker', 0);
@@ -2111,6 +2164,17 @@ for (const reduced of [false, true]) {
   const smallV = await p.$$eval(`${pane} .victory button`, (els) => els.map((e) => e.getBoundingClientRect()).filter((r) => r.width < 44 || r.height < 44).length);
   if (smallV) problems.push(`${tag}: ${smallV} Victory buttons under 44 px`);
   await shot('62-victory.png', p);
+  // Getting the thrown weapon back asks the roller for a D6: a bad typed value is refused, a 5 brings it back (one step).
+  const recoverBtn = `${pane} .victory [data-testid=thrown-weapon] button`;
+  await p.click(recoverBtn);
+  const recoverFor = ((await p.textContent(`${rollerPanel} [data-testid=dice-for]`)) ?? '').replace(/\s+/g, ' ').trim();
+  if (!recoverFor.includes('Get back the Bootlace')) problems.push(`${tag}: recovery not asked of the roller: "${recoverFor}"`);
+  await rollerEnterOn(p, '7');
+  if (!(await p.isVisible(`${rollerPanel} [data-testid=dice-typed] [role=alert]`))) problems.push(`${tag}: typed 7 for the recovery showed no error`);
+  if (!(await p.isVisible(recoverBtn))) problems.push(`${tag}: an invalid typed recovery was applied`);
+  await rollerEnterOn(p, '5');
+  if (!(await undoText()).includes('Recover Bootlace')) problems.push(`${tag}: recovery undo "${await undoText()}"`);
+  if (!(await p.textContent(`${pane} .victory [data-testid=thrown-weapon]`))?.includes('recovered, back in your pack')) problems.push(`${tag}: weapon not recovered`);
   await p.click(`${pane} .victory button:text-is("Add 5 XP")`);
   await p.waitForTimeout(200);
   if (!(await undoText()).includes('XP +5')) problems.push(`${tag}: Add XP undo "${await undoText()}"`);

@@ -38,6 +38,7 @@
   import DiceSet from '../DiceSet.svelte';
   import { deflects } from '../../systems/dungeon/armour';
   import { interruptHits, interruptLapsed } from '../../systems/dungeon/creatureCombat';
+  import type { CarriedWeapon, PotionBomb } from '../../systems/dungeon/throwing';
   import { useDiceDesk } from '../diceDeskContext';
   import { parseDamage, rollLabel, rollTotal } from '../diceRoller';
   import type { DiceKind } from '../diceRoller';
@@ -109,27 +110,64 @@
   /** The shell's dice roller: a hit manoeuvre rolls its damage there. */
   const desk = useDiceDesk();
 
+  /** One-shot requests this pane asked the roller for and that may still be waiting for a roll. */
+  const outstanding = new Set<string>();
+  function dropOutstanding() {
+    for (const id of outstanding) desk?.remove(id);
+    outstanding.clear();
+  }
+  onDestroy(dropOutstanding);
+
+  /** Typed dice read as faces, or the text to show when one is not a number from 1 to 6. */
+  function typedFaces(values: string[]): number[] | string {
+    const faces = values.map((v) => (/^\s*[1-6]\s*$/.test(v) ? Number(v) : NaN));
+    if (faces.some(Number.isNaN)) return values.length === 1 ? 'Type a number from 1 to 6.' : 'Type a number from 1 to 6 on each die.';
+    return faces;
+  }
+
+  /** Ask the roller for one roll that `apply` takes, rolled or typed; a typed roll is checked first. */
+  function askOnce(id: string, label: string, dice: DiceKind, modifier: number, apply: (faces: number[], modifier: number) => void) {
+    outstanding.add(id);
+    desk?.ask({
+      id,
+      kind: 'request',
+      label,
+      dice,
+      modifier: modifier || null,
+      oneShot: true,
+      rolled: apply,
+      enter: (values, mod) => {
+        const faces = typedFaces(values);
+        if (typeof faces === 'string') return faces;
+        apply(faces, mod);
+      },
+    });
+  }
+
   /** The total of the last damage roll, beside the manoeuvre that rolled it, for this turn only. */
   let damageNote = $state<{ key: string; name: string; text: string } | null>(null);
   function askDamage(name: string, damage: { dice: DiceKind; modifier: number }) {
     const key = turnKey;
-    const note = (faces: number[], modifier: number) => {
+    askOnce(`damage:${key}:${name}`, `${name} damage`, damage.dice, damage.modifier, (faces, modifier) => {
       damageNote = { key, name, text: `Rolled ${rollTotal(damage.dice, faces, modifier)} damage` };
-    };
-    desk?.ask({
-      id: `damage:${key}:${name}`,
-      kind: 'request',
-      label: `${name} damage`,
-      dice: damage.dice,
-      modifier: damage.modifier || null,
-      oneShot: true,
-      rolled: note,
-      enter: (values, modifier) => {
-        const faces = values.map((v) => (/^\s*[1-6]\s*$/.test(v) ? Number(v) : NaN));
-        if (faces.some(Number.isNaN)) return values.length === 1 ? 'Type a number from 1 to 6.' : 'Type a number from 1 to 6 on each die.';
-        note(faces, modifier);
-      },
     });
+  }
+
+  const foeNamed = (id: string) => encounter?.foes.find((x) => x.id === id)?.name ?? '';
+  function askThrowWeapon(c: CarriedWeapon, foeId: string) {
+    const name = foeNamed(foeId);
+    const interrupts = findCreature(tables, name)?.stats.interrupts ?? [];
+    askOnce(`throw:${c.list}:${c.index}`, `Throw ${c.item} at ${name}`, 'd66', 0, (faces) => void throwWeapon(history, c, foeId, interrupts, faces));
+  }
+  function askThrowBomb(c: { bomb: PotionBomb; index: number }, foeId: string) {
+    const dice = c.bomb.damage ? parseDamage(c.bomb.damage) : null;
+    if (!dice) return void throwBomb(history, c, foeId, dungeonLevel, []);
+    askOnce(`bomb:${c.index}`, `${c.bomb.name} at ${foeNamed(foeId)}`, dice.dice, dice.modifier, (faces) => void throwBomb(history, c, foeId, dungeonLevel, faces));
+  }
+  function askRecover(i: number) {
+    const t = encounter?.throws?.[i];
+    if (!t) return;
+    askOnce(`recover:${i}`, `Get back the ${t.name}`, 'd6', 0, (faces) => void recoverThrown(history, i, faces[0]!));
   }
 
   const askingWin = $derived(!holdWin && !win.victory && shouldAskWin(encounter, win.dismissed));
@@ -183,6 +221,7 @@
     const first = seenKey === '';
     seenKey = k;
     dice = null;
+    dropOutstanding();
     if (!first && k) void tick().then(() => diceBox?.scrollIntoView({ block: foeTurn ? 'end' : 'nearest' }));
   });
   function setDice(s: DiceState | null) {
@@ -578,7 +617,7 @@
             hasHero={hero !== null}
             onaddxp={addVictoryXp}
             ondone={winDone}
-            onrecover={(i) => recoverThrown(history, i, Math.floor(Math.random() * 6) + 1)}
+            onrecover={askRecover}
           />
         </div>
       {/if}
@@ -627,8 +666,8 @@
             {encounter}
             {hero}
             {tables}
-            onweapon={(c, id) => throwWeapon(history, c, id, findCreature(tables, encounter?.foes.find((x) => x.id === id)?.name ?? '')?.stats.interrupts ?? [], Math.random)}
-            onbomb={(c, id) => throwBomb(history, c, id, dungeonLevel, Math.random)}
+            onweapon={askThrowWeapon}
+            onbomb={askThrowBomb}
           />
         {/if}
         {#if blindedBy}
