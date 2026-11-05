@@ -1485,7 +1485,12 @@ for (const reduced of [false, true]) {
     foes: await p.$$eval(`${pane} .foe`, (els) => els.map((e) => `${e.querySelector('.name span')?.textContent?.trim()}:${e.querySelector('.num')?.textContent?.trim()}`)),
   });
 
-  await p.setInputFiles('input[data-extra="tables"]', { name: 'tables.json', mimeType: 'application/json', buffer: Buffer.from(readFileSync('tests/fixtures/dungeon-tables.fixture.json')) });
+  // In-memory copy only: the hero's Wobbly Poke deals "D6 +1", so its hit offers a damage roll.
+  const withPokeDamage = (fx) => {
+    for (const w of fx.tables.weapons ?? []) for (const m of w.manoeuvres) if (m.name === 'Wobbly Poke') m.damage = 'D6 +1';
+    return fx;
+  };
+  await p.setInputFiles('input[data-extra="tables"]', { name: 'tables.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(withPokeDamage(JSON.parse(readFileSync('tests/fixtures/dungeon-tables.fixture.json', 'utf8'))))) });
   await p.waitForTimeout(500);
   // A made-up card for one of the fixture creatures, so the pane has a picture to lose later.
   const img = await p.evaluate(() => {
@@ -1600,6 +1605,28 @@ for (const reduced of [false, true]) {
   await typeDice(1, 4);
   if ((await rollNoteText()) !== 'Exact Strike: add your Shift to the damage' || (await lit()) !== 'Wobbly Poke') problems.push(`${tag}: exact strike "${await rollNoteText()}" lit "${await lit()}"`);
   await shot('51b-exact-strike.png', p);
+  // A damage button hands its roll to the floating roller and leaves the total beside itself.
+  const dmgBtn = `${pane} [data-testid=manoeuvre].match button.m-roll`;
+  const dmgNote = `${pane} [data-testid=manoeuvre].match [data-testid=damage-note]`;
+  if (!(await p.isVisible(dmgBtn))) problems.push(`${tag}: no damage button on the hit manoeuvre`);
+  else {
+    await rollerEnterModeOn(p, false);
+    await p.click(dmgBtn);
+    await p.waitForTimeout(1100);
+    const noteRolled = (await p.textContent(dmgNote).catch(() => ''))?.trim() ?? '';
+    if (!/^Rolled [1-7] damage$/.test(noteRolled)) problems.push(`${tag}: rolled damage note "${noteRolled}"`);
+    const hist = (await p.textContent(`${rollerPanel} [data-testid=dice-history] li >> nth=0`).catch(() => ''))?.trim() ?? '';
+    if (!hist.startsWith('Wobbly Poke damage')) problems.push(`${tag}: roller history starts "${hist}"`);
+    // Typed: a 7 is refused in the roller; a 4 gives 4 + 1.
+    await rollerEnterModeOn(p, true);
+    await p.click(dmgBtn);
+    await rollerEnterOn(p, '7');
+    if (!(await p.isVisible(`${rollerPanel} >> text=Type a number from 1 to 6.`))) problems.push(`${tag}: typed 7 damage not refused`);
+    await rollerEnterOn(p, '4');
+    const noteTyped = (await p.textContent(dmgNote).catch(() => ''))?.trim() ?? '';
+    if (noteTyped !== 'Rolled 5 damage') problems.push(`${tag}: typed damage note "${noteTyped}"`);
+    await shot('51c-damage-note.png', p);
+  }
   await p.click(`${td} button:text-is("Roll again")`);
   await typeDice(1, 1);
   if ((await rollNoteText()) !== 'Double 1: always a miss' || !(await p.isDisabled(`${td} button[aria-label="Red die up"]`))) problems.push(`${tag}: double 1 "${await rollNoteText()}"`);
@@ -1727,6 +1754,13 @@ for (const reduced of [false, true]) {
   const menu = () => p.click('header.toolbar button[aria-label="Menu"]');
   const undoText = async () => (await p.textContent('header.toolbar button.history'))?.trim() ?? '';
   const pane = '.encounter-pane';
+  // The pending roll's card hands the roll to the floating roller: roll there, or type there.
+  const card = `${pane} [data-testid=pending-roll] [data-testid=roll-card]`;
+  const pendingRollerRoll = async (sel = card) => {
+    await rollerEnterModeOn(p, false);
+    await p.click(`${sel} button`);
+    await p.waitForTimeout(1100);
+  };
   const foes = () => p.$$eval(`${pane} .foe`, (els) => els.map((e) => `${e.querySelector('.name span')?.textContent?.trim()}:${e.querySelector('.num')?.textContent?.trim()}`));
   const ENC = 'Made-up: PRAC1 -1 waits here, or PRAC2. A GRUMBLER guards LOOT9; spend 1 FP.';
 
@@ -1836,9 +1870,15 @@ for (const reduced of [false, true]) {
   await p.waitForSelector(`${pane} [data-testid=pending-roll]`);
   const head = (await p.textContent(`${pane} [data-testid=pending-roll] h3`))?.trim();
   if (head !== 'Roll on PRAC1 −1') problems.push(`${tag}: pending heading "${head}"`);
+  const cardText = (await p.textContent(card))?.replace(/\s+/g, ' ').trim() ?? '';
+  if (!cardText.includes('Roll on PRAC1 · D6 −1')) problems.push(`${tag}: roll card reads "${cardText}"`);
+  // The stored modifier cannot be changed in the roller, in enter mode or out of it.
+  await rollerEnterModeOn(p, true);
+  await p.click(`${card} button`);
+  if ((await p.getAttribute(`${rollerPanel} [data-testid=dice-mod]`, 'readonly')) === null) problems.push(`${tag}: modifier editable for a creature-table roll`);
   await shot('56-encounter-pending-roll.png', p);
   // Roll for me: the sum shown and the creatures added agree with the table.
-  await p.click(`${pane} [data-testid=pending-roll] button:has-text("Roll for me")`);
+  await pendingRollerRoll();
   await p.waitForSelector(`${pane} [data-testid=creature-roll-result]`);
   const res = (await p.textContent(`${pane} [data-testid=creature-roll-result] .line`))?.replace(/\s+/g, ' ').trim();
   console.log(`${tag}: rolled "${res}"`);
@@ -1860,11 +1900,10 @@ for (const reduced of [false, true]) {
   await p.waitForSelector(`${pane} [data-testid=pending-roll]`);
   if ((await foes()).length) problems.push(`${tag}: Undo left foes ${JSON.stringify(await foes())}`);
   if (await p.isVisible(`${pane} [data-testid=creature-roll-result]`)) problems.push(`${tag}: Undo left the roll result showing`);
-  await p.fill(`${pane} [data-testid=pending-roll] input`, '7');
-  await p.click(`${pane} [data-testid=pending-roll] button:text-is("Use this")`);
-  if (!(await p.isVisible(`${pane} [data-testid=pending-roll] >> text=Type the die, 1 to 6.`))) problems.push(`${tag}: typed 7 not refused`);
-  await p.fill(`${pane} [data-testid=pending-roll] input`, '3');
-  await p.click(`${pane} [data-testid=pending-roll] button:text-is("Use this")`);
+  await rollerEnterOn(p, '7');
+  if (!(await p.isVisible(`${rollerPanel} >> text=Type the die, 1 to 6.`))) problems.push(`${tag}: typed 7 not refused`);
+  if (!(await p.isVisible(`${pane} [data-testid=pending-roll]`))) problems.push(`${tag}: typed 7 used the pending roll`);
+  await rollerEnterOn(p, '3');
   await p.waitForSelector(`${pane} [data-testid=creature-roll-result]`);
   const typed = (await p.textContent(`${pane} [data-testid=creature-roll-result] .line`))?.replace(/\s+/g, ' ').trim();
   if (typed !== 'PRAC1 −1 3 − 1 = 2: Grumbler, Moss Lurker ×') problems.push(`${tag}: typed result "${typed}"`);
@@ -1881,9 +1920,7 @@ for (const reduced of [false, true]) {
   // PRAC2, typed 3 (no modifier): row 3 adds a Grumbler.
   await roomBtn('🎲 Roll on PRAC2');
   await p.waitForSelector(`${pane} [data-testid=pending-roll]`);
-  await p.fill(`${pane} [data-testid=pending-roll] input`, '3');
-  await p.click(`${pane} [data-testid=pending-roll] button:text-is("Use this")`);
-  await p.waitForTimeout(200);
+  await rollerEnterOn(p, '3');
   const r2 = (await p.textContent(`${pane} [data-testid=creature-roll-result] .line`))?.replace(/\s+/g, ' ').trim();
   if (r2 !== 'PRAC2 3: Grumbler ×') problems.push(`${tag}: PRAC2 result "${r2}"`);
   if ((await foes()).join('|') !== 'Grumbler:4|Moss Lurker:6|Grumbler:4|Grumbler:4') problems.push(`${tag}: PRAC2 foes ${JSON.stringify(await foes())}`);
@@ -1895,9 +1932,7 @@ for (const reduced of [false, true]) {
   const saidNow = async () => (await p.$$eval(`${pane} [data-testid=creature-roll-result] .said`, (els) => els.map((e) => e.textContent.trim()))).includes(echoes);
   await roomBtn('🎲 Roll on PRAC2');
   await p.waitForSelector(`${pane} [data-testid=pending-roll]`);
-  await p.fill(`${pane} [data-testid=pending-roll] input`, '5');
-  await p.click(`${pane} [data-testid=pending-roll] button:text-is("Use this")`);
-  await p.waitForTimeout(200);
+  await rollerEnterOn(p, '5');
   const r5 = (await p.textContent(`${pane} [data-testid=creature-roll-result] .line`))?.replace(/\s+/g, ' ').trim();
   if (r5 !== 'PRAC2 5: ×') problems.push(`${tag}: PRAC2 text result line "${r5}"`);
   if (!(await saidNow())) problems.push(`${tag}: text result not shown`);
@@ -1929,31 +1964,22 @@ for (const reduced of [false, true]) {
   for (let i = 0; i < 2; i++) await roomBtn('🎲 Roll on PRAC1 −1');
   await p.waitForSelector(`${pane} [data-testid=pending-roll] >> nth=1`);
   if ((await p.$$(`${pane} [data-testid=pending-roll]`)).length !== 2) problems.push(`${tag}: two taps did not queue two rolls`);
-  await p.click(`${pane} [data-testid=pending-roll] >> nth=0 >> button:has-text("Roll for me")`);
-  await p.waitForFunction((sel) => document.querySelectorAll(sel).length === 1, `${pane} [data-testid=pending-roll]`);
+  await rollerEnterModeOn(p, false);
+  await p.click(`${rollerPanel} button.roll`);
+  await p.waitForFunction((sel) => document.querySelectorAll(sel).length === 1, `${pane} [data-testid=pending-roll]`, { timeout: 5000 }).catch(() => problems.push(`${tag}: rolling the first did not resolve it`));
+  await p.waitForTimeout(1100);
   const second = `${pane} [data-testid=pending-roll]`;
-  const ready = {
-    input: await p.isVisible(`${second} input`),
-    value: await p.inputValue(`${second} input`).catch(() => '?'),
-    roll: await p.isEnabled(`${second} button:has-text("Roll for me")`),
-    use: await p.isEnabled(`${second} button:text-is("Use this")`),
-    face: (await p.$$(`${second} .face`)).length,
-  };
+  const ready = { card: await p.isVisible(`${second} [data-testid=roll-card]`), faces: (await p.$$(`${second} .face`)).length, target: await p.isVisible(`${rollerPanel} [data-testid=dice-for] >> text=Roll on PRAC1`) };
   console.log(`${tag}: second roll after the first ${JSON.stringify(ready)}`);
-  if (!ready.input || ready.value !== '' || !ready.roll || !ready.use || ready.face !== 0) problems.push(`${tag}: second identical roll not ready ${JSON.stringify(ready)}`);
-  await p.click(`${second} button:has-text("Roll for me")`);
+  if (!ready.card || ready.faces !== 0 || !ready.target) problems.push(`${tag}: second identical roll not ready ${JSON.stringify(ready)}`);
+  await pendingRollerRoll(`${second} [data-testid=roll-card]`);
   await p.waitForFunction((sel) => document.querySelectorAll(sel).length === 0, `${pane} [data-testid=pending-roll]`, { timeout: 5000 }).catch(() => problems.push(`${tag}: second identical roll did not resolve`));
   if ((await p.$$(`${pane} [data-testid=creature-roll-result]`)).length < 2) problems.push(`${tag}: expected two roll results`);
-  // The typed path: a typed die on the first leaves the second's input empty.
+  // The typed path: a typed die goes to the first and leaves the second waiting.
   for (let i = 0; i < 2; i++) await roomBtn('🎲 Roll on PRAC1 −1');
-  await p.fill(`${pane} [data-testid=pending-roll] >> nth=0 >> input`, '3');
-  await p.click(`${pane} [data-testid=pending-roll] >> nth=0 >> button:text-is("Use this")`);
+  await rollerEnterOn(p, '3');
   await p.waitForFunction((sel) => document.querySelectorAll(sel).length === 1, `${pane} [data-testid=pending-roll]`);
-  const left = await p.inputValue(`${pane} [data-testid=pending-roll] input`);
-  if (left !== '') problems.push(`${tag}: typed die carried over to the second roll ("${left}")`);
-  await p.fill(`${pane} [data-testid=pending-roll] input`, '3');
-  await p.click(`${pane} [data-testid=pending-roll] button:text-is("Use this")`);
-  await p.waitForTimeout(200);
+  await rollerEnterOn(p, '3');
   if (await p.isVisible(`${pane} [data-testid=pending-roll]`)) problems.push(`${tag}: second typed roll not resolved`);
   await shot('60-encounter-roll-twice.png', p);
   const beforeFight = (await foes()).length; // while the pane shows

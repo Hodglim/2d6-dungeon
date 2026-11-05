@@ -39,7 +39,8 @@
   import { deflects } from '../../systems/dungeon/armour';
   import { interruptHits, interruptLapsed } from '../../systems/dungeon/creatureCombat';
   import { useDiceDesk } from '../diceDeskContext';
-  import { parseDamage, rollLabel } from '../diceRoller';
+  import { parseDamage, rollLabel, rollTotal } from '../diceRoller';
+  import type { DiceKind } from '../diceRoller';
   import { adjustHp, commitHero } from '../hero/heroActions';
   import { shouldAskWin } from '../endings';
   import VictoryPanel from './VictoryPanel.svelte';
@@ -107,6 +108,29 @@
 
   /** The shell's dice roller: a hit manoeuvre rolls its damage there. */
   const desk = useDiceDesk();
+
+  /** The total of the last damage roll, beside the manoeuvre that rolled it, for this turn only. */
+  let damageNote = $state<{ key: string; name: string; text: string } | null>(null);
+  function askDamage(name: string, damage: { dice: DiceKind; modifier: number }) {
+    const key = turnKey;
+    const note = (faces: number[], modifier: number) => {
+      damageNote = { key, name, text: `Rolled ${rollTotal(damage.dice, faces, modifier)} damage` };
+    };
+    desk?.ask({
+      id: `damage:${key}:${name}`,
+      kind: 'request',
+      label: `${name} damage`,
+      dice: damage.dice,
+      modifier: damage.modifier || null,
+      oneShot: true,
+      rolled: note,
+      enter: (values, modifier) => {
+        const faces = values.map((v) => (/^\s*[1-6]\s*$/.test(v) ? Number(v) : NaN));
+        if (faces.some(Number.isNaN)) return values.length === 1 ? 'Type a number from 1 to 6.' : 'Type a number from 1 to 6 on each die.';
+        note(faces, modifier);
+      },
+    });
+  }
 
   const askingWin = $derived(!holdWin && !win.victory && shouldAskWin(encounter, win.dismissed));
   const showVictory = $derived(win.victory && encounter !== null);
@@ -474,8 +498,9 @@
                 type="button"
                 class="m-roll"
                 aria-label={`${m.name}: roll damage ${rollLabel(damage.dice, damage.modifier)}`}
-                onclick={() => desk?.rollFree(damage.dice, damage.modifier)}
+                onclick={() => askDamage(m.name, damage)}
               >{@render body()}<span class="m-dice" aria-hidden="true">🎲</span></button>
+{#if damageNote && damageNote.key === turnKey && damageNote.name === m.name}<span class="m-note" data-testid="damage-note" role="status">{damageNote.text}</span>{/if}
             {:else}
               {@render body()}
             {/if}
@@ -560,7 +585,7 @@
 
       {#if encounter && askingFor === null}
         {#each encounter.pending as p, i (keyOf(p))}
-          <PendingRollView roll={p} error={rollError?.index === i ? rollError.text : null} ondie={(d) => void resolvePending(i, d)} onremove={() => removePending(i)} />
+          <PendingRollView roll={p} index={i} error={rollError?.index === i ? rollError.text : null} ondie={(d) => void resolvePending(i, d)} onremove={() => removePending(i)} />
         {/each}
       {/if}
 
@@ -654,8 +679,9 @@
                         type="button"
                         class="m-roll"
                         aria-label={`${m.name}: roll damage ${rollLabel(damage.dice, damage.modifier)}`}
-                        onclick={() => desk?.rollFree(damage.dice, damage.modifier)}
+                        onclick={() => askDamage(m.name, damage)}
                       >{@render body()}<span class="m-dice" aria-hidden="true">🎲</span></button>
+{#if damageNote && damageNote.key === turnKey && damageNote.name === m.name}<span class="m-note" data-testid="damage-note" role="status">{damageNote.text}</span>{/if}
                     {:else}
                       {@render body()}
                     {/if}
@@ -974,6 +1000,12 @@
   .m-roll:focus-visible {
     outline: 3px solid var(--accent);
     outline-offset: 2px;
+  }
+  .m-note {
+    align-self: center;
+    padding: 0 10px;
+    font-weight: 700;
+    white-space: nowrap;
   }
   .m-dice {
     margin-left: auto;

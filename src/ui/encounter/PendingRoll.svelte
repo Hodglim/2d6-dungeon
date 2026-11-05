@@ -1,32 +1,39 @@
 <script lang="ts">
   // A creature-table roll waiting at the top of the encounter pane: "Roll on PRAC1 −1", a D6
-  // (rolled with the animation, or typed in), and × to drop it unrolled.
+  // rolled in the floating dice roller (or typed in there), and × to drop it unrolled.
   import type { PendingRoll } from '../../systems/dungeon/combat';
-  import { rollD6 } from '../../systems/dungeon/rules';
-  import DiceEntry from '../DiceEntry.svelte';
+  import RollCard from '../RollCard.svelte';
+  import type { DiceJob } from '../diceDesk';
   import { rollName } from './encounterActions';
 
   interface Props {
     roll: PendingRoll;
-    /** Shown under the die (an unknown table, say). */
+    /** Its place in the queue: two rolls on the same table get different roller requests. */
+    index: number;
+    /** Shown under the roll (an unknown table, say). */
     error?: string | null;
     /** The raw die, 1–6, once rolled or typed (the modifier is not yet added). */
     ondie: (die: number) => void;
     onremove: () => void;
   }
-  let { roll, error = null, ondie, onremove }: Props = $props();
+  let { roll, index, error = null, ondie, onremove }: Props = $props();
 
-  let typedError = $state<string | null>(null);
-
-  function enter(values: string[]) {
-    const t = (values[0] ?? '').trim();
-    if (!/^[1-6]$/.test(t)) {
-      typedError = 'Type the die, 1 to 6.';
-      return;
-    }
-    typedError = null;
-    ondie(Number(t));
-  }
+  // The stored modifier is applied when the entry resolves, so the roller cannot change it.
+  const job: DiceJob = $derived({
+    id: `pending:${index}:${roll.code}`,
+    kind: 'request',
+    label: `Roll on ${roll.code}`,
+    dice: 'd6',
+    modifier: roll.modifier || null,
+    modifierEditable: false,
+    rolled: (f) => ondie(f[0]!),
+    enter: (values) => {
+      const t = (values[0] ?? '').trim();
+      if (!/^[1-6]$/.test(t)) return 'Type the die, 1 to 6.';
+      ondie(Number(t));
+    },
+    error,
+  });
 </script>
 
 <section class="pending" data-testid="pending-roll" aria-label="Roll on {rollName(roll.code, roll.modifier)}">
@@ -34,15 +41,7 @@
     <h3>Roll on {rollName(roll.code, roll.modifier)}</h3>
     <button type="button" class="remove" aria-label="Remove roll on {rollName(roll.code, roll.modifier)}" onclick={onremove}>×</button>
   </header>
-  <DiceEntry
-    dice="d6"
-    label="D6"
-    error={typedError ?? error}
-    enterLabel="Use this"
-    onenter={enter}
-    onroll={() => [rollD6(Math.random)]}
-    onrolled={(v) => ondie(v[0]!)}
-  />
+  <RollCard {job} />
 </section>
 
 <style>
