@@ -233,6 +233,18 @@ await shot('13-ghost-follows.png');
 const [tx, ty, tw, th] = (await ghostOf()).split(',').map(Number);
 await tapWorld(tx + tw / 2, ty + th / 2);
 await stepIs('exitCount', 'clicking to place room 2');
+// A 9 for Exits is refused by the step: its error shows in the roller, nothing is recorded, the typed box keeps the 9.
+{
+  const histLines = () => page.$$eval(`${rollerPanel} [data-testid=dice-history] li`, (els) => els.length).catch(() => 0);
+  const before = await histLines();
+  await rollerEnter('9');
+  const err = (await page.textContent(`${rollerPanel} [data-testid=dice-typed] [role=alert]`).catch(() => ''))?.trim();
+  if (err !== 'Enter a whole number from 1 to 6') problems.push(`typed 9 for Exits: error "${err}"`);
+  if ((await histLines()) !== before) problems.push('typed 9 for Exits left a history line');
+  if ((await page.inputValue(`${rollerPanel} [data-testid=dice-typed] input`).catch(() => '')) !== '9') problems.push('typed 9 for Exits cleared the box');
+  await stepIs('exitCount', 'a rejected 9 for Exits');
+  await page.fill(`${rollerPanel} [data-testid=dice-typed] input`, '');
+}
 await rollerEnter('5'); // two exits
 await stepIs('exitType', 'the exit count');
 await page.click('aside.panel button:has-text("Wooden door")');
@@ -1650,6 +1662,12 @@ for (const reduced of [false, true]) {
   // Right-click the blue die: back down, the point comes back.
   await p.click(`${sh} [data-testid=shift-die] >> nth=1`, { button: 'right' });
   if ((await faces()) !== '1-4' || (await shiftLeft()) !== 'Shift left: 1 of 2' || (await lit()) !== 'Wobbly Poke') problems.push(`${tag}: right-click refund: ${await faces()} "${await shiftLeft()}" lit "${await lit()}"`);
+  // A free roll sets the roller loose from the attack; the pane's button points it back and the shifter returns.
+  await p.click(`${rollerPanel} button[aria-label="Roll freely"]`);
+  if (await p.isVisible(sh)) problems.push(`${tag}: shifter still shown after a free roll took the roller`);
+  await p.click(`${td} button:text-is("Shift in the dice roller")`);
+  if (!(await p.isVisible(sh)) || (await faces()) !== '1-4' || (await shiftLeft()) !== 'Shift left: 1 of 2') problems.push(`${tag}: re-aiming at the attack: shifter ${await p.isVisible(sh)} ${await faces()} "${await shiftLeft()}"`);
+  if (!(await p.textContent(`${rollerPanel} [data-testid=dice-for]`))?.includes('Your attack')) problems.push(`${tag}: roller not back on the attack: "${await p.textContent(`${rollerPanel} [data-testid=dice-for]`)}"`);
   const smallTd = await p.$$eval(`${sh} button`, (els) => els.map((e) => ({ t: e.getAttribute('aria-label') ?? e.textContent?.trim(), r: e.getBoundingClientRect() })).filter((b) => b.r.width > 0 && (b.r.width < 44 || b.r.height < 44)).map((b) => b.t));
   if (smallTd.length) problems.push(`${tag}: small attack-dice buttons ${smallTd.join(', ')}`);
   // A natural match is an Exact Strike; a natural 1-1 always misses and can't be shifted.

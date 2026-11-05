@@ -114,7 +114,9 @@
     enter: (v) => {
       rerolled = 0;
       cappedDice = null;
+      error = null;
       accept(parse(v));
+      return error;
     },
     error,
   });
@@ -127,7 +129,9 @@
     roll: () => [rollD6(rng), rollD6(rng)],
     rolled: (v) => acceptExit(v),
     enter: (v) => {
+      error = null;
       acceptExit(parse(v));
+      return error;
     },
     error,
   });

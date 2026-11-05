@@ -21,7 +21,7 @@
   $effect(() => {
     if (!desk) return;
     // Register the new id before dropping the old one, so a target that moves with it falls onto the new
-    // job (the newest request) rather than onto some other card that is on screen.
+    // job (the newest request, or a standing one when nothing else asks) rather than onto some other card.
     const old = putId;
     putId = job.id;
     desk.put(job);

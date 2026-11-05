@@ -21,10 +21,12 @@
   /** The roll on show: its die and modifier, the faces (spinning while `settled` is false). */
   let shown = $state<{ dice: DiceKind; modifier: number; faces: number[]; settled: boolean } | null>(null);
   let cancelRoll: (() => void) | null = null;
+  let spinningJob: string | null = null; // the job the roll in flight is for
   onDestroy(() => cancelRoll?.());
 
   const rolling = $derived(shown !== null && !shown.settled);
   const target = $derived(view.target);
+  const targetId = $derived(view.target?.id ?? null); // a primitive: a re-put of the same job changes nothing
   const kind = $derived(target ? target.dice : view.kind);
   const hasModifier = $derived(kind !== 'd66' && (target ? target.modifier !== null : true));
   const modifierLocked = $derived(target?.modifierEditable === false);
@@ -41,8 +43,13 @@
   });
 
   function startRoll() {
-    cancelRoll?.(); // a new roll from a text button replaces one still spinning
+    // A new roll from a text button replaces one still spinning. A one-shot request whose roll is
+    // cancelled is gone with it, so it cannot become the target of a later roll.
+    cancelRoll?.();
     cancelRoll = null;
+    const abandoned = spinningJob;
+    spinningJob = null;
+    if (abandoned !== null && abandoned !== desk.view.target?.id && desk.view.jobs.some((j) => j.id === abandoned && j.oneShot)) desk.remove(abandoned);
     unlockAudio();
     const start = desk.facesFor(Math.random);
     if (!start) {
@@ -54,6 +61,7 @@
     const dice = t ? t.dice : desk.view.kind;
     const modifier = dice === 'd66' || (t && t.modifier === null) ? 0 : desk.view.modifier;
     shown = { dice, modifier, faces: [...finals], settled: false };
+    spinningJob = jobId;
     cancelRoll = animateRoll(finals, 6, {
       faces: (f) => {
         if (shown) shown.faces = f;
@@ -61,8 +69,9 @@
       land: () => {},
       done: () => {
         cancelRoll = null;
+        spinningJob = null;
         shown = { dice, modifier, faces: finals, settled: true };
-        desk.settle(jobId, finals);
+        desk.settle(jobId, finals, dice, modifier);
       },
     });
   }
@@ -104,7 +113,7 @@
   $effect(() => {
     const n = count;
     void kind; // a new die or a new target starts the boxes over
-    void target?.id;
+    void targetId;
     untrack(() => {
       values = Array.from({ length: n }, () => '');
       typedError = null;
@@ -173,7 +182,7 @@
       </div>
     {/if}
     </div>
-    <button type="button" class="roll" disabled={rolling} onclick={rollButton}>🎲 Roll {rollLabel(kind, hasModifier ? view.modifier : 0)}</button>
+    <button type="button" class="roll" disabled={rolling} onclick={rollButton}>{view.enterMode ? '🎲 Enter my roll' : `🎲 Roll ${rollLabel(kind, hasModifier ? view.modifier : 0)}`}</button>
     <button type="button" class="enter" aria-pressed={view.enterMode} data-testid="dice-enter" onclick={() => desk.setEnterMode(!view.enterMode)}>Enter my roll</button>
     {#if target?.shift?.state && !rolling}
       {@const owner = target}

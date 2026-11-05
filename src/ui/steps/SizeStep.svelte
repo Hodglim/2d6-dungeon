@@ -25,6 +25,7 @@
     },
     enter: ([p, s]) => {
       flow.enterSize(p ?? '', s ?? '');
+      return flow.step.kind === 'size' ? (flow.step.error ?? null) : null;
     },
     error: step.error,
   });

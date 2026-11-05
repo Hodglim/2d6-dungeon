@@ -2,7 +2,8 @@
   import { freshDice, rollNote, type DiceState } from '../../systems/dungeon/shift';
   import DieFace from '../DieFace.svelte';
   import RollCard from '../RollCard.svelte';
-  import type { DiceJob } from '../diceDesk';
+  import type { DeskView, DiceJob } from '../diceDesk';
+  import { useDiceDesk } from '../diceDeskContext';
 
   /**
    * The attack dice for one turn: a card hands the roll (or the typing) to the floating dice roller,
@@ -27,6 +28,12 @@
     prime?: string;
   }
   let { who, turnKey, foeName, pool, unknownShift = false, manoeuvres = [], dice, onchange, mishap, prime }: Props = $props();
+
+  const desk = useDiceDesk();
+  let view = $state.raw<DeskView | null>(desk ? desk.view : null);
+  $effect(() => desk?.subscribe((v) => (view = v)));
+  /** The roller is on these dice. A free roll or a closed roller leaves them behind. */
+  const aimed = $derived(view?.open === true && view.target?.id === `attack:${turnKey}`);
 
   let error = $state<string | null>(null);
   const max = $derived(Math.max(0, pool));
@@ -84,7 +91,11 @@
             </span>
           {/each}
         </span>
-        <span class="small">Shift in the dice roller</span>
+        {#if desk && !aimed}
+          <button type="button" class="back" onclick={() => desk.aimAt(`attack:${turnKey}`)}>Shift in the dice roller</button>
+        {:else}
+          <span class="small">Shift in the dice roller</span>
+        {/if}
       </div>
     {/if}
   </RollCard>
@@ -113,6 +124,22 @@
   .small {
     font-size: 14px;
     color: var(--muted);
+  }
+  .back {
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0 12px;
+    font: inherit;
+    color: var(--ink);
+    background: var(--paper);
+    border: 2px solid var(--ink);
+    border-radius: 6px;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  .back:focus-visible {
+    outline: 3px solid var(--accent);
+    outline-offset: 2px;
   }
   .note {
     margin: 0;

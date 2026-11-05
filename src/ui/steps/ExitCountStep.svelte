@@ -22,6 +22,7 @@
     },
     enter: ([v]) => {
       flow.enterExitCount(v ?? '');
+      return flow.step.kind === 'exitCount' ? (flow.step.error ?? null) : null;
     },
     error: step.error,
   });

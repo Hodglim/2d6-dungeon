@@ -181,6 +181,15 @@ export class DiceDesk {
     this.rebuild();
   }
 
+  /** Point the roller at `id` again and open it. Unlike rollNow it neither rolls nor asks for typing. */
+  aimAt(id: string): void {
+    const job = this.jobs.find((j) => j.id === id);
+    if (!job) return;
+    if (this.targetId !== id) this.aim(job);
+    this.open = true;
+    this.rebuild();
+  }
+
   clearTarget(): void {
     if (this.targetId === null) return;
     this.aim(null);
@@ -218,41 +227,48 @@ export class DiceDesk {
     return faces && faces.length > 0 ? { jobId: t.id, faces } : null;
   }
 
-  private record(job: DiceJob | null, faces: number[]): void {
-    this.history = addToHistory(this.history, historyLine(job, this.kind, faces, this.modifier));
+  private record(job: DiceJob | null, dice: DiceKind, faces: number[], modifier: number): void {
+    this.history = addToHistory(this.history, historyLine(job, dice, faces, modifier));
     this.lastOwner = job ? job.id : null;
   }
 
-  settle(jobId: string | null, faces: number[]): void {
+  /** A roll landed. `dice` and `modifier` are what the roll started with, not what the desk shows now. */
+  settle(jobId: string | null, faces: number[], dice: DiceKind, modifier: number): void {
     const job = jobId === null ? null : (this.jobs.find((j) => j.id === jobId) ?? null);
-    this.record(job, faces);
+    const mod = dice === 'd66' ? 0 : modifier;
+    this.record(job, dice, faces, mod);
     if (job) {
-      job.rolled(faces, job.modifier === null ? 0 : this.modifier);
+      job.rolled(faces, job.modifier === null ? 0 : mod);
       if (job.oneShot) this.drop(job.id);
     } else if (jobId === null) {
-      for (const w of this.jobs.filter((j) => j.kind === 'watcher' && j.dice === this.kind)) w.rolled(faces, this.modifier);
+      for (const w of this.jobs.filter((j) => j.kind === 'watcher' && j.dice === dice)) w.rolled(faces, mod);
     }
     this.rebuild();
   }
 
+  /**
+   * Typed dice. Returns the text to show when the entry is refused (nothing is recorded or applied),
+   * else null. A job's `enter` is always called, so its own step can show its own message.
+   */
   settleTyped(values: string[]): string | null {
     const t = this.target;
+    const dice = t ? t.dice : this.kind;
+    const count = rollDice(dice, () => 0).length;
+    const faces = values.map((v) => (/^\s*[1-6]\s*$/.test(v) ? Number(v) : NaN));
+    const valid = faces.length === count && !faces.some(Number.isNaN);
+    const standard = count === 1 ? 'Type a number from 1 to 6.' : 'Type a number from 1 to 6 on each die.';
     if (t) {
       const mod = t.modifier === null ? 0 : this.modifier;
       const err = t.enter(values, mod);
       if (typeof err === 'string' && err) return err;
-      const faces = values.map((v) => Number(v));
-      this.record(t, faces);
+      if (!valid) return standard;
+      this.record(t, dice, faces, mod);
       if (t.oneShot) this.drop(t.id);
       this.rebuild();
       return null;
     }
-    const count = rollDice(this.kind, () => 0).length;
-    const faces = values.map((v) => (/^\s*[1-6]\s*$/.test(v) ? Number(v) : NaN));
-    if (faces.length !== count || faces.some(Number.isNaN)) {
-      return count === 1 ? 'Type a number from 1 to 6.' : 'Type a number from 1 to 6 on each die.';
-    }
-    this.settle(null, faces);
+    if (!valid) return standard;
+    this.settle(null, faces, this.kind, this.modifier);
     return null;
   }
 

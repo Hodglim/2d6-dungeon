@@ -13,7 +13,7 @@
 
 <script lang="ts">
   import { onDestroy, tick } from 'svelte';
-  import type { History } from '../../core/history';
+  import type { ExecResult, History } from '../../core/history';
   import { randomId } from '../../core/ids';
   import type { CardPack } from '../../systems/dungeon/cards';
   import {
@@ -126,7 +126,14 @@
   }
 
   /** Ask the roller for one roll that `apply` takes, rolled or typed; a typed roll is checked first. */
-  function askOnce(id: string, label: string, dice: DiceKind, modifier: number, apply: (faces: number[], modifier: number) => void) {
+  function askOnce(
+    id: string,
+    label: string,
+    dice: DiceKind,
+    modifier: number,
+    apply: (faces: number[], modifier: number) => ExecResult | void,
+    modifierEditable = true,
+  ) {
     outstanding.add(id);
     desk?.ask({
       id,
@@ -134,12 +141,14 @@
       label,
       dice,
       modifier: modifier || null,
+      modifierEditable,
       oneShot: true,
       rolled: apply,
       enter: (values, mod) => {
         const faces = typedFaces(values);
         if (typeof faces === 'string') return faces;
-        apply(faces, mod);
+        const r = apply(faces, mod);
+        if (r && !r.ok) return r.reason;
       },
     });
   }
@@ -157,17 +166,17 @@
   function askThrowWeapon(c: CarriedWeapon, foeId: string) {
     const name = foeNamed(foeId);
     const interrupts = findCreature(tables, name)?.stats.interrupts ?? [];
-    askOnce(`throw:${c.list}:${c.index}`, `Throw ${c.item} at ${name}`, 'd66', 0, (faces) => void throwWeapon(history, c, foeId, interrupts, faces));
+    askOnce(`throw:${c.list}:${c.index}`, `Throw ${c.item} at ${name}`, 'd66', 0, (faces) => throwWeapon(history, c, foeId, interrupts, faces));
   }
   function askThrowBomb(c: { bomb: PotionBomb; index: number }, foeId: string) {
     const dice = c.bomb.damage ? parseDamage(c.bomb.damage) : null;
     if (!dice) return void throwBomb(history, c, foeId, dungeonLevel, []);
-    askOnce(`bomb:${c.index}`, `${c.bomb.name} at ${foeNamed(foeId)}`, dice.dice, dice.modifier, (faces) => void throwBomb(history, c, foeId, dungeonLevel, faces));
+    askOnce(`bomb:${c.index}`, `${c.bomb.name} at ${foeNamed(foeId)}`, dice.dice, dice.modifier, (faces) => throwBomb(history, c, foeId, dungeonLevel, faces), false);
   }
   function askRecover(i: number) {
     const t = encounter?.throws?.[i];
     if (!t) return;
-    askOnce(`recover:${i}`, `Get back the ${t.name}`, 'd6', 0, (faces) => void recoverThrown(history, i, faces[0]!));
+    askOnce(`recover:${i}`, `Get back the ${t.name}`, 'd6', 0, (faces) => recoverThrown(history, i, faces[0]!));
   }
 
   const askingWin = $derived(!holdWin && !win.victory && shouldAskWin(encounter, win.dismissed));

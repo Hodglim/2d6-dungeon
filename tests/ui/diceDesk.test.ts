@@ -79,7 +79,7 @@ describe('routing', () => {
     const s = d.facesFor(seq(0.5))!;
     expect(s.jobId).toBe('a');
     d.rollNow('b');
-    d.settle(s.jobId, s.faces);
+    d.settle(s.jobId, s.faces, 'd6', 0);
     expect(a.calls.rolled).toHaveLength(1);
     expect(b.calls.rolled).toHaveLength(0);
   });
@@ -89,7 +89,7 @@ describe('routing', () => {
     d.put(a);
     const s = d.facesFor(seq(0.5))!;
     d.remove('a');
-    d.settle(s.jobId, s.faces);
+    d.settle(s.jobId, s.faces, 'd6', 0);
     expect(a.calls.rolled).toHaveLength(0);
     expect(d.view.history).toEqual([`Free D6: ${s.faces[0]}`]);
   });
@@ -103,7 +103,7 @@ describe('routing', () => {
     d.put(r);
     d.clearTarget();
     d.choose('d6');
-    d.settle(null, [4]);
+    d.settle(null, [4], 'd6', 0);
     expect(w6.calls.rolled).toEqual([[[4], 0]]);
     expect(w66.calls.rolled).toHaveLength(0);
     expect(r.calls.rolled).toHaveLength(0);
@@ -114,7 +114,7 @@ describe('routing', () => {
     const r = req('r');
     d.put(w);
     d.put(r);
-    d.settle('r', [3]);
+    d.settle('r', [3], 'd6', 0);
     expect(r.calls.rolled).toHaveLength(1);
     expect(w.calls.rolled).toHaveLength(0);
   });
@@ -123,7 +123,7 @@ describe('routing', () => {
     const a = req('a', { oneShot: true });
     d.ask(a);
     expect(d.view.rollSeq).toBe(1);
-    d.settle('a', [2]);
+    d.settle('a', [2], 'd6', 0);
     expect(a.calls.rolled).toHaveLength(1);
     expect(d.view.jobs).toHaveLength(0);
     expect(d.view.target).toBeNull();
@@ -244,8 +244,8 @@ describe('typed rolls', () => {
     const d = fresh();
     const a = req('a', { modifier: -1 });
     d.put(a);
-    expect(d.settleTyped(['99'])).toBeNull();
-    expect(a.calls.enter).toEqual([[['99'], -1]]);
+    expect(d.settleTyped(['5'])).toBeNull();
+    expect(a.calls.enter).toEqual([[['5'], -1]]);
     expect(a.calls.rolled).toHaveLength(0);
   });
 });
@@ -257,14 +257,14 @@ describe('history', () => {
     expect(forLine(req('XX1 Practice Crate', { modifier: -1 }), 'd6', -1)).toBe('XX1 Practice Crate · D6 −1');
     expect(forLine(req('Room size', { dice: 'd66' }), 'd66', 0)).toBe('Room size · D66');
     const d = fresh();
-    for (let i = 1; i <= 7; i++) d.settle(null, [((i - 1) % 6) + 1]);
+    for (let i = 1; i <= 7; i++) d.settle(null, [((i - 1) % 6) + 1], 'd6', 0);
     expect(d.view.history).toHaveLength(5);
     expect(d.view.history[0]).toBe('Free D6: 1');
   });
   it('noteShift amends the newest line for that job only', () => {
     const d = fresh();
     d.put(req('atk', { label: 'Your attack', dice: '2d6' }));
-    d.settle('atk', [2, 5]);
+    d.settle('atk', [2, 5], '2d6', 0);
     expect(d.view.history[0]).toBe('Your attack: 2 + 5 = 7');
     d.noteShift('other', [1, 1]);
     expect(d.view.history[0]).toBe('Your attack: 2 + 5 = 7');
@@ -318,5 +318,61 @@ describe('standing requests (the attack dice stay registered all turn)', () => {
     expect(d.view.target?.id).toBe('b');
     d.remove('b');
     expect(d.view.target?.id).toBe('attack');
+  });
+});
+
+describe('final review fixes', () => {
+  it('aimAt re-targets a standing job after a free roll, without rolling or focusing', () => {
+    const d = fresh();
+    d.put(req('atk', { standing: true, dice: '2d6', shift: { pool: 2, unknownShift: false, state: null, onchange: () => {} } }));
+    expect(d.view.target?.id).toBe('atk');
+    d.rollFree('d6');
+    expect(d.view.target).toBeNull();
+    const { rollSeq, focusSeq } = d.view;
+    d.setOpen(false);
+    d.aimAt('atk');
+    expect(d.view.target?.id).toBe('atk');
+    expect(d.view.kind).toBe('2d6');
+    expect(d.view.open).toBe(true);
+    expect(d.view.rollSeq).toBe(rollSeq);
+    expect(d.view.focusSeq).toBe(focusSeq);
+    d.aimAt('missing');
+    expect(d.view.target?.id).toBe('atk');
+  });
+  it('a typed value that is not 1-6 still reaches enter but is not recorded and is refused', () => {
+    const d = fresh();
+    const a = req('a', { oneShot: true });
+    d.ask(a);
+    expect(d.settleTyped(['9'])).toBe('Type a number from 1 to 6.');
+    expect(a.calls.enter).toEqual([[['9'], 0]]);
+    expect(d.view.history).toEqual([]);
+    expect(d.view.jobs.map((j) => j.id)).toEqual(['a']);
+  });
+  it('a wrong count of typed dice is refused with the per-die message', () => {
+    const d = fresh();
+    d.put(req('s', { dice: 'd66' }));
+    expect(d.settleTyped(['3', ''])).toBe('Type a number from 1 to 6 on each die.');
+    expect(d.view.history).toEqual([]);
+  });
+  it("the asker's own error text wins over the standard one", () => {
+    const d = fresh();
+    d.put(req('a', { enter: () => 'Enter a whole number from 1 to 6' }));
+    expect(d.settleTyped(['9'])).toBe('Enter a whole number from 1 to 6');
+  });
+  it('settle uses the die and modifier captured at roll start', () => {
+    const d = fresh();
+    const r = req('r', { dice: 'd6', modifier: -1 });
+    d.put(r);
+    d.setModifier(-1);
+    const w = watcher('w', { dice: 'd6' });
+    d.put(w);
+    d.settle('r', [4], 'd6', -1);
+    d.clearTarget();
+    d.choose('2d6');
+    expect(d.view.history[0]).toBe('r −1: 4 − 1 = 3');
+    expect(r.calls.rolled).toEqual([[[4], -1]]);
+    d.settle(null, [4], 'd6', 0);
+    expect(w.calls.rolled).toEqual([[[4], 0]]);
+    expect(d.view.history[0]).toBe('Free D6: 4');
   });
 });

@@ -52,6 +52,7 @@
     enter: (v) => {
       rerolled = 0;
       flow.enterRoomTable(v);
+      return flow.step.kind === 'label' ? (flow.step.error ?? null) : null;
     },
     error: step.error,
   });
@@ -65,6 +66,7 @@
     rolled: (v) => flow.applyExitTableResult(v),
     enter: (v) => {
       flow.enterExitTable(v);
+      return flow.step.kind === 'label' ? (flow.step.error ?? null) : null;
     },
     error: step.error,
   });
