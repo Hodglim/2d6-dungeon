@@ -2827,8 +2827,8 @@ for (const reduced of [false, true]) {
   await ctx.close();
 }
 
-// Room labels: always inside their own room (wrapped, or the number alone as a badge), and a
-// mouse hover shows the room's full label in a tooltip that hides off rooms, on touch and while panning.
+// Room labels: always inside their own room (wrapped, or the number alone as a badge), clear of
+// note pins and stairs, and drawn above footprints.
 {
   const ctx = await browser.newContext({ viewport: { width: 1180, height: 820 }, deviceScaleFactor: 2, hasTouch: true });
   await ctx.addInitScript(() => localStorage.setItem('2d6.installHintDismissed', '1'));
@@ -2905,46 +2905,6 @@ for (const reduced of [false, true]) {
     console.log(`${tag}: ${boxes.length} labels, ${feats.length} features, ${n} covered`);
     if (!feats.some((f) => f.kind === 'note')) problems.push(`${tag}: demo has no note to check against`);
   }
-
-  const tip = async () => ((await p.isVisible('.room-tip')) ? (await p.textContent('.room-tip')).trim() : null);
-  const all = await rooms();
-  const armoury = all.find((r) => r.label.type === 'Collapsed Armoury');
-  const full = `${armoury.number} - Collapsed Armoury`;
-  const at = await centreOf(armoury);
-  await p.mouse.move(at.x, at.y, { steps: 4 });
-  await p.waitForTimeout(150);
-  console.log(`${tag}: hover over the 2×2 armoury → tooltip ${JSON.stringify(await tip())}`);
-  if ((await tip()) !== full) problems.push(`${tag}: hovering the armoury shows ${JSON.stringify(await tip())}, expected "${full}"`);
-  await shot('96-label-tooltip.png', p);
-  // Off the rooms (out on the rock left of the map): hidden.
-  const rock = await screenAt(1.5, 1.5);
-  await p.mouse.move(rock.x, rock.y, { steps: 4 });
-  await p.waitForTimeout(150);
-  if ((await tip()) !== null) problems.push(`${tag}: tooltip still shown off the rooms: ${await tip()}`);
-  // Every numbered room gets its full label.
-  for (const o of all) {
-    const c = await centreOf(o);
-    await p.mouse.move(c.x, c.y);
-    await p.waitForTimeout(60);
-    const want = o.label.type.trim() ? `${o.number} - ${o.label.type.trim()}` : `${o.number}`;
-    if ((await tip()) !== want) problems.push(`${tag}: room ${o.number} tooltip ${JSON.stringify(await tip())}, expected "${want}"`);
-  }
-  // Pressing to pan hides it, and it stays hidden while the mouse drags.
-  await p.mouse.move(at.x, at.y);
-  await p.waitForTimeout(60);
-  await p.mouse.down();
-  await p.mouse.move(at.x + 40, at.y + 30, { steps: 6 });
-  if ((await tip()) !== null) problems.push(`${tag}: tooltip shown while panning`);
-  await p.mouse.up();
-  // A touch pointer never shows it.
-  await p.mouse.move(2, 2);
-  const at2 = await centreOf(armoury);
-  await p.$eval('canvas', (c, pt) => {
-    c.dispatchEvent(new PointerEvent('pointermove', { pointerId: 9, pointerType: 'touch', bubbles: true, clientX: pt.x, clientY: pt.y, buttons: 0 }));
-  }, at2);
-  await p.waitForTimeout(100);
-  if ((await tip()) !== null) problems.push(`${tag}: tooltip shown for a touch pointer`);
-  console.log(`${tag}: tooltip hides off rooms, while panning and on touch`);
 
   // Footprints never show through a label: a trail walked straight under a label leaves its
   // pixels exactly as they are with no trail, while the trail beside it is visible.

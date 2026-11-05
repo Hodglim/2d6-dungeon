@@ -78,7 +78,7 @@ export function scanEncounter(text: string, t: DungeonTables | null, opts: ScanO
   if (!t) { pushText(parts, text); return parts; }
   const between = (s: string): void => (opts.fights === false ? pushText(parts, s) : scanFights(s, t, parts));
   const { creatureCodes, re } = scannerFor(t);
-  if (!re) { between(text); return parts; }
+  if (!re) { between(text); return firstFightOnly(parts); }
   let pos = 0;
   for (const m of text.matchAll(re)) {
     between(text.slice(pos, m.index!));
@@ -87,7 +87,22 @@ export function scanEncounter(text: string, t: DungeonTables | null, opts: ScanO
     pos = m.index! + m[0].length;
   }
   between(text.slice(pos));
-  return parts;
+  return firstFightOnly(parts);
+}
+
+/** A creature named twice in one text is the same creature: later mentions become plain text. */
+function firstFightOnly(parts: EncounterPart[]): EncounterPart[] {
+  const seen = new Set<string>();
+  const out: EncounterPart[] = [];
+  for (const p of parts) {
+    if (p.kind === 'fight' && seen.has(p.name)) pushText(out, p.text);
+    else {
+      if (p.kind === 'fight') seen.add(p.name);
+      if (p.kind === 'text') pushText(out, p.text);
+      else out.push(p);
+    }
+  }
+  return out;
 }
 
 /**

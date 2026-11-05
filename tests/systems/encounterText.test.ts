@@ -40,6 +40,12 @@ describe('scanEncounter', () => {
     expect(scanEncounter('PRAC1', t)).toEqual([{ kind: 'roll', text: 'PRAC1', code: 'PRAC1', modifier: 0 }]);
   });
   it('finds a creature with the table spelling', () => {
+    // The same creature named twice is one creature: only the first mention is a Fight button.
+    {
+      const parts = scanEncounter('A GRUMBLER keeper looses a hound, then face the GRUMBLER after.', t);
+      expect(parts.filter((x) => x.kind === 'fight')).toEqual([{ kind: 'fight', text: 'GRUMBLER', name: 'Grumbler' }]);
+      expect(parts.map((x) => x.text).join('')).toBe('A GRUMBLER keeper looses a hound, then face the GRUMBLER after.');
+    }
     expect(scanEncounter('You must fight the GRUMBLER.', t)).toEqual([
       { kind: 'text', text: 'You must fight the ' },
       { kind: 'fight', text: 'GRUMBLER', name: 'Grumbler' },
