@@ -2,7 +2,8 @@
   import type { ExecResult } from '../../core/history';
   import type { PlayFlow, Step } from '../../interaction/playflow';
   import { parseDie } from '../../systems/dungeon/rules';
-  import DiceEntry from '../DiceEntry.svelte';
+  import RollCard from '../RollCard.svelte';
+  import type { DiceJob } from '../diceDesk';
 
   interface Props {
     flow: PlayFlow;
@@ -18,15 +19,30 @@
   const corridor = $derived(step.draft.kindOf === 'corridor');
   const entrance = $derived(step.draft.source.kind === 'entrance');
 
-  function placeTyped(v: string) {
+  function placeTyped(v: string): string | null {
     const d = parseDie(v);
     if (d === null) {
       dieError = 'Enter a whole number from 1 to 6';
-      return;
+      return dieError;
     }
     dieError = null;
     flow.placeExitsForMe(d);
+    return null;
   }
+
+  const job: DiceJob = $derived({
+    id: `exit-place:${step.chosen.length}`,
+    kind: 'request',
+    label: 'First wall',
+    dice: 'd6',
+    modifier: null,
+    roll: () => [flow.rollDie()],
+    rolled: ([v]) => {
+      if (v !== undefined) flow.placeExitsForMe(v);
+    },
+    enter: ([v]) => placeTyped(v ?? ''),
+    error: dieError,
+  });
 </script>
 
 <h2>{corridor ? 'Corridor exits' : 'Place exits'}</h2>
@@ -45,16 +61,7 @@
   {/if}
   {#if remaining > 0}
     {#key step.chosen.length}
-      <DiceEntry
-        dice="d6"
-        label="First wall D6"
-        error={dieError}
-        enterLabel="Place for me"
-        rollLabel="🎲 Roll and place"
-        onenter={([v]) => placeTyped(v ?? '')}
-        onroll={() => [flow.rollDie()]}
-        onrolled={([v]) => v !== undefined && flow.placeExitsForMe(v)}
-      />
+      <RollCard {job} />
     {/key}
   {/if}
 {/if}

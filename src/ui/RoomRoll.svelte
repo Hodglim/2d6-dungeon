@@ -7,7 +7,8 @@
   import { dungeonSystem } from '../systems/dungeon';
   import { rollD6, type Rng } from '../systems/dungeon/rules';
   import type { DungeonTables } from '../systems/dungeon/tables';
-  import DiceEntry from './DiceEntry.svelte';
+  import RollCard from './RollCard.svelte';
+  import type { DiceJob } from './diceDesk';
   import DieFace from './DieFace.svelte';
   import EncounterText from './encounter/EncounterText.svelte';
   import { placingFirst, type EncounterHooks } from './encounter/encounterActions';
@@ -97,6 +98,40 @@
     }
   }
 
+  const roomJob: DiceJob = $derived({
+    id: `inspect-room:${room.id}`,
+    kind: 'request',
+    label: 'Room table',
+    dice: twoD6 ? '2d6' : 'd66',
+    modifier: null,
+    roll: () => {
+      const r = rollRoom(lv!, tables!, kind, map, rng);
+      cappedDice = r.capped ? r.dice : null;
+      rerolled = r.rerolls;
+      return r.dice;
+    },
+    rolled: (v) => accept(v),
+    enter: (v) => {
+      rerolled = 0;
+      cappedDice = null;
+      accept(parse(v));
+    },
+    error,
+  });
+  const exitJob: DiceJob = $derived({
+    id: `inspect-exit:${room.id}`,
+    kind: 'request',
+    label: 'Exit type',
+    dice: 'd66',
+    modifier: null,
+    roll: () => [rollD6(rng), rollD6(rng)],
+    rolled: (v) => acceptExit(v),
+    enter: (v) => {
+      acceptExit(parse(v));
+    },
+    error,
+  });
+
   const parse = (values: string[]) => values.map((v) => (/^\s*[1-6]\s*$/.test(v) ? Number(v) : NaN));
 </script>
 
@@ -105,20 +140,8 @@
     <p data-testid="no-level-tables">Your table file has no Level {map.level} room tables.</p>
     <div class="row"><button type="button" onclick={oncancel}>Close</button></div>
   {:else if !result}
-    <p>{kind === 'small' ? 'Small room' : kind === 'large' ? 'Large room' : 'Room'} roll — {twoD6 ? 'roll two dice, added together' : 'roll the red and blue dice'}, then type them in, or let the app roll.</p>
-    <DiceEntry
-      dice={twoD6 ? '2d6' : 'd66'}
-      labels={twoD6 ? ['Die 1', 'Die 2'] : ['Red', 'Blue']}
-      {error}
-      onenter={(v) => { rerolled = 0; cappedDice = null; accept(parse(v)); }}
-      onroll={() => {
-        const r = rollRoom(lv, tables!, kind, map, rng);
-        cappedDice = r.capped ? r.dice : null;
-        rerolled = r.rerolls;
-        return r.dice;
-      }}
-      onrolled={(v) => accept(v)}
-    />
+    <p>{kind === 'small' ? 'Small room' : kind === 'large' ? 'Large room' : 'Room'} roll — {twoD6 ? 'roll two dice, added together' : 'roll the red and blue dice'} in the dice roller — or type your own there.</p>
+    <RollCard job={roomJob} />
     <div class="row"><button type="button" onclick={oncancel}>Cancel</button></div>
   {:else}
     {@const r = result}
@@ -136,15 +159,7 @@
     </div>
     {#if !r.contents}
       <p>This room's exit type is random. Roll the Exit Type table.</p>
-      <DiceEntry
-        dice="d66"
-        labels={['Red', 'Blue']}
-        {error}
-        enterLabel="Use these"
-        onenter={(v) => acceptExit(parse(v))}
-        onroll={() => [rollD6(rng), rollD6(rng)]}
-        onrolled={(v) => acceptExit(v)}
-      />
+      <RollCard job={exitJob} />
       <div class="row">
         <button type="button" onclick={() => { result = null; error = null; rerolled = 0; }}>Roll again</button>
         <button type="button" onclick={oncancel}>Cancel</button>

@@ -41,6 +41,8 @@ try {
     await ctx.addInitScript(() => {
       try {
         localStorage.setItem('2d6.installHintDismissed', '1');
+        // The floating dice roller starts open in "Enter my roll" mode: map-building steps are typed into it.
+        localStorage.setItem('2d6.diceRoller', JSON.stringify({ open: true, dice: 'd6', enter: true }));
       } catch {}
     });
     if (init) await ctx.addInitScript(init);
@@ -74,9 +76,17 @@ try {
     const got = await page.getAttribute('aside.panel .body', 'data-step');
     if (got !== want) throw new Error(`after ${where}: expected step "${want}", got "${got}"`);
   };
-  const typeDice = async (page, ...values) => {
-    const inputs = await page.$$('aside.panel form.dice input');
-    for (let i = 0; i < values.length; i++) await inputs[i].fill(values[i]);
+  /** Types the values into the floating roller's boxes, in order, and clicks "Use these". */
+  const rollerEnter = async (page, ...values) => {
+    const panel = '[data-testid=dice-panel]';
+    if (!(await page.isVisible(panel))) await page.click('header.toolbar button[aria-label="Dice"]');
+    await page.waitForSelector(panel);
+    const toggle = `${panel} [data-testid=dice-enter]`;
+    if ((await page.getAttribute(toggle, 'aria-pressed')) !== 'true') await page.click(toggle);
+    const boxes = `${panel} [data-testid=dice-typed] input`;
+    for (let i = 0; i < values.length; i++) await page.fill(`:nth-match(${boxes}, ${i + 1})`, String(values[i]));
+    await page.click(`${panel} [data-testid=dice-typed] button:text-is("Use these")`);
+    await page.waitForTimeout(200);
   };
   const panelButton = (page, name) => page.click(`aside.panel button:text-is("${name}")`);
   const undoText = async (page) => ((await page.textContent('header.toolbar button.history')) ?? '').replace(/\s+/g, ' ').trim();
@@ -85,8 +95,7 @@ try {
   const placeEntrance = async (page) => {
     await tapWorld(page, 12.5, 25.5);
     await stepIs(page, 'size', 'tapping the entrance square');
-    await typeDice(page, '3', '4');
-    await panelButton(page, 'Use these');
+    await rollerEnter(page, '3', '4');
     await panelButton(page, 'Place');
     await stepIs(page, 'exits', 'placing the entrance');
     await panelButton(page, 'Done');
@@ -98,20 +107,16 @@ try {
   const placeRoom = async (page) => {
     await tapWorld(page, 12.5, 20); // north exit of the entrance room
     await stepIs(page, 'size', 'tapping the north exit');
-    await typeDice(page, '4', '4');
-    await panelButton(page, 'Use these');
-    await typeDice(page, '2', '1');
-    await panelButton(page, 'Use these');
+    await rollerEnter(page, '4', '4');
+    await rollerEnter(page, '2', '1');
     await stepIs(page, 'position', 'room dice');
     await panelButton(page, 'Place');
     await stepIs(page, 'exitCount', 'placing the room');
-    await typeDice(page, '5');
-    await panelButton(page, 'Use this');
+    await rollerEnter(page, '5');
     await page.click('aside.panel button:has-text("Wooden door")');
     await stepIs(page, 'exits', 'choosing doors');
     await tapWorld(page, 12.5, 15);
-    await typeDice(page, '2');
-    await panelButton(page, 'Place for me');
+    await rollerEnter(page, '2');
     await panelButton(page, 'Done');
     await stepIs(page, 'label', 'room exits');
     await page.fill('aside.panel input[type="text"]', 'Lamp Room');

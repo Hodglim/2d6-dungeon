@@ -15,7 +15,11 @@ mkdirSync(outDir, { recursive: true });
 const browser = await firefox.launch();
 // The home-screen hint is tested in step 10; the other steps start with it dismissed so layouts don't shift.
 const mainCtx = await browser.newContext({ viewport: { width: 1180, height: 820 }, deviceScaleFactor: 2, hasTouch: true });
-await mainCtx.addInitScript(() => localStorage.setItem('2d6.installHintDismissed', '1'));
+// The floating dice roller starts open in "Enter my roll" mode: the map-building steps are typed into it.
+await mainCtx.addInitScript(() => {
+  localStorage.setItem('2d6.installHintDismissed', '1');
+  localStorage.setItem('2d6.diceRoller', JSON.stringify({ open: true, dice: 'd6', enter: true }));
+});
 const page = await mainCtx.newPage();
 const errors = [];
 const problems = [];
@@ -83,10 +87,24 @@ const stepIs = async (want, where) => {
   console.log(`Step after ${where}: ${got}`);
   if (got !== want) problems.push(`after ${where}: expected step "${want}", got "${got}"`);
 };
-const typeDice = async (...values) => {
-  const inputs = await page.$$('aside.panel form.dice input');
-  for (let i = 0; i < values.length; i++) await inputs[i].fill(values[i]);
+// The dice are the floating roller's. These open it and set "Enter my roll" explicitly (click the toggle
+// only when its state differs), so a check never inverts what an earlier one left behind.
+const rollerPanel = '[data-testid=dice-panel]';
+const rollerEnterModeOn = async (p, on) => {
+  if (!(await p.isVisible(rollerPanel))) await p.click('header.toolbar button[aria-label="Dice"]');
+  await p.waitForSelector(rollerPanel);
+  const toggle = `${rollerPanel} [data-testid=dice-enter]`;
+  if (((await p.getAttribute(toggle, 'aria-pressed')) === 'true') !== on) await p.click(toggle);
 };
+/** Types the values into the roller's boxes, in order, and clicks "Use these". */
+const rollerEnterOn = async (p, ...values) => {
+  await rollerEnterModeOn(p, true);
+  const boxes = `${rollerPanel} [data-testid=dice-typed] input`;
+  for (let i = 0; i < values.length; i++) await p.fill(`:nth-match(${boxes}, ${i + 1})`, String(values[i]));
+  await p.click(`${rollerPanel} [data-testid=dice-typed] button:text-is("Use these")`);
+  await p.waitForTimeout(200);
+};
+const rollerEnter = (...values) => rollerEnterOn(page, ...values);
 const panelButton = (name) => page.click(`aside.panel button:text-is("${name}")`);
 /** The step panel must sit beside the map, never over it; its buttons must be touch-sized. */
 const checkPanel = async (where) => {
@@ -102,10 +120,9 @@ const checkPanel = async (where) => {
 // 2. Entrance: tap the square below the bottom edge at x=12, then type red 3, blue 4.
 await tapWorld(12.5, 25.5);
 await stepIs('size', 'tapping the entrance square');
-await typeDice('3', '4');
 await checkPanel('entrance size');
 await shot('02-entrance-size.png');
-await panelButton('Use these');
+await rollerEnter('3', '4');
 await stepIs('position', 'entering the entrance dice');
 await checkPanel('entrance position');
 await shot('03-position.png');
@@ -134,11 +151,15 @@ await shot('20-after-reload.png');
 // 3. Room 2 from the entrance room's north exit (12,20): doubles 4-4, then 2-1 → 6×5.
 await tapWorld(12.5, 20);
 await stepIs('size', 'tapping the north exit');
-await typeDice('4', '4');
-await panelButton('Use these');
+// An invalid typed roll: the step's own error shows in the roller, the step stays on "size" and nothing is applied.
+await rollerEnter('7', '1');
+const sizeError = (await page.textContent(`${rollerPanel} [data-testid=dice-typed] [role=alert]`).catch(() => null))?.trim() ?? '';
+console.log(`Room size 7/1 error in the roller: "${sizeError}"`);
+if (!sizeError) problems.push('typing 7/1 for the room size showed no error in the roller');
+await stepIs('size', 'typing 7/1 for the room size');
+await rollerEnter('4', '4');
 if (!(await page.isVisible('aside.panel .double'))) problems.push('doubles did not ask for a second roll');
-await typeDice('2', '1');
-await panelButton('Use these');
+await rollerEnter('2', '1');
 await stepIs('position', 'entering room 2 dice');
 
 // 3b. Ghost follows the pointer: mouse hover and a one-finger drag slide it, never pan.
@@ -206,14 +227,12 @@ await shot('13-ghost-follows.png');
 const [tx, ty, tw, th] = (await ghostOf()).split(',').map(Number);
 await tapWorld(tx + tw / 2, ty + th / 2);
 await stepIs('exitCount', 'clicking to place room 2');
-await typeDice('5'); // two exits
-await panelButton('Use this');
+await rollerEnter('5'); // two exits
 await stepIs('exitType', 'the exit count');
 await page.click('aside.panel button:has-text("Wooden door")');
 await stepIs('exits', 'choosing wooden doors');
 await tapWorld(12.5, 15); // the north wall, by tapping
-await typeDice('2');
-await panelButton('Place for me'); // the other one clockwise from the typed D6
+await rollerEnter('2'); // places the other one clockwise from the typed D6
 await panelButton('Done');
 await stepIs('label', 'placing room 2 exits');
 await page.fill('aside.panel input[type="text"]', 'Lamp Room');
@@ -225,8 +244,7 @@ await shot('06-two-rooms.png');
 
 // 4. Mid-flow rotation: start a room from the west exit, then resize to portrait.
 await tapWorld(10, 22.5);
-await typeDice('3', '2');
-await panelButton('Use these');
+await rollerEnter('3', '2');
 await stepIs('position', 'starting a room from the west exit');
 await page.setViewportSize({ width: 820, height: 1180 });
 await page.waitForTimeout(600);
@@ -1040,10 +1058,7 @@ for (const reduced of [false, true]) {
   const stepNow = () => p.getAttribute('aside.panel .body', 'data-step');
   const waitStep = (want) => p.waitForFunction((w) => document.querySelector('aside.panel .body')?.getAttribute('data-step') === w, want, { timeout: 5000 }).then(() => true, () => false);
   await tap(12.5, 25.5);
-  const ins = await p.$$('aside.panel form.dice input');
-  await ins[0].fill('3');
-  await ins[1].fill('4');
-  await btn('Use these');
+  await rollerEnterOn(p, '3', '4');
   await btn('Place');
   await btn('Done');
   await btn('Done');
@@ -1053,9 +1068,10 @@ for (const reduced of [false, true]) {
   let guard = 0;
   let sampled = new Set();
   while ((await stepNow()) === 'size' && guard++ < 6) {
-    const label = 'aside.panel form.dice .face [role=img]';
-    await p.click('aside.panel button:text-is("🎲 Roll for me")');
-    if (await p.locator('aside.panel form.dice button:disabled').count() < 2) problems.push(`${tag}: buttons not disabled while rolling`);
+    const label = `${rollerPanel} [data-testid=dice-result] [role=img]`;
+    await rollerEnterModeOn(p, false);
+    await p.click('aside.panel [data-testid=roll-card] button');
+    if (await p.locator(`${rollerPanel} button.roll:disabled`).count() < 1) problems.push(`${tag}: roller Roll button not disabled while rolling`);
     if (!reduced && guard === 1) {
       for (let i = 0; i < 8; i++) {
         await p.waitForTimeout(70);
@@ -1087,7 +1103,8 @@ for (const reduced of [false, true]) {
     if (await p.isDisabled('aside.panel button:text-is("Place")')) await btn('Shrink to fit').catch(() => {});
     await btn('Place');
     if (await waitStep('exitCount')) {
-      await p.click('aside.panel button:text-is("🎲 Roll for me")');
+      await rollerEnterModeOn(p, false);
+      await p.click('aside.panel [data-testid=roll-card] button');
       const left = await p.waitForFunction(() => document.querySelector('aside.panel .body')?.getAttribute('data-step') !== 'exitCount', null, { timeout: 5000 }).then(() => true, () => false);
       if (!left) problems.push(`${tag}: exit count roll never advanced`);
     } else problems.push(`${tag}: no exit count step after placing`);
@@ -1128,10 +1145,6 @@ for (const reduced of [false, true]) {
   };
   const btn = (name) => p.click(`aside.panel button:text-is("${name}")`);
   const stepNow = () => p.getAttribute('aside.panel .body', 'data-step');
-  const dice = async (...v) => {
-    const ins = await p.$$('aside.panel form.dice input');
-    for (let i = 0; i < v.length; i++) await ins[i].fill(v[i]);
-  };
   const fixtureObj2 = JSON.parse(readFileSync('tests/fixtures/dungeon-tables.fixture.json').toString());
   const load = async (obj) => {
     await p.setInputFiles('input[data-extra="tables"]', { name: 'tables.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(obj)) });
@@ -1140,26 +1153,21 @@ for (const reduced of [false, true]) {
   const undo = async () => (await p.textContent('header.toolbar button.history'))?.replace(/\s+/g, ' ').trim() ?? '';
   await load(fixtureObj2);
   await tap(12.5, 25.5);
-  await dice('3', '4');
-  await btn('Use these');
+  await rollerEnterOn(p, '3', '4');
   await btn('Place');
   await btn('Done');
   await btn('Done');
   await p.waitForTimeout(1500);
   const roomUndo0 = await undo();
   await tap(12.5, 20);
-  await dice('3', '4');
-  await btn('Use these');
+  await rollerEnterOn(p, '3', '4');
   await btn('Place');
-  await dice('4');
-  await btn('Use this');
+  await rollerEnterOn(p, '4');
   if ((await stepNow()) !== 'exits') problems.push(`${tag}: expected the exits step (no exit type step), got ${await stepNow()}`);
-  await dice('3');
-  await btn('Place for me');
+  await rollerEnterOn(p, '3');
   await btn('Done');
   if ((await stepNow()) !== 'label') problems.push(`${tag}: expected the label step, got ${await stepNow()}`);
-  await dice('3', '4');
-  await btn('Use these');
+  await rollerEnterOn(p, '3', '4');
   const resultText = (await p.textContent('[data-testid=room-result]'))?.replace(/\s+/g, ' ').trim() ?? '';
   console.log(`${tag}: "${resultText}"`);
   if (!resultText.includes('Practice Room 34')) problems.push(`${tag}: result missing the room type: "${resultText}"`);
@@ -1189,15 +1197,12 @@ for (const reduced of [false, true]) {
   delete bare.tables.dungeonLevels;
   await load(bare);
   await tap(12.5, 20);
-  await dice('3', '4');
-  await btn('Use these');
+  await rollerEnterOn(p, '3', '4');
   await btn('Place');
-  await dice('4');
-  await btn('Use this');
+  await rollerEnterOn(p, '4');
   if ((await stepNow()) !== 'exitType') problems.push(`${tag}: no-level table file should keep the exit type step, got ${await stepNow()}`);
   await p.click('aside.panel button:has-text("Wooden door")');
-  await dice('3');
-  await btn('Place for me');
+  await rollerEnterOn(p, '3');
   await btn('Done');
   if (!(await p.isVisible('[data-testid=no-level-tables]'))) problems.push(`${tag}: no-level message missing`);
   await shot('47-no-level-tables.png', p);
@@ -1227,10 +1232,6 @@ for (const reduced of [false, true]) {
   };
   const btn = (name) => p.click(`aside.panel button:text-is("${name}")`);
   const tool = (name) => p.click(`header.toolbar button.tool:text-is("${name}")`);
-  const dice = async (...v) => {
-    const ins = await p.$$('aside.panel form.dice input');
-    for (let i = 0; i < v.length; i++) await ins[i].fill(v[i]);
-  };
   const undo = async () => (await p.textContent('header.toolbar button.history'))?.replace(/\s+/g, ' ').trim() ?? '';
   const doorNow = async (x, y) => {
     await tool('Door');
@@ -1242,20 +1243,16 @@ for (const reduced of [false, true]) {
   await p.setInputFiles('input[data-extra="tables"]', { name: 'tables.json', mimeType: 'application/json', buffer: Buffer.from(readFileSync('tests/fixtures/dungeon-tables.fixture.json')) });
   await p.waitForTimeout(500);
   await tap(12.5, 25.5);
-  await dice('3', '4');
-  await btn('Use these');
+  await rollerEnterOn(p, '3', '4');
   await btn('Place');
   await btn('Done');
   await btn('Done');
   await p.waitForTimeout(1500);
   await tap(12.5, 20);
-  await dice('3', '4');
-  await btn('Use these');
+  await rollerEnterOn(p, '3', '4');
   await btn('Place');
-  await dice('4');
-  await btn('Use this');
-  await dice('3');
-  await btn('Place for me');
+  await rollerEnterOn(p, '4');
+  await rollerEnterOn(p, '3');
   await btn('Done');
   await btn('Skip'); // skip the roll
   await btn('Skip'); // and leave the room unlabelled
@@ -1272,8 +1269,7 @@ for (const reduced of [false, true]) {
   if (!(await p.isVisible('aside.panel button:text-is("Roll for this room")'))) problems.push(`${tag}: no "Roll for this room" button`);
   await shot('48a-roll-later-button.png', p);
   await btn('Roll for this room');
-  await dice('3', '4');
-  await btn('Use these');
+  await rollerEnterOn(p, '3', '4');
   const result = (await p.textContent('[data-testid=room-result]'))?.replace(/\s+/g, ' ').trim() ?? '';
   console.log(`${tag}: "${result}"`);
   if (!result.includes('Practice Room 34') || !/Wooden/i.test(result) || !/locked/.test(result)) problems.push(`${tag}: bad result "${result}"`);
@@ -1321,10 +1317,6 @@ for (const reduced of [false, true]) {
     await p.waitForTimeout(150);
   };
   const btn = (name) => p.click(`aside.panel button:text-is("${name}")`);
-  const dice = async (...v) => {
-    const ins = await p.$$('aside.panel form.dice input');
-    for (let i = 0; i < v.length; i++) await ins[i].fill(v[i]);
-  };
   const wiz = (t) => p.click(`[role=dialog][aria-labelledby=wizard-title] button:text-is("${t}")`);
   const menu = () => p.click('header.toolbar button[aria-label="Menu"]');
   const banner = async (where) => {
@@ -1363,8 +1355,7 @@ for (const reduced of [false, true]) {
   if (await p.isVisible('[role=alertdialog] button:text-is("Replace")')) await p.click('[role=alertdialog] button:text-is("Replace")');
   await p.waitForTimeout(800);
   await tap(12.5, 25.5);
-  await dice('3', '4');
-  await btn('Use these');
+  await rollerEnterOn(p, '3', '4');
   await btn('Place');
   await btn('Done');
   await btn('Done');
@@ -1404,8 +1395,7 @@ for (const reduced of [false, true]) {
   // The new level's entrance: three archways, no doubles (1-1 stays a 1x1... the clamp applies, no second roll).
   await p.click('header.toolbar button.tool:text-is("Play")');
   await tap(12.5, 25.5);
-  await dice('2', '2');
-  await btn('Use these');
+  await rollerEnterOn(p, '2', '2');
   const stepAfter = await p.getAttribute('aside.panel .body', 'data-step');
   if (stepAfter !== 'position') problems.push(`${tag}: doubles on the entrance asked for a second roll (step ${stepAfter})`);
   await btn('Place');
@@ -1532,9 +1522,7 @@ for (const reduced of [false, true]) {
   if (await p.isVisible('[role=alertdialog] button:text-is("Replace")')) await p.click('[role=alertdialog] button:text-is("Replace")');
   await p.waitForTimeout(800);
   await tap(12.5, 25.5);
-  await p.fill('aside.panel form.dice input >> nth=0', '3');
-  await p.fill('aside.panel form.dice input >> nth=1', '4');
-  await btn('Use these');
+  await rollerEnterOn(p, '3', '4');
   await btn('Place');
   await btn('Done');
   await btn('Done');
@@ -1772,38 +1760,28 @@ for (const reduced of [false, true]) {
   if (await p.isVisible('[role=alertdialog] button:text-is("Replace")')) await p.click('[role=alertdialog] button:text-is("Replace")');
   await p.waitForTimeout(800);
 
-  const dice = async (...v) => {
-    const ins = await p.$$('aside.panel form.dice input');
-    for (let i = 0; i < v.length; i++) await ins[i].fill(v[i]);
-  };
   await tap(12.5, 25.5);
-  await dice('3', '4');
-  await btn('Use these');
+  await rollerEnterOn(p, '3', '4');
   await btn('Place');
   await btn('Done');
   await btn('Done');
   await p.waitForTimeout(1500);
   // A second room: its room-table result (the label step) shows the text with its buttons.
   await tap(12.5, 20);
-  await dice('3', '4');
-  await btn('Use these');
+  await rollerEnterOn(p, '3', '4');
   await btn('Place');
-  await dice('4');
-  await btn('Use this');
-  await dice('3');
-  await btn('Place for me');
+  await rollerEnterOn(p, '4');
+  await rollerEnterOn(p, '3');
   await btn('Done');
   // Room 11's exit type is random: the name, description and exit roll first; the encounter text
   // (whose Roll and Fight place the room, so need the exit type) only once the exit type is rolled.
-  await dice('1', '1');
-  await btn('Use these');
+  await rollerEnterOn(p, '1', '1');
   await p.waitForSelector('aside.panel [data-testid=room-result]');
   if (await p.isVisible('aside.panel [data-testid=encounter-text]')) problems.push(`${tag}: encounter text shown before the exit type`);
   const pending = (await p.textContent('aside.panel [data-testid=room-result]'))?.replace(/\s+/g, ' ').trim() ?? '';
   if (!pending.includes('Practice Room 11') || !pending.includes('A made-up room, number 11.')) problems.push(`${tag}: room before the exit type "${pending}"`);
   await shot('55a-encounter-waits-for-exit-type.png', p);
-  await dice('1', '1');
-  await btn('Use these');
+  await rollerEnterOn(p, '1', '1');
   await p.waitForSelector('aside.panel [data-testid=encounter-text]');
   if (!(await p.isVisible('aside.panel [data-testid=exit-result]'))) problems.push(`${tag}: no exit result with the encounter text`);
   const encText = (await p.textContent('aside.panel [data-testid=encounter-text] .enc-text'))?.trim();
@@ -2551,28 +2529,19 @@ for (const reduced of [false, true]) {
   await p.waitForTimeout(500);
   if (await p.isVisible('[role=alertdialog] button:text-is("Replace")')) await p.click('[role=alertdialog] button:text-is("Replace")');
   await p.waitForTimeout(800);
-  const dice = async (...v) => {
-    const ins = await p.$$('aside.panel form.dice input');
-    for (let i = 0; i < v.length; i++) await ins[i].fill(v[i]);
-  };
   await tap(12.5, 25.5);
-  await dice('3', '4');
-  await btn('Use these');
+  await rollerEnterOn(p, '3', '4');
   await btn('Place');
   await btn('Done');
   await btn('Done');
   await p.waitForTimeout(1500);
   await tap(12.5, 20);
-  await dice('3', '4');
-  await btn('Use these');
+  await rollerEnterOn(p, '3', '4');
   await btn('Place');
-  await dice('4');
-  await btn('Use this');
-  await dice('3');
-  await btn('Place for me');
+  await rollerEnterOn(p, '4');
+  await rollerEnterOn(p, '3');
   await btn('Done');
-  await dice('3', '4');
-  await btn('Use these');
+  await rollerEnterOn(p, '3', '4');
   await p.waitForSelector('aside.panel [data-testid=encounter-actions]');
   const labels = await p.$$eval('aside.panel [data-testid=encounter-actions] button', (els) => els.map((e) => e.textContent.trim()));
   console.log(`${tag}: buttons ${JSON.stringify(labels)}`);
@@ -2680,10 +2649,6 @@ for (const reduced of [false, true]) {
   const undo = async () => (await p.textContent('header.toolbar button.history'))?.replace(/\s+/g, ' ').trim() ?? '';
   const token = () => p.getAttribute('canvas', 'data-token');
   const dragCell = () => p.getAttribute('canvas', 'data-token-drag');
-  const dice = async (...v) => {
-    const ins = await p.$$('aside.panel form.dice input');
-    for (let i = 0; i < v.length; i++) await ins[i].fill(v[i]);
-  };
   /** Press at one world point and move (mouse) to another; the caller releases. */
   const pressAndMove = async (from, to) => {
     const a = await screenAt(...from);
@@ -2710,8 +2675,7 @@ for (const reduced of [false, true]) {
   if ((await pressed()) !== 'Play') problems.push(`${tag}: clicking Play in Play left ${await pressed()} pressed`);
 
   await tap(12.5, 25.5);
-  await dice('3', '4');
-  await btn('Use these');
+  await rollerEnterOn(p, '3', '4');
   await btn('Place');
   await btn('Done');
   await btn('Done');
@@ -3223,36 +3187,28 @@ for (const reduced of [false, true]) {
   await p.waitForTimeout(200);
 
   // Rooms: entrance, then room 2; while placing, the panel stays and still rolls.
-  const dice = async (...v) => {
-    const ins = await p.$$('aside.panel form.dice input');
-    for (let i = 0; i < v.length; i++) await ins[i].fill(v[i]);
-  };
   await tap(12.5, 25.5);
-  await dice('3', '4');
-  await btn('Use these');
+  await rollerEnterOn(p, '3', '4');
   await btn('Place');
   await btn('Done');
   await btn('Done');
   await p.waitForTimeout(1500);
   await tap(12.5, 20);
-  await dice('3', '4');
-  await btn('Use these');
+  await rollerEnterOn(p, '3', '4');
   if (!(await open())) problems.push(`${tag}: placing a room closed the panel`);
   if (await p.isDisabled(diceBtn)) problems.push(`${tag}: Dice button disabled while placing a room`);
   if (!(await p.isDisabled('header.toolbar button.tool:text-is("Door")'))) problems.push(`${tag}: Door enabled while placing (check is not testing placement)`);
+  await rollerEnterModeOn(p, false); // this check rolls: the earlier typed steps left enter mode on
   await p.click(`${panel} .chips button:text-is("D6")`);
   await p.click(`${panel} button.roll`);
   await p.waitForTimeout(ROLL_MS);
   if (!/^= [1-6]$/.test(await total())) problems.push(`${tag}: rolling while placing gave "${await total()}"`);
   await shot('d6-dice-while-placing.png', p);
   await btn('Place');
-  await dice('4');
-  await btn('Use this');
-  await dice('3');
-  await btn('Place for me');
+  await rollerEnterOn(p, '4');
+  await rollerEnterOn(p, '3');
   await btn('Done');
-  await dice('3', '4');
-  await btn('Use these');
+  await rollerEnterOn(p, '3', '4');
   await p.waitForSelector('aside.panel [data-testid=encounter-actions]');
   const labels = await p.$$eval('aside.panel [data-testid=encounter-actions] button', (els) => els.map((e) => e.textContent.trim()));
   console.log(`${tag}: encounter buttons ${JSON.stringify(labels)}`);
@@ -3260,6 +3216,7 @@ for (const reduced of [false, true]) {
   const encText = (await p.textContent('aside.panel [data-testid=encounter-text] .enc-text'))?.trim();
   if (!encText?.endsWith(ENC)) problems.push(`${tag}: encounter text "${encText}"`);
 
+  await rollerEnterModeOn(p, false);
   // Close with ×, choose 2D6 meanwhile, then "🎲 Roll D6" opens it on D6 with one roll.
   await p.click(`${panel} .chips button:text-is("2D6")`);
   await p.click(`${panel} button[aria-label="Close dice"]`);
@@ -3286,7 +3243,7 @@ for (const reduced of [false, true]) {
 
   // Enter my roll: type a die, "Use these" records it as a free roll; 7 shows the roller's own error.
   const typedIn = `${panel} [data-testid=dice-typed] input`;
-  await p.click(`${panel} [data-testid=dice-enter]`);
+  await rollerEnterModeOn(p, true);
   if ((await p.getAttribute(`${panel} [data-testid=dice-enter]`, 'aria-pressed')) !== 'true') problems.push(`${tag}: enter toggle not pressed`);
   await p.fill(typedIn, '4');
   await p.click(`${panel} [data-testid=dice-typed] button:text-is("Use these")`);
@@ -3299,7 +3256,7 @@ for (const reduced of [false, true]) {
   if (typedErr !== 'Type a number from 1 to 6.') problems.push(`${tag}: typed 7 gave "${typedErr}"`);
   if ((await historyLines())[0] !== 'Free D6: 4') problems.push(`${tag}: a rejected typed roll changed the history`);
   await p.fill(typedIn, '');
-  await p.click(`${panel} [data-testid=dice-enter]`);
+  await rollerEnterModeOn(p, false);
   if ((await p.getAttribute(`${panel} [data-testid=dice-enter]`, 'aria-pressed')) !== 'false') problems.push(`${tag}: enter toggle still pressed`);
   if ((await historyLines())[1] !== afterSecond[0]) problems.push(`${tag}: typed roll history is ${JSON.stringify(await historyLines())}`);
 
