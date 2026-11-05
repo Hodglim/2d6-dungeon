@@ -61,6 +61,7 @@
     startOrJoin,
     throwBomb,
     throwWeapon,
+    winFight,
   } from './encounterActions';
 
   interface Props {
@@ -377,7 +378,7 @@
   }
 
   function winDone() {
-    commitEncounter(history, null, 'Win the fight');
+    winFight(history);
   }
 
   function foeStep(f: Foe, d: number) {

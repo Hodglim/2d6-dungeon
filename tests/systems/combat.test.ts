@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   newEncounter, addFoe, setFoeHp, nextRound, queueRoll, resolveRoll, recordRoll, dropRolled, awardXp, fatigueDie, fatigueShift,
-  momentumShift, allDefeated, totalXp, treasureLines, interruptReminder, encounterProblem, nextTurn, turnFoe, logThrow, setRecovered, bombEffect,
+  momentumShift, allDefeated, totalXp, treasureLines, interruptReminder, encounterProblem, nextTurn, turnFoe, logThrow, setRecovered, bombEffect, defeatedLine,
 } from '../../src/systems/dungeon/combat';
 
 const stats = { level: 1, hp: 6, xp: 3, shift: 1, treasure: 'a shiny thing' };
@@ -61,6 +61,15 @@ describe('summaries', () => {
     e = addFoe(e, 'C', { ...stats, treasure: '' }, 1, 'c');
     expect(totalXp(e)).toBe(6);
     expect(treasureLines(e)).toEqual(['A: a shiny thing']);
+  });
+  it('defeatedLine counts repeated names, keeps first-seen order, skips foes still standing', () => {
+    let e = addFoe(newEncounter(), 'Rat', stats, 1, 'a');
+    e = addFoe(e, 'Troll', stats, 1, 'b');
+    e = addFoe(e, 'Rat', stats, 1, 'c');
+    e = addFoe(e, 'Bat', stats, 1, 'd');
+    expect(defeatedLine(e)).toBeNull();
+    e = setFoeHp(setFoeHp(setFoeHp(e, 'a', 0), 'b', 0), 'c', -2);
+    expect(defeatedLine(e)).toBe('Defeated Rat ×2, Troll.');
   });
   it('interruptReminder', () => {
     expect(interruptReminder(6)).toBe(false);

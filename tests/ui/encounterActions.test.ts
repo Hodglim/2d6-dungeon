@@ -5,9 +5,9 @@ import { History } from '../../src/core/history';
 import { setFoeHp, totalXp as totalXpOf, type Encounter } from '../../src/systems/dungeon/combat';
 import { createHero, type Hero } from '../../src/systems/dungeon/hero';
 import type { DungeonTables } from '../../src/systems/dungeon/tables';
-import { applyCreatureRoll, awardVictoryXp, commitEncounter, dismissRolled, dropPendingRoll, placingFirst, queueCreatureRoll, recoverThrown, startOrJoin, throwBomb, throwWeapon, xpToAward, type EncounterHooks } from '../../src/ui/encounter/encounterActions';
+import { applyCreatureRoll, awardVictoryXp, commitEncounter, winFight, dismissRolled, dropPendingRoll, placingFirst, queueCreatureRoll, recoverThrown, startOrJoin, throwBomb, throwWeapon, xpToAward, type EncounterHooks } from '../../src/ui/encounter/encounterActions';
 import { adjustHp } from '../../src/ui/hero/heroActions';
-import { emptyMap, room } from '../core/fixtures';
+import { emptyMap, room, withContent } from '../core/fixtures';
 
 const t = JSON.parse(readFileSync('tests/fixtures/dungeon-tables.fixture.json', 'utf8')) as DungeonTables;
 const hero = (): Hero =>
@@ -354,6 +354,43 @@ describe('encounterActions', () => {
       const h = new History(emptyMap());
       startOrJoin(h, t, ['Grumbler'], ids(), noAsk);
       expect(awardVictoryXp(h).ok).toBe(false);
+    });
+  });
+
+  describe('winning the fight', () => {
+    const inRoom = (narrative: string, token: { x: number; y: number } | null = { x: 2, y: 2 }) => {
+      const r = { ...room('r1', 1, 1, 3, 3), label: { type: 'Hall', unique: false, narrative } };
+      const h = new History({ ...withContent(emptyMap(), [r]), token: token && { ...token, trail: [] } });
+      startOrJoin(h, t, ['Grumbler', 'Grumbler', 'Moss Lurker'], ids(), noAsk);
+      for (const f of enc(h).foes) commitEncounter(h, setFoeHp(enc(h), f.id, 0), 'down');
+      return h;
+    };
+    const narrative = (h: History) => h.map.rooms[0]!.label.narrative;
+
+    it("closes the fight and adds the defeated foes to the hero's room's narrative, in one undo step", () => {
+      const h = inRoom('');
+      expect(winFight(h)).toEqual({ ok: true });
+      expect(h.encounter).toBeNull();
+      expect(narrative(h)).toBe('Defeated Grumbler ×2, Moss Lurker.');
+      expect(h.undoLabel).toBe('Win the fight');
+      h.undo();
+      expect(narrative(h)).toBe('');
+      expect(enc(h).foes).toHaveLength(3);
+    });
+
+    it('adds a new line after narrative already written', () => {
+      const h = inRoom('Smells of moss.');
+      winFight(h);
+      expect(narrative(h)).toBe('Smells of moss.\nDefeated Grumbler ×2, Moss Lurker.');
+    });
+
+    it('with no token, or the token outside a room, only closes the fight', () => {
+      for (const token of [null, { x: 8, y: 8 }]) {
+        const h = inRoom('', token);
+        expect(winFight(h)).toEqual({ ok: true });
+        expect(h.encounter).toBeNull();
+        expect(narrative(h)).toBe('');
+      }
     });
   });
 });

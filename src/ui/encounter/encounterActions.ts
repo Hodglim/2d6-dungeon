@@ -1,7 +1,8 @@
 /** Encounter edits run through History. Pure apart from the History argument. */
-import { setPlay } from '../../core/commands';
+import { setPlay, updateRoom } from '../../core/commands';
+import { roomAt } from '../../core/query';
 import type { ExecResult, History } from '../../core/history';
-import { addFoe, awardXp, dropRolled, logThrow, newEncounter, queueRoll, recordRoll, resolveRoll, setFoeHp, setRecovered, totalXp, type Encounter, type ThrowLog } from '../../systems/dungeon/combat';
+import { addFoe, awardXp, defeatedLine, dropRolled, logThrow, newEncounter, queueRoll, recordRoll, resolveRoll, setFoeHp, setRecovered, totalXp, type Encounter, type ThrowLog } from '../../systems/dungeon/combat';
 import { rollD6, type Rng } from '../../systems/dungeon/rules';
 import { bombDamage, recovers, throwDamage, type CarriedWeapon, type PotionBomb } from '../../systems/dungeon/throwing';
 import { parseDamage, rollDice, rollTotal } from '../diceRoller';
@@ -172,6 +173,23 @@ export function dismissRolled(history: History, index: number): ExecResult {
 
 /** XP from the fight not yet added to the hero (0 when it all has been, or there is none). */
 export const xpToAward = (e: Encounter): number => Math.max(0, totalXp(e) - e.xpAwarded);
+
+/**
+ * The Victory panel's Done: the fight closes and the foes defeated are noted on a new line of the
+ * narrative of the room the hero token stands in (none without a token in a room), as one step.
+ */
+export function winFight(history: History): ExecResult {
+  const e = history.encounter as Encounter | null;
+  const line = e ? defeatedLine(e) : null;
+  const map = history.map;
+  const r = line && map.token ? roomAt(map, map.token) : undefined;
+  const cmd = setPlay({ hero: history.hero, encounter: null }, 'Win the fight');
+  if (r && line) {
+    const narrative = r.label.narrative ? `${r.label.narrative}\n${line}` : line;
+    cmd.apply = updateRoom(r, { ...r, label: { ...r.label, narrative } }).apply;
+  }
+  return history.execute(cmd);
+}
 
 /** The Victory panel's Add XP: the hero's XP and the encounter's record of it change in one step. */
 export function awardVictoryXp(history: History): ExecResult {

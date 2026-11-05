@@ -138,6 +138,7 @@ export class History {
       const next = cmd.applyPlay({ hero, encounter });
       hero = next.hero;
       encounter = next.encounter;
+      if (cmd.apply) map = cmd.apply(map);
     } else if ('applyHero' in cmd) {
       hero = cmd.applyHero(hero);
     } else {

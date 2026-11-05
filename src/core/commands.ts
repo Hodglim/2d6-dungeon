@@ -24,6 +24,8 @@ export interface PlayState {
 export interface PlayCommand {
   label: string;
   applyPlay(s: PlayState): PlayState;
+  /** A map change made in the same undo step (winning a fight notes it in the room's narrative). */
+  apply?(map: DungeonMap): DungeonMap;
 }
 
 export const setPlay = (after: PlayState, label: string): PlayCommand => ({ label, applyPlay: () => after });

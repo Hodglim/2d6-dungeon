@@ -155,6 +155,13 @@ export const momentumShift = (e: Encounter): number =>
   e.round === 2 && e.foes.length >= 2 && e.foes.some((f) => f.defeatedInRound === 1) ? 2 : 0;
 
 export const allDefeated = (e: Encounter): boolean => e.foes.length > 0 && e.foes.every((f) => f.hp <= 0);
+/** "Defeated Rat ×2, Troll.": the foes brought to 0 HP, by name in first-seen order, or null when there are none. */
+export function defeatedLine(e: Encounter): string | null {
+  const counts = new Map<string, number>();
+  for (const f of e.foes) if (f.hp <= 0) counts.set(f.name, (counts.get(f.name) ?? 0) + 1);
+  if (!counts.size) return null;
+  return `Defeated ${[...counts].map(([name, n]) => (n > 1 ? `${name} ×${n}` : name)).join(', ')}.`;
+}
 export const totalXp = (e: Encounter): number => e.foes.reduce((s, f) => s + (f.xp ?? 0), 0);
 export const treasureLines = (e: Encounter): string[] =>
   e.foes.filter((f) => f.treasure).map((f) => `${f.name}: ${f.treasure}`);
