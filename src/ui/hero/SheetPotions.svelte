@@ -1,14 +1,32 @@
 <script lang="ts">
   import { listLimit, overLimit, type Hero, type ListKey } from '../../systems/dungeon/hero';
+  import { knownPotions } from '../../systems/dungeon/potions';
+  import type { DungeonTables } from '../../systems/dungeon/tables';
   import { adjustCoin, removeItem, type Coin, type StringList } from './heroActions';
   import Boxes from './Boxes.svelte';
   import StringListEditor from './StringListEditor.svelte';
 
   interface Props {
     hero: Hero;
+    /** The player's table file: its known potions are offered to pick from. */
+    tables?: DungeonTables | null;
     onedit: (next: Hero, opts?: { label?: string; mergeKey?: string; limit?: ListKey }) => void;
   }
-  let { hero, onedit }: Props = $props();
+  let { hero, tables = null, onedit }: Props = $props();
+
+  const known = $derived(knownPotions(tables));
+  let picked = $state('');
+  /** Picking a known potion fills in its name and effect (still editable before Add). */
+  function pick(e: Event) {
+    const key = (e.currentTarget as HTMLSelectElement).value;
+    const [g, i] = key.split(':').map(Number);
+    const p = known[g!]?.items[i!];
+    if (p) {
+      pName = p.name;
+      pEffect = p.effect;
+    }
+    picked = '';
+  }
 
   let pName = $state('');
   let pEffect = $state('');
@@ -55,6 +73,16 @@
       </ul>
     {:else}
       <p class="empty">None</p>
+    {/if}
+    {#if known.length}
+      <select class="pick" aria-label="Choose a known potion" bind:value={picked} onchange={pick}>
+        <option value="">Choose from your table file…</option>
+        {#each known as g, gi (g.label)}
+          <optgroup label={g.label}>
+            {#each g.items as p, i (p.name)}<option value={`${gi}:${i}`}>{p.name}</option>{/each}
+          </optgroup>
+        {/each}
+      </select>
     {/if}
     <form class="row" onsubmit={(e) => { e.preventDefault(); addPotion(); }}>
       <input type="text" class="short" placeholder="Name" aria-label="New potion name" bind:value={pName} />
@@ -109,3 +137,11 @@
     {/each}
   </section>
 </div>
+
+<style>
+  .pick {
+    width: 100%;
+    max-width: 420px;
+    margin-bottom: 8px;
+  }
+</style>

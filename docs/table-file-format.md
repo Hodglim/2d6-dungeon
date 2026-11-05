@@ -159,7 +159,7 @@ A short, complete, valid example (copy it and replace the made-up values with yo
 - `format`: always `1`. A higher number is refused as made by a newer version of the app.
 - `systemId`: always `"dungeon"`.
 - `name`: any label for your own use.
-- `tables`: the tables below. Every one is required except `dungeonLevels`, `exitTables`, `creatureTables`, `creatures`, `referenceTables`, `throwingWeapons` and `potionBombs`.
+- `tables`: the tables below. Every one is required except `dungeonLevels`, `exitTables`, `creatureTables`, `creatures`, `referenceTables`, `throwingWeapons`, `potionBombs` and `potions`.
 
 Dice are lists of faces, each a whole number 1 to 6, in printed order with the primary (red) die first.
 
@@ -395,6 +395,16 @@ A made-up example:
 "potionBombs": [
   { "name": "Fizz Jar", "effect": "Made-up: it fizzes and pops.", "damage": "2D6 +1" },
   { "name": "Glare Phial", "effect": "Made-up: a dazzling glare.", "noAttack": true }
+]
+```
+
+## potions (optional)
+
+Potions to pick from when adding one to the hero sheet: a list of `{ "name", "effect" }`. The sheet offers these together with the starting potions and the potion bombs, each name once. Picking one fills in its name and effect, which can still be changed before adding it. Where to find them: the Tables Codex potion tables.
+
+```text
+"potions": [
+  { "name": "Potion of Glow", "effect": "Made-up: you glow softly for one room." }
 ]
 ```
 

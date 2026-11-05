@@ -126,7 +126,7 @@
       {#if tab === 'stats'}
         <SheetStats {hero} {tables} onedit={edit} />
       {:else if tab === 'potions'}
-        <SheetPotions {hero} onedit={edit} />
+        <SheetPotions {hero} {tables} onedit={edit} />
       {:else if tab === 'story'}
         <SheetNarrative {hero} ontext={editText} />
       {:else}

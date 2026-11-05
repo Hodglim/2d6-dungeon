@@ -263,6 +263,7 @@ describe('throwing weapons and potion bombs', () => {
       { name: 'Fizz Jar', effect: 'Made-up: it fizzes.', damage: '2D6 +1' },
       { name: 'Glare Phial', effect: 'Made-up: a glare.', noAttack: true },
     ];
+    o.tables.potions = [{ name: 'Potion of Glow', effect: 'Made-up: you glow.' }];
     expect(parse(o).ok).toBe(true);
   });
   it('checks them', () => {
@@ -279,6 +280,9 @@ describe('throwing weapons and potion bombs', () => {
     bad('potionBombs', [{ name: 'x', effect: '', damage: 3 }], 'Potion Bombs 1 damage');
     bad('potionBombs', [{ name: 'x', effect: '', damagePerLevel: 'a' }], 'Potion Bombs 1 damagePerLevel');
     bad('potionBombs', [{ name: 'x', effect: '', noAttack: 1 }], 'Potion Bombs 1 noAttack');
+    bad('potions', {}, 'Potions');
+    bad('potions', [{ name: '', effect: '' }], 'Potions 1 name (empty)');
+    bad('potions', [{ name: 'x' }], 'Potions 1 effect');
   });
 });
 

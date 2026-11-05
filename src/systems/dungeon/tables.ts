@@ -111,6 +111,8 @@ export interface DungeonTables {
     /** Throwing weapons and potion bombs the encounter pane can throw (optional). */
     throwingWeapons?: ThrowingWeapon[];
     potionBombs?: PotionBomb[];
+    /** Potions to pick from when adding one to the hero sheet (optional). */
+    potions?: { name: string; effect: string }[];
   };
 }
 
@@ -278,7 +280,7 @@ function creatureCombatProblem(c: Record<string, unknown>, at: string): string |
 
 const isFlag = (v: unknown): boolean => v === undefined || typeof v === 'boolean';
 
-/** `throwingWeapons` and `potionBombs`, both optional lists. */
+/** `throwingWeapons`, `potionBombs` and `potions`, all optional lists. */
 function throwingProblem(t: Record<string, unknown>): string | null {
   const list = (key: string, label: string, each: (r: Record<string, unknown>, at: string) => string | null): string | null => {
     const v = t[key];
@@ -305,7 +307,8 @@ function throwingProblem(t: Record<string, unknown>): string | null {
       (r.damagePerLevel === undefined || isCount(r.damagePerLevel) ? null : `${at} damagePerLevel`) ??
       (isFlag(r.noAttack) ? null : `${at} noAttack`) ??
       (isFlag(r.noMovementInterrupts) ? null : `${at} noMovementInterrupts`),
-    )
+    ) ??
+    list('potions', 'Potions', (r, at) => named(r, at, ['name']) ?? field(r, at, ['effect'], isStr))
   );
 }
 
