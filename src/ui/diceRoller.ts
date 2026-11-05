@@ -101,9 +101,11 @@ export const DICE_PREFS_KEY = '2d6.diceRoller';
 export interface DicePrefs {
   open: boolean;
   dice: DiceKind;
+  /** "Enter my roll": Roll buttons open the roller for typing instead of rolling. */
+  enter: boolean;
 }
 
-const DEFAULT_PREFS: DicePrefs = { open: false, dice: 'd6' };
+const DEFAULT_PREFS: DicePrefs = { open: false, dice: 'd6', enter: false };
 
 type Storage = Pick<globalThis.Storage, 'getItem' | 'setItem'>;
 
@@ -114,7 +116,7 @@ export function readDicePrefs(storage: Storage | undefined): DicePrefs {
     if (!raw) return { ...DEFAULT_PREFS };
     const v = JSON.parse(raw) as Partial<DicePrefs>;
     if (typeof v.open !== 'boolean' || !ALL.some((d) => d.kind === v.dice)) return { ...DEFAULT_PREFS };
-    return { open: v.open, dice: v.dice as DiceKind };
+    return { open: v.open, dice: v.dice as DiceKind, enter: v.enter === true };
   } catch {
     return { ...DEFAULT_PREFS };
   }

@@ -139,7 +139,7 @@
   /** A "Roll a D6" button asked the roller to roll; the panel takes it once. */
   let diceRequest = $state<{ dice: DiceKind; modifier: number; seq: number } | null>(null);
   let diceSeq = 0;
-  $effect(() => writeDicePrefs(storage(), { open: diceOpen, dice: diceKind }));
+  $effect(() => writeDicePrefs(storage(), { open: diceOpen, dice: diceKind, enter: dicePrefs.enter }));
   function onDiceButton() {
     if (!started || loadError || gameOver !== null) return;
     diceOpen = !diceOpen;

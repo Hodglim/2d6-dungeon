@@ -102,8 +102,15 @@ describe('dice roller helper', () => {
     expect(parseDamage('3D3 +2 damage')).toEqual({ dice: '3d3', modifier: 2 });
     // A request for a bigger die is remembered like a chip die.
     const s = fakeStorage();
-    writeDicePrefs(s, { open: true, dice: '3d6' });
-    expect(readDicePrefs(s)).toEqual({ open: true, dice: '3d6' });
+    writeDicePrefs(s, { open: true, dice: '3d6', enter: false });
+    expect(readDicePrefs(s)).toEqual({ open: true, dice: '3d6', enter: false });
+  });
+  it('reads prefs saved before the Enter setting as enter off, and keeps enter on', () => {
+    const s = fakeStorage();
+    s.m.set(DICE_PREFS_KEY, '{"open":true,"dice":"d6"}');
+    expect(readDicePrefs(s)).toEqual({ open: true, dice: 'd6', enter: false });
+    writeDicePrefs(s, { open: false, dice: '2d6', enter: true });
+    expect(readDicePrefs(s)).toEqual({ open: false, dice: '2d6', enter: true });
   });
   it('keeps the last five rolls, newest first', () => {
     let h: string[] = [];
@@ -112,16 +119,16 @@ describe('dice roller helper', () => {
   });
   it('remembers the open state and die, and survives bad or missing storage', () => {
     const s = fakeStorage();
-    expect(readDicePrefs(s)).toEqual({ open: false, dice: 'd6' });
-    writeDicePrefs(s, { open: true, dice: 'd66' });
-    expect(readDicePrefs(s)).toEqual({ open: true, dice: 'd66' });
+    expect(readDicePrefs(s)).toEqual({ open: false, dice: 'd6', enter: false });
+    writeDicePrefs(s, { open: true, dice: 'd66', enter: false });
+    expect(readDicePrefs(s)).toEqual({ open: true, dice: 'd66', enter: false });
     s.m.set(DICE_PREFS_KEY, '{nope');
-    expect(readDicePrefs(s)).toEqual({ open: false, dice: 'd6' });
+    expect(readDicePrefs(s)).toEqual({ open: false, dice: 'd6', enter: false });
     s.m.set(DICE_PREFS_KEY, JSON.stringify({ open: 'yes', dice: 'd20' }));
-    expect(readDicePrefs(s)).toEqual({ open: false, dice: 'd6' });
+    expect(readDicePrefs(s)).toEqual({ open: false, dice: 'd6', enter: false });
     const throws = { getItem: () => { throw new Error('blocked'); }, setItem: () => { throw new Error('blocked'); } };
-    expect(readDicePrefs(throws)).toEqual({ open: false, dice: 'd6' });
-    expect(() => writeDicePrefs(throws, { open: true, dice: 'd3' })).not.toThrow();
-    expect(readDicePrefs(undefined)).toEqual({ open: false, dice: 'd6' });
+    expect(readDicePrefs(throws)).toEqual({ open: false, dice: 'd6', enter: false });
+    expect(() => writeDicePrefs(throws, { open: true, dice: 'd3', enter: false })).not.toThrow();
+    expect(readDicePrefs(undefined)).toEqual({ open: false, dice: 'd6', enter: false });
   });
 });
