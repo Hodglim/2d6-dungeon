@@ -4,7 +4,7 @@
   import { findTable, type RefGroup } from '../../systems/dungeon/referenceTables';
   import type { DungeonTables } from '../../systems/dungeon/tables';
   import TableView from './TableView.svelte';
-  import { goBack, isSlug, openTable, searchTables, setModifier, setResult, showList, type TablesState } from './tablesState';
+  import { goBack, isSlug, openTable, searchTables, setResult, showList, type TablesState } from './tablesState';
 
   interface Props {
     tables: DungeonTables | null;
@@ -62,7 +62,6 @@
           modifier={s.modifier[shown.code] ?? 0}
           result={s.results[shown.code] ?? null}
           canBack={s.back.length > 0}
-          onmodifier={(n) => onstate(setModifier(s, shown.code, n))}
           onresult={(r) => onstate(setResult(s, shown.code, r))}
           onopen={open}
           onback={() => onstate(goBack(s))}

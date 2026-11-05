@@ -2,9 +2,9 @@
   // One reference table: header, intro, rows, notes, and (when it has dice) a roll with a modifier.
   // Rolling only shows a result: nothing here touches the game.
   import { naturalTotal, rollReference, type RefRoll, type RefTable } from '../../systems/dungeon/referenceTables';
-  import { rollD6 } from '../../systems/dungeon/rules';
   import type { DungeonTables } from '../../systems/dungeon/tables';
-  import DiceEntry from '../DiceEntry.svelte';
+  import type { DiceJob } from '../diceDesk';
+  import RollCard from '../RollCard.svelte';
   import RefText from './RefText.svelte';
   import { isSlug } from './tablesState';
 
@@ -15,57 +15,54 @@
     modifier: number;
     result: RefRoll | null;
     canBack: boolean;
-    onmodifier: (n: number) => void;
     onresult: (r: RefRoll) => void;
     onopen: (code: string, modifier: number) => void;
     onback: () => void;
     onlist: () => void;
   }
-  let { code, table, tables, modifier, result, canBack, onmodifier, onresult, onopen, onback, onlist }: Props = $props();
+  let { code, table, tables, modifier, result, canBack, onresult, onopen, onback, onlist }: Props = $props();
 
   const minus = (n: number) => (n < 0 ? `−${Math.abs(n)}` : String(n));
   const rolls = $derived(table.dice !== null);
-  const usesModifier = $derived(table.dice !== null && table.dice !== 'd66');
   /** Cells after the roll column (rollable tables), or every column (lists). */
   const cellHeads = $derived(rolls ? table.columns.slice(1) : table.columns);
   /** The result's row, unless the table changed under it. */
   const hit = $derived(result && result.row !== null ? (table.rows[result.row] ?? null) : null);
 
   let typedError = $state<string | null>(null);
-  /** Remounts the dice after each roll (and for each table) so they start clean. */
-  let rollSeq = $state(0);
 
-  function apply(faces: number[]) {
-    const r = rollReference(table, faces, modifier);
+  function apply(faces: number[], m: number) {
+    const r = rollReference(table, faces, m);
     if (!r) return;
     typedError = null;
-    rollSeq++;
     onresult(r);
   }
 
-  function rollFaces(): number[] {
-    if (table.dice === 'd3' || table.dice === 'd6') return [rollD6(Math.random)]; // a D3 is a D6 read in halves
-    return [rollD6(Math.random), rollD6(Math.random)];
-  }
-
-  function enter(values: string[]) {
+  function enter(values: string[], m: number): string | null {
     const faces = values.map((v) => (/^\s*\d+\s*$/.test(v) ? Number(v) : NaN));
     if (!table.dice || naturalTotal(table.dice, faces) === null) {
       typedError = table.dice === 'd3' || table.dice === 'd6' ? 'Type a number from 1 to 6.' : 'Type a number from 1 to 6 on each die.';
-      return;
+      return typedError;
     }
-    apply(faces);
+    apply(faces, m);
+    return null;
   }
 
-  // The modifier field: − and + buttons, or typing a whole number (a minus sign of either kind).
-  // While the field has focus it keeps what was typed; it is reformatted only on blur.
-  let draft = $state<string | null>(null);
-  function typed(e: Event) {
-    const raw = (e.currentTarget as HTMLInputElement).value;
-    draft = raw;
-    const v = raw.trim().replace(/[−–]/g, '-');
-    if (/^[+-]?\d{1,3}$/.test(v)) onmodifier(Number(v));
-  }
+  /** The roll the floating roller aims at while this table is in front; `modifier` is only its starting value. */
+  const job = $derived<DiceJob | null>(
+    table.dice
+      ? {
+          id: `table:${code}`,
+          kind: 'watcher',
+          label: isSlug(code) ? table.name : `${code} ${table.name}`,
+          dice: table.dice,
+          modifier: table.dice === 'd66' ? null : modifier,
+          rolled: (faces, m) => apply(faces, m),
+          enter: (values, m) => enter(values, m),
+          error: typedError,
+        }
+      : null,
+  );
 
   const sum = $derived.by(() => {
     if (!result) return '';
@@ -121,26 +118,7 @@
 
 {#if table.dice}
   <section class="rolling" aria-label="Roll on {code}">
-    {#key `${code}:${rollSeq}`}
-      <DiceEntry
-        dice={table.dice}
-        label={table.dice === 'd3' ? 'D3' : 'D6'}
-        labels={table.dice === 'd66' ? ['Red · tens', 'Blue · units'] : undefined}
-        error={typedError}
-        enterLabel="Use this"
-        onenter={enter}
-        onroll={rollFaces}
-        onrolled={apply}
-      />
-    {/key}
-    {#if usesModifier}
-      <div class="mod">
-        <label for="ref-mod-{code}">Modifier</label>
-        <button type="button" aria-label="Modifier down" onclick={() => { draft = null; onmodifier(modifier - 1); }}>−</button>
-        <input id="ref-mod-{code}" type="text" inputmode="numeric" autocomplete="off" value={draft ?? minus(modifier)} oninput={typed} onblur={() => (draft = null)} />
-        <button type="button" aria-label="Modifier up" onclick={() => { draft = null; onmodifier(modifier + 1); }}>+</button>
-      </div>
-    {/if}
+    {#if job}<RollCard {job} />{/if}
     {#if result}
       <div class="result" role="status" data-testid="ref-result">
         <p class="line"><span class="sum">{sum}</span>{#if result.clamped !== result.total}<span class="counts">{` · counts as ${minus(result.clamped)}`}</span>{/if}</p>
@@ -233,21 +211,6 @@
     background: var(--paper-dim);
     border-radius: 8px;
   }
-  .mod {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-  .mod label {
-    font-weight: 600;
-    margin-right: 4px;
-  }
-  .mod input {
-    width: 70px;
-    text-align: center;
-    font-weight: 700;
-    padding: 0 6px;
-  }
   .result {
     padding: 8px 12px;
     background: var(--paper);
@@ -282,8 +245,7 @@
     font-weight: 600;
     color: var(--danger);
   }
-  button,
-  input {
+  button {
     min-height: 48px;
     font: inherit;
     font-size: 17px;
@@ -298,8 +260,7 @@
     padding: 0 14px;
     cursor: pointer;
   }
-  button:focus-visible,
-  input:focus-visible {
+  button:focus-visible {
     outline: 3px solid var(--accent);
     outline-offset: 2px;
   }

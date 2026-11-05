@@ -2257,10 +2257,33 @@ for (const reduced of [false, true]) {
   const toolbarHeight = () => p.$eval('header.toolbar', (e) => e.getBoundingClientRect().height);
   const resultText = async () => ((await p.textContent(`${pane} [data-testid=ref-result]`).catch(() => null)) ?? '').replace(/\s+/g, ' ').trim();
   const hitRow = () => p.$$eval(`${pane} tbody tr`, (rows) => rows.findIndex((r) => r.classList.contains('hit')));
-  const typeD6 = async (v) => {
-    await p.fill(`${pane} input[aria-label="D6"]`, String(v));
-    await p.click(`${pane} .rolling button:text-is("Use this")`);
+  // The dice are the floating roller's: its Dice button opens it, "Enter my roll" types, its Roll button rolls.
+  const panel = '[data-testid=dice-panel]';
+  const rollerOpen = async () => {
+    if (!(await p.isVisible(panel))) await p.click('header.toolbar button[aria-label="Dice"]');
+    await p.waitForSelector(panel);
+  };
+  const enterMode = async (on) => {
+    await rollerOpen();
+    if (((await p.getAttribute(`${panel} [data-testid=dice-enter]`, 'aria-pressed')) === 'true') !== on) await p.click(`${panel} [data-testid=dice-enter]`);
+  };
+  const typedBoxes = `${panel} [data-testid=dice-typed] input`;
+  const useTyped = async (...vals) => {
+    await enterMode(true);
+    for (let i = 0; i < vals.length; i++) await p.fill(`:nth-match(${typedBoxes}, ${i + 1})`, String(vals[i]));
+    await p.click(`${panel} [data-testid=dice-typed] button:text-is("Use these")`);
     await p.waitForTimeout(200);
+  };
+  const typeD6 = (v) => useTyped(v);
+  const rollerRoll = async () => {
+    await enterMode(false);
+    await p.click(`${panel} button.roll`);
+    await p.waitForTimeout(900);
+  };
+  const rollerFor = async () => ((await p.textContent(`${panel} [data-testid=dice-for] .for-text`).catch(() => null)) ?? '').replace(/\s+/g, ' ').trim();
+  const setMod = async (t) => {
+    await p.fill(`${panel} [data-testid=dice-mod]`, t);
+    await p.waitForTimeout(100);
   };
   const smallButtons = async (where) => {
     const small = await p.$$eval(`${pane} button, ${pane} input`, (els) =>
@@ -2336,16 +2359,23 @@ for (const reduced of [false, true]) {
   await p.click(`${pane} .list button:has-text("XX1 —")`);
   await p.waitForSelector(`${pane} .rolling`);
   if (await p.isVisible(`${pane} button:text-is("‹ Back")`)) problems.push(`${tag}: Back shown with nothing to go back to`);
-  await p.click(`${pane} button[aria-label="Modifier down"]`);
-  await p.click(`${pane} button[aria-label="Modifier down"]`);
+  if (await p.isVisible(`${pane} .mod`)) problems.push(`${tag}: the pane still has its own modifier field`);
+  // The card's Roll hands the roll to the roller: the table shows a result and highlights its row.
+  await enterMode(false);
+  await p.click(`${pane} [data-testid=roll-card] button:text-is("🎲 Roll")`);
+  await p.waitForTimeout(900);
+  if (!(await p.isVisible(`${pane} [data-testid=ref-result]`)) || (await hitRow()) < 0) problems.push(`${tag}: the card's Roll gave no result row (hit ${await hitRow()})`);
+  console.log(`${tag}: card Roll "${await resultText()}"`);
+  if (!(await rollerFor()).startsWith('XX1 Practice Crate Table · D6')) problems.push(`${tag}: roller For line "${await rollerFor()}"`);
+  await p.click(`${panel} button[aria-label="Modifier down"]`);
+  await p.click(`${panel} button[aria-label="Modifier down"]`);
   await typeD6(1);
   let r = await resultText();
   console.log(`${tag}: XX1 result "${r}"`);
   if (!r.startsWith('1 − 2 = −1 · counts as 1')) problems.push(`${tag}: clamped result "${r}"`);
   if ((await hitRow()) !== 0) problems.push(`${tag}: clamped roll highlights row ${await hitRow()}`);
   await shot('72-xx1-clamped.png', p);
-  await p.fill(`${pane} .mod input`, '-1');
-  await p.waitForTimeout(100);
+  await setMod('-1');
   await typeD6(2);
   r = await resultText();
   if (!r.startsWith('2 − 1 = 1') || r.includes('counts as')) problems.push(`${tag}: XX1 result "${r}"`);
@@ -2364,31 +2394,38 @@ for (const reduced of [false, true]) {
   await p.waitForTimeout(100);
   const top2 = await p.$eval(`${pane} .body`, (e) => e.scrollTop);
   if (top2 !== 0) problems.push(`${tag}: XX2 opened scrolled to ${top2} (was ${scrolled})`);
-  const mod2 = await p.inputValue(`${pane} .mod input`);
+  const mod2 = await p.inputValue(`${panel} [data-testid=dice-mod]`);
   if (mod2 !== '1') problems.push(`${tag}: XX2 opened with modifier "${mod2}"`);
   if (!(await p.isVisible(`${pane} button:text-is("‹ Back")`))) problems.push(`${tag}: no Back on XX2`);
-  await p.fill(`${pane} input[aria-label="First die"]`, '1');
-  await p.fill(`${pane} input[aria-label="Second die"]`, '3');
-  await p.click(`${pane} .rolling button:text-is("Use this")`);
-  await p.waitForTimeout(200);
+  await useTyped(1, 3);
   r = await resultText();
   if (!r.startsWith('4 + 1 = 5') || !r.includes('No row for 5')) problems.push(`${tag}: gap result "${r}"`);
   if ((await hitRow()) !== -1) problems.push(`${tag}: a gap highlights row ${await hitRow()}`);
   await shot('74-xx2-gap.png', p);
-  await p.click(`${pane} .rolling button:has-text("Roll for me")`);
-  await p.waitForTimeout(900);
+  await rollerRoll();
   r = await resultText();
   if (!/^\d+ \+ 1 = \d+/.test(r)) problems.push(`${tag}: animated roll result "${r}"`);
   console.log(`${tag}: XX2 rolled "${r}"`);
 
   // 4. Back returns to XX1 with its modifier and result.
+  let freeResult = '';
   await p.click(`${pane} button:text-is("‹ Back")`);
   await p.waitForSelector(`${pane} h3:has-text("Practice Crate Table")`);
   r = await resultText();
   if (!r.startsWith('2 − 1 = 1')) problems.push(`${tag}: Back lost XX1's result ("${r}")`);
-  if ((await p.inputValue(`${pane} .mod input`)) !== '−1') problems.push(`${tag}: Back lost XX1's modifier ("${await p.inputValue(`${pane} .mod input`)}")`);
+  // The roller's modifier is the roller's: Back restarts the table's job from the modifier the table state holds.
+  if (!(await rollerFor()).startsWith('XX1 Practice Crate Table · D6')) problems.push(`${tag}: after Back the roller is for "${await rollerFor()}"`);
   if ((await hitRow()) !== 0) problems.push(`${tag}: Back lost the highlight`);
   await shot('75-back-to-xx1.png', p);
+  // With the table open, a free D6 roll (the roller's own Roll after ×) also fills the result and the row.
+  await p.click(`${panel} button[aria-label="Roll freely"]`);
+  await rollerRoll();
+  const freeFace = ((await p.textContent(`${panel} [data-testid=dice-history] li`)) ?? '').match(/^Free D6: (\d)$/)?.[1];
+  r = await resultText();
+  console.log(`${tag}: free D6 "${r}"`);
+  if (!freeFace || !r.startsWith(freeFace) || r.includes('=')) problems.push(`${tag}: free roll ${freeFace} did not reach the table ("${r}")`);
+  if ((await hitRow()) < 0) problems.push(`${tag}: a free D6 roll left no highlighted row`);
+  freeResult = r;
 
   // 5. The Hero tab and back: the pane keeps its state.
   await p.click('header.toolbar button.hero');
@@ -2400,7 +2437,7 @@ for (const reduced of [false, true]) {
   await p.click('#side-tab-tables');
   await p.waitForSelector(pane);
   r = await resultText();
-  if (!(await p.isVisible(`${pane} h3:has-text("Practice Crate Table")`)) || !r.startsWith('2 − 1 = 1')) problems.push(`${tag}: switching tabs lost the table or result ("${r}")`);
+  if (!(await p.isVisible(`${pane} h3:has-text("Practice Crate Table")`)) || r !== freeResult) problems.push(`${tag}: switching tabs lost the table or result ("${r}")`);
   if ((await undoText()) !== undo0) problems.push(`${tag}: rolling added a History step ("${await undoText()}", was "${undo0}")`);
 
   // 6. A d66 table has no modifier field; 2 then 5 is 25.
@@ -2408,11 +2445,9 @@ for (const reduced of [false, true]) {
   await p.fill(`${pane} input[type=search]`, 'echo');
   await p.click(`${pane} .list button:has-text("XX3 —")`);
   await p.waitForSelector(`${pane} .rolling`);
-  if (await p.isVisible(`${pane} .mod`)) problems.push(`${tag}: d66 table shows a modifier field`);
-  await p.fill(`${pane} input[aria-label="Red · tens die"]`, '2');
-  await p.fill(`${pane} input[aria-label="Blue · units die"]`, '5');
-  await p.click(`${pane} .rolling button:text-is("Use this")`);
-  await p.waitForTimeout(200);
+  await rollerOpen();
+  if (await p.isVisible(`${panel} [data-testid=dice-mod]`)) problems.push(`${tag}: d66 table shows a modifier field`);
+  await useTyped(2, 5);
   r = await resultText();
   if (!r.startsWith('25') || !r.includes('Footsteps')) problems.push(`${tag}: d66 result "${r}"`);
   if ((await hitRow()) !== 1) problems.push(`${tag}: d66 highlights row ${await hitRow()}`);
@@ -2423,23 +2458,16 @@ for (const reduced of [false, true]) {
   await p.fill(`${pane} input[type=search]`, 'XX4');
   await p.click(`${pane} .list button:has-text("XX4 —")`);
   await p.waitForSelector(`${pane} .rolling`);
-  await p.fill(`${pane} input[aria-label="D3"]`, '7');
-  await p.click(`${pane} .rolling button:text-is("Use this")`);
-  await p.waitForTimeout(150);
-  if (!(await p.isVisible(`${pane} .rolling [role=alert]`))) problems.push(`${tag}: a typed 7 on a D3 was accepted`);
-  await p.fill(`${pane} input[aria-label="D3"]`, '4');
-  await p.click(`${pane} .rolling button:text-is("Use this")`);
-  await p.waitForTimeout(150);
+  await useTyped(7);
+  if (!(await p.isVisible(`${panel} [data-testid=dice-typed] [role=alert]`))) problems.push(`${tag}: a typed 7 on a D3 was accepted`);
+  await useTyped(4);
   r = await resultText();
   if (!r.startsWith('4 → 2') || (await hitRow()) !== 1) problems.push(`${tag}: d3 typed 4 gave "${r}" (row ${await hitRow()})`);
-  await p.fill(`${pane} input[aria-label="D3"]`, '5');
-  await p.click(`${pane} .rolling button:text-is("Use this")`);
-  await p.waitForTimeout(150);
+  await useTyped(5);
   r = await resultText();
   console.log(`${tag}: d3 typed 5 → "${r}"`);
   if (!r.startsWith('5 → 3') || !r.includes('Surprisingly deep.')) problems.push(`${tag}: d3 result "${r}"`);
-  await p.click(`${pane} .rolling button:has-text("Roll for me")`);
-  await p.waitForTimeout(900);
+  await rollerRoll();
   r = await resultText();
   const d3m = r.match(/^([1-6]) → ([1-3])\b/);
   if (!d3m || Math.ceil(Number(d3m[1]) / 2) !== Number(d3m[2])) problems.push(`${tag}: d3 animated roll "${r}"`);
@@ -2492,6 +2520,7 @@ for (const reduced of [false, true]) {
   const menu = () => p.click('header.toolbar button[aria-label="Menu"]');
   const enc = '.encounter-pane';
   const tp = '.tables-pane';
+  const dicePanel = '[data-testid=dice-panel]';
   const ENC = 'Made-up: a GRUMBLER sits by a crate, see XX1 -1 or practice-shelf.';
   const fx = JSON.parse(readFileSync('tests/fixtures/dungeon-tables.fixture.json', 'utf8'));
   const swap = (v) => {
@@ -2562,7 +2591,11 @@ for (const reduced of [false, true]) {
   const undoBefore = (await p.textContent('header.toolbar button.history'))?.trim();
   await p.click('[data-editor=room] button:text-is("📖 Open XX1 −1")');
   await p.waitForSelector(`${tp} h3:has-text("Practice Crate Table")`);
-  if ((await p.inputValue(`${tp} .mod input`)) !== '−1') problems.push(`${tag}: XX1 opened with modifier "${await p.inputValue(`${tp} .mod input`)}"`);
+  if (!(await p.isVisible(dicePanel))) await p.click('header.toolbar button[aria-label="Dice"]');
+  await p.waitForSelector(dicePanel);
+  const forText = ((await p.textContent(`${dicePanel} [data-testid=dice-for] .for-text`)) ?? '').replace(/\s+/g, ' ').trim();
+  if (!forText.endsWith('· D6 −1') || !forText.includes('XX1')) problems.push(`${tag}: XX1 opened with For line "${forText}"`);
+  if (await p.isVisible(`${tp} .mod`)) problems.push(`${tag}: the pane still has a modifier field`);
   if ((await p.getAttribute('#side-tab-tables', 'aria-selected')) !== 'true') problems.push(`${tag}: Tables tab not selected`);
   if ((await p.textContent('header.toolbar button.history'))?.trim() !== undoBefore) problems.push(`${tag}: opening a table added a History step`);
   await shot('81-table-opened-from-text.png', p);
@@ -2573,7 +2606,7 @@ for (const reduced of [false, true]) {
   await p.waitForSelector(`${tp} h3:has-text("Practice Crate Table")`);
 
   // The modifier field: typing is not rewritten under the caret; every minus form works; blur tidies.
-  const mod = `${tp} .mod input`;
+  const mod = `${dicePanel} [data-testid=dice-mod]`;
   await p.focus(mod);
   await p.fill(mod, '');
   await p.keyboard.type('-1');
@@ -2613,7 +2646,7 @@ for (const reduced of [false, true]) {
   await shot('82-victory-table-button.png', p);
   await p.click(`${enc} .victory button:text-is("📖 Open XX2 +1")`);
   await p.waitForSelector(`${tp} h3:has-text("Practice Trinket Table")`);
-  if ((await p.inputValue(`${tp} .mod input`)) !== '1') problems.push(`${tag}: XX2 opened with modifier "${await p.inputValue(`${tp} .mod input`)}"`);
+  if ((await p.inputValue(`${dicePanel} [data-testid=dice-mod]`)) !== '1') problems.push(`${tag}: XX2 opened with modifier "${await p.inputValue(`${dicePanel} [data-testid=dice-mod]`)}"`);
   await shot('83-table-opened-from-victory.png', p);
   await p.click('#side-tab-encounter');
   await p.waitForSelector(`${enc} .victory`);
