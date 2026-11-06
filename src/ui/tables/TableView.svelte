@@ -32,8 +32,11 @@
     /** Totals of dice amounts rolled in the result, by "cell:part", kept by the parent so they outlast this view. */
     totals?: Record<string, string>;
     ontotal?: (key: string, total: string) => void;
+    /** The result's potion went to the hero, kept by the parent so it outlasts this view; without it it's kept here. */
+    potionAdded?: boolean;
+    onpotionadded?: () => void;
   }
-  let { code, table, tables, modifier, result, canBack, onresult, onopen, onback, onlist, nav = true, jobId, hero = null, onaddpotion, totals, ontotal }: Props = $props();
+  let { code, table, tables, modifier, result, canBack, onresult, onopen, onback, onlist, nav = true, jobId, hero = null, onaddpotion, totals, ontotal, potionAdded, onpotionadded }: Props = $props();
 
   /** One result cell's amount totals, by place in its text. */
   function cellTotals(j: number): Record<number, string> {
@@ -57,12 +60,14 @@
   /** A known potion the result's row names, when there is a hero to give it to. */
   const potion = $derived(hit && hero && onaddpotion ? potionInRow(tables, hit.cells) : null);
   const potionRoom = $derived(hero ? listLimit(hero, 'potions') - hero.potions.length : 0);
-  /** The result whose potion was added, so the button isn't tapped twice for one roll. */
+  /** The result whose potion was added, so the button isn't tapped twice for one roll (when the parent doesn't keep it). */
   let addedFrom = $state.raw<RefRoll | null>(null);
+  const added = $derived(onpotionadded ? (potionAdded ?? false) : result !== null && addedFrom === result);
   function addPotion() {
-    if (!potion || !result || potionRoom <= 0) return;
+    if (!potion || !result || potionRoom <= 0 || added) return;
     onaddpotion?.(potion);
-    addedFrom = result;
+    if (onpotionadded) onpotionadded();
+    else addedFrom = result;
   }
 
   function apply(faces: number[], m: number) {
@@ -179,7 +184,7 @@
           </div>
           {#if potion && hero}
             <div class="potion" data-testid="add-potion">
-              {#if addedFrom === result}
+              {#if added}
                 <p>Added {potion.name} to the hero's potions.</p>
               {:else if potionRoom <= 0}
                 <p>No room for {potion.name}: potions {hero.potions.length} / {listLimit(hero, 'potions')}.</p>

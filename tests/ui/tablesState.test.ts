@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import fixture from '../fixtures/dungeon-tables.fixture.json';
 import type { RefRoll } from '../../src/systems/dungeon/referenceTables';
 import type { DungeonTables } from '../../src/systems/dungeon/tables';
-import { goBack, initialTablesState, openTable, searchTables, setModifier, setResult, setTotal, showList } from '../../src/ui/tables/tablesState';
+import { goBack, initialTablesState, openTable, searchTables, markPotionAdded, setModifier, setResult, setTotal, showList } from '../../src/ui/tables/tablesState';
 
 const tables = JSON.parse(JSON.stringify(fixture)) as DungeonTables;
 const roll = (row: number | null): RefRoll => ({ natural: 2, modifier: -1, total: 1, clamped: 1, row });
@@ -138,5 +138,23 @@ describe('setTotal', () => {
     s = setResult(s, 'XX1', roll(1));
     expect(s.totals.XX1).toBeUndefined();
     expect(s.totals.XX2).toEqual({ '0:1': '3' });
+  });
+});
+
+describe('markPotionAdded', () => {
+  it('marks that the potion in a table result went to the hero, and the mark survives going to the list and back', () => {
+    let s = openTable(initialTablesState, 'XX1');
+    s = setResult(s, 'XX1', roll(0));
+    s = markPotionAdded(s, 'XX1');
+    s = openTable(showList(s), 'XX1');
+    expect(s.potionAdded.XX1).toBe(true);
+    expect(s.potionAdded.XX2).toBeUndefined();
+  });
+  it('a new result on the table clears the mark, and leaves other tables be', () => {
+    let s = markPotionAdded(setResult(initialTablesState, 'XX1', roll(0)), 'XX1');
+    s = markPotionAdded(setResult(s, 'XX2', roll(1)), 'XX2');
+    s = setResult(s, 'XX1', roll(1));
+    expect(s.potionAdded.XX1).toBeUndefined();
+    expect(s.potionAdded.XX2).toBe(true);
   });
 });

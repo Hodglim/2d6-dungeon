@@ -9,7 +9,7 @@
   import type { Hero } from '../../systems/dungeon/hero';
   import type { KnownPotion } from '../../systems/dungeon/potions';
   import TableView from './TableView.svelte';
-  import { goBack, isSlug, openTable, searchTables, setResult, setTotal, showList, type TablesGroup, type TablesState } from './tablesState';
+  import { goBack, isSlug, markPotionAdded, openTable, searchTables, setResult, setTotal, showList, type TablesGroup, type TablesState } from './tablesState';
 
   interface Props {
     tables: DungeonTables | null;
@@ -102,6 +102,8 @@
           onresult={(r) => onstate(setResult(s, shown.code, r))}
           totals={s.totals[shown.code] ?? {}}
           ontotal={(key, total) => onstate(setTotal(s, shown.code, key, total))}
+          potionAdded={s.potionAdded[shown.code] ?? false}
+          onpotionadded={() => onstate(markPotionAdded(s, shown.code))}
           onopen={open}
           onback={() => onstate(goBack(s))}
           onlist={() => onstate(showList(s))}

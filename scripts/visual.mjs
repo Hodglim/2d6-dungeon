@@ -2542,6 +2542,7 @@ for (const reduced of [false, true]) {
   // A hero (for the Hero tab), on the fixture tables, plus a made-up table whose row names dice amounts.
   const fx19 = JSON.parse(readFileSync('tests/fixtures/dungeon-tables.fixture.json', 'utf8'));
   fx19.tables.referenceTables.XX9 = { name: 'Made-up Pouch Table', group: 'generic', page: 99, dice: 'd6', columns: ['Roll', 'Result'], rows: [{ roll: '1-6', cells: ['A made-up pouch with 2D6 +10 SC and 4D6 +10 GC.'] }] };
+  fx19.tables.referenceTables.XX8 = { name: 'Made-up Flask Table', group: 'generic', page: 98, dice: 'd6', columns: ['Roll', 'Result'], rows: [{ roll: '1-6', cells: ['Tonic of Brief Hush'] }] };
   await p.setInputFiles('input[data-extra="tables"]', { name: 'tables.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(fx19)) });
   await p.waitForTimeout(500);
   await menu();
@@ -2732,6 +2733,25 @@ for (const reduced of [false, true]) {
   const totalsBack = (await resultText()).match(/= \d+/g)?.join(' ');
   console.log(`${tag}: amount totals "${bothTotals}", after reopening "${totalsBack}"`);
   if (!bothTotals || totalsBack !== bothTotals) problems.push(`${tag}: amount totals "${bothTotals}" were "${totalsBack}" after reopening the pane`);
+
+  // A potion rolled on a table, added to the hero, stays added after a trip to the Hero tab (no second Add button).
+  await p.click(`${pane} button:text-is("☰ List")`);
+  await p.fill(`${pane} input[type=search]`, 'XX8');
+  await p.click(`${pane} .list button:has-text("XX8 —")`);
+  await p.waitForSelector(`${pane} .rolling`);
+  await useTyped(2);
+  await enterMode(false);
+  await p.click(`${pane} [data-testid=add-potion] button:text-is("Add Tonic of Brief Hush to hero")`);
+  await p.waitForTimeout(200);
+  const addedLine = ((await p.textContent(`${pane} [data-testid=add-potion]`)) ?? '').trim();
+  await p.click('#side-tab-hero');
+  await p.waitForTimeout(150);
+  if (await p.isVisible(pane)) problems.push(`${tag}: Tables pane still showing on the Hero tab (potion)`);
+  await p.click('#side-tab-tables');
+  await p.waitForSelector(`${pane} [data-testid=add-potion]`);
+  const addedBack = ((await p.textContent(`${pane} [data-testid=add-potion]`)) ?? '').trim();
+  console.log(`${tag}: potion "${addedLine}", after the Hero tab "${addedBack}"`);
+  if (!addedLine.startsWith('Added Tonic of Brief Hush') || addedBack !== addedLine) problems.push(`${tag}: potion "${addedLine}" was "${addedBack}" after the Hero tab`);
 
   // 7. A list has no Roll button.
   await p.click(`${pane} button:text-is("☰ List")`);

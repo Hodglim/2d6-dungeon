@@ -15,6 +15,8 @@ export interface TablesState {
   results: Record<string, RefRoll>;
   /** Totals of dice amounts rolled in each table's result ("2D6 +10 SC" = 17), by "cell:part"; a new result clears them. */
   totals: Record<string, Record<string, string>>;
+  /** Tables whose current result's potion has gone to the hero (so it isn't added twice); a new result clears it. */
+  potionAdded: Record<string, true>;
   query: string;
   /** A table group, or a kind of card (gods, herbs) from the card pack, shown as pictures. */
   group: TablesGroup;
@@ -22,7 +24,7 @@ export interface TablesState {
 
 export type TablesGroup = RefGroup | 'all' | CardKind;
 
-export const initialTablesState: TablesState = { open: null, back: [], modifier: {}, results: {}, totals: {}, query: '', group: 'all' };
+export const initialTablesState: TablesState = { open: null, back: [], modifier: {}, results: {}, totals: {}, potionAdded: {}, query: '', group: 'all' };
 
 export const GROUP_ORDER: RefGroup[] = ['generic', 'random', 'loot', 'level', 'optional'];
 
@@ -48,10 +50,16 @@ export function setModifier(s: TablesState, code: string, modifier: number): Tab
   return { ...s, modifier: { ...s.modifier, [code]: modifier } };
 }
 
-/** A new result for a table; the totals of amounts rolled in its old result go. */
+/** A new result for a table; the totals of amounts rolled in its old result, and its potion's added mark, go. */
 export function setResult(s: TablesState, code: string, r: RefRoll): TablesState {
   const { [code]: _old, ...totals } = s.totals;
-  return { ...s, results: { ...s.results, [code]: r }, totals };
+  const { [code]: _added, ...potionAdded } = s.potionAdded;
+  return { ...s, results: { ...s.results, [code]: r }, totals, potionAdded };
+}
+
+/** The potion in a table's current result went to the hero. */
+export function markPotionAdded(s: TablesState, code: string): TablesState {
+  return { ...s, potionAdded: { ...s.potionAdded, [code]: true } };
 }
 
 /** The total of a dice amount rolled in a table's result, by "cell:part". */
