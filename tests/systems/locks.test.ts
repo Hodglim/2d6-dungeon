@@ -47,12 +47,15 @@ describe('lock picks', () => {
     ['Lock Pick −1 (2)', -1, 2],
     ['Rusty Lock Pick +2 (3)', 2, 3],
   ])('parses %s', (text, bonus, uses) => expect(parseLockPick(text)).toEqual({ bonus, uses }));
-  it.each(['Lock Pick', 'Lock Pick +2', 'Lock Box +2 (3)'])('is not a lock pick: %s', (text) => expect(parseLockPick(text)).toBeNull());
+  it.each(['Lock Pick', 'Lock Pick +2', 'Lock Box +2 (3)', 'Lock Pick +1 (0)'])('is not a lock pick: %s', (text) => expect(parseLockPick(text)).toBeNull());
   it('findLockPicks lists them with their item index', () => {
     expect(findLockPicks(hero({ smallItems: ['Rope', 'Lock Pick +2 (3)'] }))).toEqual([{ index: 1, text: 'Lock Pick +2 (3)', bonus: 2, uses: 3 }]);
   });
   it('useLockPick counts a use down', () => {
     expect(useLockPick(hero({ smallItems: ['Lock Pick +2 (3)'] }), 0).smallItems).toEqual(['Lock Pick +2 (2)']);
+  });
+  it("useLockPick counts down the pick's own number, not another in the item", () => {
+    expect(useLockPick(hero({ smallItems: ['Pouch (2): Lock Pick +1 (3)'] }), 0).smallItems).toEqual(['Pouch (2): Lock Pick +1 (2)']);
   });
   it('useLockPick removes the last use and keeps the others in order', () => {
     expect(useLockPick(hero({ smallItems: ['Rope', 'Lock Pick +2 (1)', 'Chalk'] }), 1).smallItems).toEqual(['Rope', 'Chalk']);

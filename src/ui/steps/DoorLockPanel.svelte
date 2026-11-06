@@ -8,7 +8,7 @@
   import { parseDie } from '../../systems/dungeon/rules';
   import type { DungeonTables } from '../../systems/dungeon/tables';
   import type { DiceJob } from '../diceDesk';
-  import { lockStage } from '../lockPanel';
+  import { lockStage, lockViewKey } from '../lockPanel';
   import { checkLock, pickLock, rollLockQuality, waitForPatrol } from '../lockActions';
   import RollCard from '../RollCard.svelte';
 
@@ -56,9 +56,15 @@
       onopen(doorId, then);
     }
   });
-  // A damaged lock can't be picked: back to the choices.
+  // Undo, a new check or a failed pick: back to the three choices, with no old error.
+  const viewKey = $derived(door ? lockViewKey(door, tables) : '');
+  let seenKey: string | null = null;
   $effect(() => {
-    if (damaged && view === 'pick') view = 'choices';
+    if (seenKey !== null && viewKey !== seenKey) {
+      view = 'choices';
+      error = null;
+    }
+    seenKey = viewKey;
   });
 
   const BAD_DIE = 'Enter a whole number from 1 to 6';

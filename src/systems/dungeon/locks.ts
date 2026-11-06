@@ -47,7 +47,8 @@ export function parseLockPick(item: string): { bonus: number; uses: number } | n
   const m = PICK.exec(item);
   if (!m) return null;
   const n = Number(m[2]);
-  return { bonus: m[1] === '+' ? n : -n, uses: Number(m[3]) };
+  const uses = Number(m[3]);
+  return uses > 0 ? { bonus: m[1] === '+' ? n : -n, uses } : null;
 }
 
 export function findLockPicks(hero: Hero): LockPick[] {
@@ -64,7 +65,8 @@ export function useLockPick(hero: Hero, index: number): Hero {
   if (!p || text === undefined) return hero;
   const items = [...hero.smallItems];
   if (p.uses <= 1) items.splice(index, 1);
-  else items[index] = text.replace(/\(\s*\d+\s*\)/, `(${p.uses - 1})`);
+  // Rewrite the count inside the pick's own match, not some other "(n)" in the item.
+  else items[index] = text.replace(PICK, (whole) => whole.replace(/\(\s*\d+\s*\)$/, `(${p.uses - 1})`));
   return { ...hero, smallItems: items };
 }
 

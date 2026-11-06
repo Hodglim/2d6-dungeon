@@ -12,3 +12,6 @@ export function lockStage(door: Door, tables: DungeonTables | null): LockStage {
   if (gate === 'locked') return 'choices';
   return isChecked(door) ? 'open' : 'gone';
 }
+
+/** Changes whenever the panel should drop back to its three choices (Undo, a new check, a failed pick). */
+export const lockViewKey = (door: Door, tables: DungeonTables | null): string => `${lockStage(door, tables)}|${door.lock?.damaged === true}`;
