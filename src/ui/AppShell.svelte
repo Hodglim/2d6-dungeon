@@ -1026,6 +1026,13 @@
       {collapsed}
       ontoggle={() => (panelCollapsed = !panelCollapsed)}
       encounter={encounterHooks}
+      {history}
+      hero={$view.hero as Hero | null}
+      onlockopen={(doorId, then) => {
+        selection = null;
+        if (then === 'exit') flow.startFromExit(doorId);
+        else flow.startGap(doorId);
+      }}
     />
   {/snippet}
   {#if sideShown}

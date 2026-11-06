@@ -4,7 +4,8 @@
   import { type Command, removeDoor, updateDoor } from '../../core/commands';
   import { addDoorWithTool, checkDoorTool } from '../../core/doortool';
   import { randomId } from '../../core/ids';
-  import type { Door, DoorLock, DungeonMap } from '../../core/types';
+  import { withPadlock } from '../../core/doorLock';
+  import type { Door, DungeonMap } from '../../core/types';
   import { dungeonSystem } from '../../systems/dungeon';
   import { choiceOf, doorChoices, doorFromChoice } from '../doorChoice';
   import { doorSymbol, SYMBOL_SIZE } from '../doorSymbol';
@@ -35,8 +36,7 @@
 
   function setPadlock(d: Door, p: Padlock) {
     if (p === padlock) return;
-    const lock: DoorLock | null = p === 'none' ? null : { locked: p === 'locked', note: d.lock?.note ?? '', quality: d.lock?.quality ?? null };
-    edit(d, { lock });
+    onexec(updateDoor(d, withPadlock(d, p)));
   }
 
   let qualityText = $state('');
@@ -102,6 +102,7 @@
         <button aria-pressed={padlock === 'opened'} onclick={() => setPadlock(door, 'opened')}>Opened</button>
       </div>
     </div>
+    {#if door.lock?.damaged}<p class="warn" data-testid="lock-damaged">Lock damaged</p>{/if}
     {#if door.lock}
       <form class="quality" onsubmit={(e) => { e.preventDefault(); setQuality(door); }}>
         <label class="field">

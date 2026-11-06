@@ -2,7 +2,9 @@
   import type { Command } from '../core/commands';
   import type { ExecResult } from '../core/history';
   import { coverage, openExits } from '../core/query';
+  import type { History } from '../core/history';
   import type { DungeonMap } from '../core/types';
+  import type { Hero } from '../systems/dungeon/hero';
   import type { PlayFlow, Step } from '../interaction/playflow';
   import type { DungeonTables } from '../systems/dungeon/tables';
   import type { EncounterHooks } from './encounter/encounterActions';
@@ -10,6 +12,7 @@
   import ExitCountStep from './steps/ExitCountStep.svelte';
   import ExitsStep from './steps/ExitsStep.svelte';
   import ExitTypeStep from './steps/ExitTypeStep.svelte';
+  import DoorLockPanel from './steps/DoorLockPanel.svelte';
   import GapStep from './steps/GapStep.svelte';
   import LabelStep from './steps/LabelStep.svelte';
   import PositionStep from './steps/PositionStep.svelte';
@@ -48,9 +51,14 @@
     ontoggle: () => void;
     /** Roll and Fight buttons in a room's encounter text. */
     encounter?: EncounterHooks | null;
+    /** For the lock panel: its actions run through History, and picking reads the hero. */
+    history?: History | null;
+    hero?: Hero | null;
+    /** A door opened from the lock panel: start the room (or gap) flow for it. */
+    onlockopen?: (doorId: string, then: 'exit' | 'gap') => void;
   }
 
-  let { tool, map, flow, step, notice, gapMode, ongapmode, oncommit, selection, onexec, onselect, tables = null, levelText = '', ongodown, fighting = false, collapsed, ontoggle, encounter = null }: Props = $props();
+  let { tool, map, flow, step, notice, gapMode, ongapmode, oncommit, selection, onexec, onselect, tables = null, levelText = '', ongodown, fighting = false, collapsed, ontoggle, encounter = null, history = null, hero = null, onlockopen = () => {} }: Props = $props();
 
   /** Remounts an editor (fresh drafts) when a different thing is selected. */
   function selectionKey(s: Selection): string {
@@ -142,12 +150,26 @@
             <StairsEditor {map} featureId={playSelection.featureId} {onexec} {onselect} />
           {:else if playSelection.kind === 'feature' && featureKind === 'note'}
             <NoteEditor {map} selection={playSelection} {onexec} {onselect} />
+          {:else if playSelection.kind === 'lock' && history}
+            <DoorLockPanel
+              {map}
+              doorId={playSelection.doorId}
+              then={playSelection.then}
+              {history}
+              {tables}
+              {hero}
+              {fighting}
+              onclose={() => onselect(null)}
+              onopen={onlockopen}
+            />
           {/if}
         {/key}
         {#if notice}<p class="notice" role="status">{notice}</p>{/if}
-        <div class="row cancel">
-          <button data-testid="close-selection" onclick={() => onselect(null)}>Close</button>
-        </div>
+        {#if playSelection.kind !== 'lock'}
+          <div class="row cancel">
+            <button data-testid="close-selection" onclick={() => onselect(null)}>Close</button>
+          </div>
+        {/if}
       {:else}
         <h2>{titles[tool]}</h2>
         <p class="hint">{hint}</p>

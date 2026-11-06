@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { damageLock, isChecked, lockDoor, markChecked, openLock, setLockQuality } from '../../src/core/doorLock';
+import { damageLock, isChecked, lockDoor, markChecked, openLock, setLockQuality, withPadlock } from '../../src/core/doorLock';
 import { door } from './fixtures';
 
 const metal = () => door('d1', 2, 2, 'W', 'metal');
@@ -36,5 +36,23 @@ describe('doorLock', () => {
     expect(isChecked(metal())).toBe(false);
     expect(isChecked(markChecked(metal()))).toBe(true);
     expect(isChecked({ ...metal(), lock: { locked: false, note: '', quality: null } })).toBe(true);
+  });
+});
+
+describe('withPadlock (the Door editor padlock)', () => {
+  const locked = { ...metal(), checked: true as const, lock: { locked: true, note: 'n', quality: 7, damaged: true as const } };
+  it('none: no lock and fresh for a new check', () => {
+    const d = withPadlock(locked, 'none');
+    expect(d.lock).toBeNull();
+    expect(d.checked).toBeUndefined();
+  });
+  it('opened: unlocked, not damaged, note and quality kept', () => {
+    expect(withPadlock(locked, 'opened').lock).toEqual({ locked: false, note: 'n', quality: 7 });
+  });
+  it('locked: keeps the damage on a damaged lock', () => {
+    expect(withPadlock(locked, 'locked').lock).toEqual({ locked: true, note: 'n', quality: 7, damaged: true });
+  });
+  it('locked on a fresh door: a plain lock', () => {
+    expect(withPadlock(metal(), 'locked').lock).toEqual({ locked: true, note: '', quality: null });
   });
 });

@@ -24,3 +24,13 @@ export function openLock(d: Door): Door {
 
 /** Checked already: by the flag, or because it has a lock (set by the check, a table or by hand). */
 export const isChecked = (d: Door): boolean => d.checked === true || d.lock !== null;
+
+/** The Door editor's padlock, set by hand: "none" also forgets the lock check, so the door is fresh again. */
+export function withPadlock(d: Door, p: 'none' | 'locked' | 'opened'): Door {
+  if (p === 'none') {
+    const { checked: _gone, ...rest } = d;
+    return { ...rest, lock: null };
+  }
+  if (p === 'opened') return openLock(d);
+  return { ...d, lock: { ...d.lock, locked: true, note: d.lock?.note ?? '', quality: d.lock?.quality ?? null } };
+}
