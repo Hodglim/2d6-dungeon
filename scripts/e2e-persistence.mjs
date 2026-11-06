@@ -82,7 +82,7 @@ try {
     if (!(await page.isVisible(panel))) await page.click('header.toolbar button[aria-label="Dice"]');
     await page.waitForSelector(panel);
     const toggle = `${panel} [data-testid=dice-enter]`;
-    if ((await page.getAttribute(toggle, 'aria-pressed')) !== 'true') await page.click(toggle);
+    if (!(await page.isChecked(toggle))) await page.click(toggle);
     const boxes = `${panel} [data-testid=dice-typed] input`;
     for (let i = 0; i < values.length; i++) await page.fill(`:nth-match(${boxes}, ${i + 1})`, String(values[i]));
     await page.click(`${panel} [data-testid=dice-typed] button:text-is("Use these")`);

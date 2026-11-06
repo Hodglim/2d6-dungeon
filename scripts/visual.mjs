@@ -94,7 +94,7 @@ const rollerEnterModeOn = async (p, on) => {
   if (!(await p.isVisible(rollerPanel))) await p.click('header.toolbar button[aria-label="Dice"]');
   await p.waitForSelector(rollerPanel);
   const toggle = `${rollerPanel} [data-testid=dice-enter]`;
-  if (((await p.getAttribute(toggle, 'aria-pressed')) === 'true') !== on) await p.click(toggle);
+  if ((await p.isChecked(toggle)) !== on) await p.click(toggle);
 };
 /** Types the values into the roller's boxes, in order, and clicks "Use these". */
 const rollerEnterOn = async (p, ...values) => {
@@ -2474,7 +2474,7 @@ for (const reduced of [false, true]) {
   };
   const enterMode = async (on) => {
     await rollerOpen();
-    if (((await p.getAttribute(`${panel} [data-testid=dice-enter]`, 'aria-pressed')) === 'true') !== on) await p.click(`${panel} [data-testid=dice-enter]`);
+    if ((await p.isChecked(`${panel} [data-testid=dice-enter]`)) !== on) await p.click(`${panel} [data-testid=dice-enter]`);
   };
   const typedBoxes = `${panel} [data-testid=dice-typed] input`;
   const useTyped = async (...vals) => {
@@ -3564,7 +3564,7 @@ for (const reduced of [false, true]) {
   // Enter my roll: type a die, "Use these" records it as a free roll; 7 shows the roller's own error.
   const typedIn = `${panel} [data-testid=dice-typed] input`;
   await rollerEnterModeOn(p, true);
-  if ((await p.getAttribute(`${panel} [data-testid=dice-enter]`, 'aria-pressed')) !== 'true') problems.push(`${tag}: enter toggle not pressed`);
+  if (!(await p.isChecked(`${panel} [data-testid=dice-enter]`))) problems.push(`${tag}: enter checkbox not ticked`);
   await p.fill(typedIn, '4');
   await p.click(`${panel} [data-testid=dice-typed] button:text-is("Use these")`);
   await p.waitForTimeout(150);
@@ -3577,7 +3577,7 @@ for (const reduced of [false, true]) {
   if ((await historyLines())[0] !== 'Free D6: 4') problems.push(`${tag}: a rejected typed roll changed the history`);
   await p.fill(typedIn, '');
   await rollerEnterModeOn(p, false);
-  if ((await p.getAttribute(`${panel} [data-testid=dice-enter]`, 'aria-pressed')) !== 'false') problems.push(`${tag}: enter toggle still pressed`);
+  if (await p.isChecked(`${panel} [data-testid=dice-enter]`)) problems.push(`${tag}: enter checkbox still ticked`);
   if ((await historyLines())[1] !== afterSecond[0]) problems.push(`${tag}: typed roll history is ${JSON.stringify(await historyLines())}`);
 
   // "Roll a D3" in a reference-table row is a button too.
@@ -3636,7 +3636,7 @@ for (const reduced of [false, true]) {
   console.log(`${tag}: roller ${pr.width.toFixed(0)}×${pr.height.toFixed(0)} of map ${cr.width.toFixed(0)}×${(visBottom - visTop).toFixed(0)} (${(share * 100).toFixed(0)}%)`);
   if (share > 0.5) problems.push(`${tag}: roller covers ${(share * 100).toFixed(0)}% of the visible map (limit 50%)`);
   if (pr.left < cr.left || pr.right > cr.right + 0.5) problems.push(`${tag}: roller is wider than the map`);
-  const small = await p.$$eval(`${panel} button, ${panel} input`, (els) =>
+  const small = await p.$$eval(`${panel} button, ${panel} input:not([type=checkbox]), ${panel} label.enter`, (els) =>
     els.map((el) => ({ t: el.textContent?.trim() || el.getAttribute('aria-label') || el.tagName, r: el.getBoundingClientRect() })).filter((b) => b.r.width > 0 && (b.r.width < 44 || b.r.height < 44)).map((b) => `${b.t} ${b.r.width.toFixed(1)}×${b.r.height.toFixed(1)}`),
   );
   for (const b of small) problems.push(`${tag}: roller control too small: ${b}`);

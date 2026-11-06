@@ -105,7 +105,7 @@
     desk.setModifier(view.modifier + by);
   }
 
-  // Typed dice ("Enter my roll"): one box per die; a digit moves on to the next box.
+  // Typed dice ("Playing with real dice"): one box per die; a digit moves on to the next box.
   const count = $derived(rollDice(kind, () => 0).length);
   let values = $state<string[]>([]);
   let typedError = $state<string | null>(null);
@@ -182,14 +182,21 @@
       </div>
     {/if}
     </div>
-    <button type="button" class="roll" disabled={rolling} onclick={rollButton}>{view.enterMode ? '🎲 Enter my roll' : `🎲 Roll ${rollLabel(kind, hasModifier ? view.modifier : 0)}`}</button>
-    <button type="button" class="enter" aria-pressed={view.enterMode} data-testid="dice-enter" onclick={() => desk.setEnterMode(!view.enterMode)}>Enter my roll</button>
+    {#if !view.enterMode}
+      <!-- With real dice there is nothing to roll here: the typed boxes below take the result. -->
+      <button type="button" class="roll" disabled={rolling} onclick={rollButton}>🎲 Roll {rollLabel(kind, hasModifier ? view.modifier : 0)}</button>
+    {/if}
+    <label class="enter" data-testid="dice-enter">
+      <input type="checkbox" checked={view.enterMode} onchange={(e) => desk.setEnterMode(e.currentTarget.checked)} />
+      Playing with real dice
+    </label>
     {#if target?.shift?.state && !rolling}
       {@const owner = target}
       <DiceShifter shift={target.shift} onmoved={(faces) => desk.noteShift(owner.id, faces)} />
     {:else if view.enterMode}
       <form class="typed" data-testid="dice-typed" onsubmit={useTyped}>
-        <div class="boxes">
+        <p class="typed-label" id="dice-typed-label">Enter roll result</p>
+        <div class="boxes" role="group" aria-labelledby="dice-typed-label">
           {#each values as _, i (i)}
             <input
               type="text"
@@ -377,14 +384,38 @@
     border: 2px solid var(--ink);
     border-radius: 6px;
   }
-  .enter[aria-pressed='true'] {
-    color: var(--paper);
-    background: var(--ink);
+  /* A setting, not an action: a checkbox, so it can't be mistaken for the Roll button above it. */
+  .enter {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 44px;
+    font-size: 17px;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  .enter input {
+    width: 22px;
+    height: 22px;
+    margin: 0;
+    accent-color: var(--ink);
+    cursor: pointer;
+  }
+  .enter:has(input:focus-visible) {
+    outline: 3px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: 6px;
   }
   .typed {
     display: flex;
     flex-direction: column;
     gap: 6px;
+  }
+  .typed-label {
+    flex-basis: 100%;
+    margin: 0;
+    font-weight: 600;
+    font-size: 16px;
   }
   .boxes {
     display: flex;
@@ -433,7 +464,7 @@
       clip-path: inset(50%);
     }
     .dice-panel > .roll,
-    .dice-panel > .enter {
+    .dice-panel > .roll + .enter {
       grid-column: auto;
     }
     .row {
