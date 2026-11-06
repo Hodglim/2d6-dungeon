@@ -7,7 +7,7 @@ import { createHero, levelUpAvailable, type Hero } from '../../src/systems/dunge
 import type { DungeonTables } from '../../src/systems/dungeon/tables';
 import { applyCreatureRoll, commitEncounter, winFight, dismissRolled, dropPendingRoll, placingFirst, queueCreatureRoll, recoverThrown, startOrJoin, throwBomb, throwWeapon, type EncounterHooks } from '../../src/ui/encounter/encounterActions';
 import { adjustHp } from '../../src/ui/hero/heroActions';
-import { emptyMap, room, withContent } from '../core/fixtures';
+import { door, emptyMap, room, withContent } from '../core/fixtures';
 
 const t = JSON.parse(readFileSync('tests/fixtures/dungeon-tables.fixture.json', 'utf8')) as DungeonTables;
 const hero = (): Hero =>
@@ -463,6 +463,51 @@ describe('encounterActions', () => {
         expect(h.map.rooms[0]!.battles).toBeUndefined();
       }
     });
+  });
+});
+
+describe('winning a patrol fight at a locked door', () => {
+  const locked = { ...door('d1', 4, 2, 'W', 'metal'), checked: true as const, lock: { locked: true, note: '', quality: 8, damaged: true as const } };
+  const label = (type: string) => ({ type, unique: false, narrative: '' });
+  function waiting(rooms: ReturnType<typeof room>[], token: { x: number; y: number }, doorId = 'd1') {
+    const h = new History({ ...withContent(emptyMap(), rooms, [locked]), token: { ...token, trail: [] } });
+    startOrJoin(h, t, ['Grumbler'], ids(), noAsk);
+    commitEncounter(h, { ...enc(h), waitingDoorId: doorId }, 'wait');
+    for (const f of enc(h).foes) commitEncounter(h, setFoeHp(enc(h), f.id, 0), 'down');
+    return h;
+  }
+  const a = () => ({ ...room('ra', 1, 1, 3, 3), label: label('A') });
+  const roomOf = (h: History, id: string) => h.map.rooms.find((r) => r.id === id)!;
+
+  it('opens the door and marks the room the exit belongs to, not the token room', () => {
+    const b = { ...room('rb', 6, 6, 2, 2), label: label('B') };
+    const h = waiting([a(), b], { x: 6, y: 6 });
+    expect(winFight(h)).toEqual({ ok: true });
+    expect(h.map.doors[0]!.lock).toEqual({ locked: false, note: '', quality: 8 });
+    expect(roomOf(h, 'ra').battles).toBe(1);
+    expect(roomOf(h, 'ra').label.narrative).toBe('Defeated Grumbler.');
+    expect(roomOf(h, 'rb').battles).toBeUndefined();
+    expect(h.undoLabel).toBe('Win the fight');
+    h.undo();
+    expect(h.map.doors[0]!.lock).toMatchObject({ locked: true, damaged: true });
+    expect(roomOf(h, 'ra').battles).toBeUndefined();
+    expect(enc(h).waitingDoorId).toBe('d1');
+  });
+
+  it('a door between two rooms marks the token room when the token is on either side', () => {
+    const b = { ...room('rb', 4, 1, 2, 3), label: label('B') };
+    const h = waiting([a(), b], { x: 4, y: 2 });
+    winFight(h);
+    expect(roomOf(h, 'rb').battles).toBe(1);
+    expect(roomOf(h, 'ra').battles).toBeUndefined();
+  });
+
+  it('a waiting door no longer on the map: the fight still closes', () => {
+    const h = waiting([a()], { x: 2, y: 2 }, 'gone');
+    expect(winFight(h)).toEqual({ ok: true });
+    expect(h.encounter).toBeNull();
+    expect(h.map.doors[0]!.lock?.locked).toBe(true);
+    expect(roomOf(h, 'ra').battles).toBe(1);
   });
 });
 

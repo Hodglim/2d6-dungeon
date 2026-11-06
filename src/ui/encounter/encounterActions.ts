@@ -1,6 +1,7 @@
 /** Encounter edits run through History. Pure apart from the History argument. */
-import { setPlay, updateRoom } from '../../core/commands';
-import { roomAt } from '../../core/query';
+import { compound, setPlay, updateDoor, updateRoom, type Command } from '../../core/commands';
+import { openLock } from '../../core/doorLock';
+import { roomAt, roomsAcross } from '../../core/query';
 import type { ExecResult, History } from '../../core/history';
 import { addFoe, defeatedLine, defeatedXp, dropRolled, logThrow, newEncounter, queueRoll, recordRoll, resolveRoll, setFoeHp, setRecovered, type Encounter, type ThrowLog } from '../../systems/dungeon/combat';
 import { bombDamage, recovers, throwDamage, type CarriedWeapon, type PotionBomb } from '../../systems/dungeon/throwing';
@@ -191,15 +192,23 @@ export function winFight(history: History): ExecResult {
   const e = history.encounter as Encounter | null;
   const line = e ? defeatedLine(e) : null;
   const map = history.map;
-  const r = map.token ? roomAt(map, map.token) : undefined;
+  const tokenRoom = map.token ? roomAt(map, map.token) : undefined;
+  const waitDoor = e?.waitingDoorId ? map.doors.find((d) => d.id === e.waitingDoorId) : undefined;
+  // A wait at a door marks a room beside it: the token's, when it is on either side, else the exit's own room.
+  const beside = waitDoor ? roomsAcross(map, waitDoor).filter((x) => x !== undefined) : [];
+  const r = waitDoor && beside.length > 0 ? (beside.find((x) => x.id === tokenRoom?.id) ?? beside[0]) : tokenRoom;
   const h = history.hero as Hero | null;
   const hero = e && h ? withDefeatXp(e, h).hero : h;
   const cmd = setPlay({ hero, encounter: null }, 'Win the fight');
-  // The hero's room gets the defeated foes in its narrative and one more won fight (signs of battle on the map).
+  const changes: Command[] = [];
+  // The room gets the defeated foes in its narrative and one more won fight (signs of battle on the map).
   if (r) {
     const narrative = !line ? r.label.narrative : r.label.narrative ? `${r.label.narrative}\n${line}` : line;
-    cmd.apply = updateRoom(r, { ...r, label: { ...r.label, narrative }, battles: (r.battles ?? 0) + 1 }).apply;
+    changes.push(updateRoom(r, { ...r, label: { ...r.label, narrative }, battles: (r.battles ?? 0) + 1 }));
   }
+  // The patrol came through the door: it is open.
+  if (waitDoor) changes.push(updateDoor(waitDoor, openLock(waitDoor)));
+  if (changes.length > 0) cmd.apply = compound('Win the fight', changes).apply;
   return history.execute(cmd);
 }
 

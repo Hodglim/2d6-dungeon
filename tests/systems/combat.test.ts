@@ -128,6 +128,11 @@ describe('encounterProblem', () => {
     expect(encounterProblem(null)).not.toBeNull();
     expect(encounterProblem({ ...e, pending: [{ code: 1, modifier: 0 }] })).toMatch(/pending\[0\]/);
   });
+  it('reads the door a patrol fight is waiting at', () => {
+    const e = two();
+    expect(encounterProblem({ ...e, waitingDoorId: 'd1' })).toBeNull();
+    expect(encounterProblem({ ...e, waitingDoorId: 3 })).toMatch(/waitingDoorId/);
+  });
   it('checks the throws, and still reads a fight saved without them', () => {
     const e = two();
     const id = e.foes[0]!.id;

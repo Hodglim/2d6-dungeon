@@ -54,6 +54,8 @@ export interface Encounter {
   turn: 'hero' | string;
   /** Throwing weapons and potion bombs thrown (absent in fights saved before throwing existed). */
   throws?: ThrowLog[];
+  /** The locked door this fight is a wait at: winning opens it (absent for any other fight). */
+  waitingDoorId?: string;
 }
 
 export const newEncounter = (): Encounter => ({ version: 1, round: 1, foes: [], pending: [], rolled: [], xpAwarded: 0, turn: 'hero' });
@@ -212,6 +214,7 @@ export function encounterProblem(raw: unknown): string | null {
   }
   if (!isInt(raw.xpAwarded) || raw.xpAwarded < 0) return fail('xpAwarded');
   if (!isStr(raw.turn) || (raw.turn !== 'hero' && !ids.has(raw.turn))) return fail('turn');
+  if (raw.waitingDoorId !== undefined && !isStr(raw.waitingDoorId)) return fail('waitingDoorId');
   if (raw.throws !== undefined) {
     if (!Array.isArray(raw.throws)) return fail('throws');
     for (let i = 0; i < raw.throws.length; i++) {
