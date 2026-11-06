@@ -1,7 +1,9 @@
 // A Svelte action drawing a door type's symbol (as the map draws it) in a short stretch of
 // wall, for the door-type buttons in the play flow and the Door tool.
 
+import { drawDoorSymbol } from '../render/draw';
 import type { Theme } from '../render/theme';
+import { SECRET_CHOICE } from './doorChoice';
 import { classicTheme } from '../systems/dungeon/classic';
 
 /** CSS px: the symbol canvas is a square this size. */
@@ -25,9 +27,7 @@ export function doorSymbol(canvas: HTMLCanvasElement, type: string) {
     ctx.moveTo(0.5, 0);
     ctx.lineTo(0.85, 0);
     ctx.stroke();
-    ctx.save();
-    (theme.doorSymbols[t] ?? theme.doorSymbols.archway)?.(ctx, theme);
-    ctx.restore();
+    drawDoorSymbol(ctx, theme, t === SECRET_CHOICE ? 'wooden' : t, t === SECRET_CHOICE, 0, 0.5);
   };
   draw(type);
   return { update: draw };

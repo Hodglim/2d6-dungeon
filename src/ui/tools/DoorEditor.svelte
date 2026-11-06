@@ -6,6 +6,7 @@
   import { randomId } from '../../core/ids';
   import type { Door, DoorLock, DungeonMap } from '../../core/types';
   import { dungeonSystem } from '../../systems/dungeon';
+  import { choiceOf, doorChoices, doorFromChoice } from '../doorChoice';
   import { doorSymbol, SYMBOL_SIZE } from '../doorSymbol';
   import { entryNote, type Selection } from '../tapRouting';
 
@@ -65,21 +66,22 @@
 
   // ---- adding a door on a bare wall ----
 
-  let newType = $state('wooden');
-  let newSecret = $state(false);
+  let newChoice = $state('wooden');
 
   function add() {
     if (selection.kind !== 'wall') return;
+    const { type, secret } = doorFromChoice(newChoice);
     // On success the wall selection resolves to the new door (resolveSelection).
-    onexec(addDoorWithTool(map, selection.edge, newType, newSecret, randomId));
+    onexec(addDoorWithTool(map, selection.edge, type, secret, randomId));
   }
 
-  const typeName = (id: string) => dungeonSystem.doorTypes.find((t) => t.id === id)?.name ?? id;
+  const choices = doorChoices(dungeonSystem.doorTypes);
+  const choiceName = (id: string) => choices.find((t) => t.id === id)?.name ?? id;
 </script>
 
 {#snippet types(current: string, choose: (id: string) => void)}
   <div class="types" role="group" aria-label="Door type">
-    {#each dungeonSystem.doorTypes as t (t.id)}
+    {#each choices as t (t.id)}
       <button class="type" aria-pressed={current === t.id} onclick={() => choose(t.id)}>
         <canvas use:doorSymbol={t.id} style="width: {SYMBOL_SIZE}px; height: {SYMBOL_SIZE}px" aria-hidden="true"></canvas>
         <span>{t.name}</span>
@@ -90,11 +92,8 @@
 
 <div class="editor" data-editor="door">
   {#if door}
-    <h3>{typeName(door.type)}{door.secret ? ' (secret)' : ''}</h3>
-    {@render types(door.type, (id) => id !== door.type && edit(door, { type: id }))}
-    <div class="row">
-      <button aria-pressed={door.secret} onclick={() => edit(door, { secret: !door.secret })}>Secret</button>
-    </div>
+    <h3>{choiceName(choiceOf(door))}</h3>
+    {@render types(choiceOf(door), (id) => id !== choiceOf(door) && edit(door, doorFromChoice(id)))}
     <div class="field">
       <span class="label" id="padlock-label">Padlock</span>
       <div class="row" role="group" aria-labelledby="padlock-label">
@@ -124,9 +123,8 @@
     {#if check.ok}
       <h3>Add door here</h3>
       <p>{check.facesOpenSpace ? 'It faces open space, so it becomes an open exit with an exit square.' : 'It connects the two areas.'}</p>
-      {@render types(newType, (id) => (newType = id))}
+      {@render types(newChoice, (id) => (newChoice = id))}
       <div class="row">
-        <button aria-pressed={newSecret} onclick={() => (newSecret = !newSecret)}>Secret</button>
         <button class="primary" onclick={add}>Add door</button>
       </div>
     {:else}

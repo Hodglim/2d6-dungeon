@@ -303,8 +303,16 @@ await expectUndo('Edit door', 'locking the door');
 await page.fill('aside.panel input[name="quality"]', '7');
 await panelButton('Set');
 await expectUndo('Edit door', 'setting quality 7');
+// Secret door is the last door type; choosing it makes the door a secret (wooden) door.
+{
+  const names = await page.$$eval('aside.panel [data-editor="door"] [aria-label="Door type"] button', (els) => els.map((e) => e.textContent?.trim()));
+  if (names.at(-1) !== 'Secret door') problems.push(`Secret door is not the last door type: ${names.join(', ')}`);
+}
+await page.click('aside.panel button:has-text("Secret door")');
+await expectUndo('Edit door', 'making the door secret');
+if ((await page.textContent('aside.panel [data-editor="door"] h3'))?.trim() !== 'Secret door') problems.push('door editor heading is not "Secret door"');
 await checkPanel('door editor');
-// Zoom in on the door so the padlock and its number are legible in the screenshot.
+// Zoom in on the door so the padlock and its number, and the secret door's S, are legible in the screenshot.
 const doorAt = await page.$eval('canvas', (c) => {
   const [cx, cy, s] = (c.dataset.camera ?? '').split(',').map(Number);
   const r = c.getBoundingClientRect();

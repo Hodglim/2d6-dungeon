@@ -170,25 +170,30 @@ export function drawDoors(ctx: CanvasRenderingContext2D, glyphs: DoorGlyph[], th
     ctx.save();
     ctx.translate(g.cx, g.cy);
     ctx.rotate(g.rotation);
-    if (g.secret) {
-      // A secret door reads as wall with an "S".
-      ctx.strokeStyle = theme.ink;
-      ctx.lineWidth = theme.wallWidth;
-      ctx.beginPath();
-      ctx.moveTo(-0.5, 0);
-      ctx.lineTo(0.5, 0);
-      ctx.stroke();
-      ctx.rotate(-g.rotation);
-      ctx.fillStyle = theme.ink;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      fillText(ctx, 'S', 0, 0.02, 0.3, theme.labelFont, 'bold');
-    } else {
-      (theme.doorSymbols[g.type] ?? theme.doorSymbols.archway)?.(ctx, theme);
-    }
+    drawDoorSymbol(ctx, theme, g.type, g.secret, g.rotation);
     ctx.restore();
     if (g.locked !== null) drawLock(ctx, g, theme);
   }
+}
+
+/**
+ * A door's symbol at the origin, its x axis along the wall (the context already turned by
+ * `rotation`). A secret door is a wooden door with a small upright "S" beside it, on the
+ * side away from the padlock.
+ */
+export function drawDoorSymbol(ctx: CanvasRenderingContext2D, theme: Theme, type: string, secret: boolean, rotation = 0, sSize = 0.22): void {
+  ctx.save();
+  (theme.doorSymbols[secret ? 'wooden' : type] ?? theme.doorSymbols.archway)?.(ctx, theme);
+  ctx.restore();
+  if (!secret) return;
+  ctx.save();
+  ctx.translate(0, -0.16 - sSize / 2);
+  ctx.rotate(-rotation);
+  ctx.fillStyle = theme.ink;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  fillText(ctx, 'S', 0, 0.01, sSize, theme.labelFont, 'bold');
+  ctx.restore();
 }
 
 function drawLock(ctx: CanvasRenderingContext2D, g: DoorGlyph, theme: Theme): void {
