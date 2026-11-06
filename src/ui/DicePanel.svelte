@@ -502,6 +502,13 @@
     .typed > button {
       flex: 0 0 120px;
     }
+    .typed-label {
+      position: absolute; /* the checkbox above says what the boxes are for; the label stays for assistive tech */
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+    }
     .typed .error {
       order: 3;
     }
