@@ -389,3 +389,54 @@ describe('final review fixes', () => {
     expect(d.view.history[0]).toBe('Free D6: 4');
   });
 });
+
+describe('idle jobs (a table that already shows a result)', () => {
+  it('is not aimed at when put, and free rolls do not reach it', () => {
+    const d = fresh();
+    const w = watcher('w', { idle: true });
+    d.put(w);
+    expect(d.view.target).toBeNull();
+    d.settle(null, [4], 'd6', 0);
+    expect(w.calls.rolled).toHaveLength(0);
+  });
+  it('turning idle while aimed at lets go of the roller', () => {
+    const d = fresh();
+    d.put(watcher('w'));
+    expect(d.view.target?.id).toBe('w');
+    d.put(watcher('w', { idle: true }));
+    expect(d.view.target).toBeNull();
+  });
+  it('is skipped when the roller falls back', () => {
+    const d = fresh();
+    d.put(watcher('w', { idle: true }));
+    d.put(req('amount', { oneShot: true }));
+    d.settle('amount', [3], 'd6', 0);
+    expect(d.view.target).toBeNull();
+  });
+  it('its own Roll button still rolls it', () => {
+    const d = fresh();
+    const w = watcher('w', { idle: true });
+    d.put(w);
+    d.rollNow('w');
+    expect(d.view.target?.id).toBe('w');
+    d.settle('w', [5], 'd6', 0);
+    expect(w.calls.rolled).toEqual([[[5], 0]]);
+  });
+});
+
+describe('idle jobs let go after their own roll', () => {
+  it('rolled', () => {
+    const d = fresh();
+    d.put(watcher('w', { idle: true }));
+    d.rollNow('w');
+    d.settle('w', [5], 'd6', 0);
+    expect(d.view.target).toBeNull();
+  });
+  it('typed', () => {
+    const d = fresh();
+    d.put(watcher('w', { idle: true }));
+    d.rollNow('w');
+    expect(d.settleTyped(['5'])).toBeNull();
+    expect(d.view.target).toBeNull();
+  });
+});

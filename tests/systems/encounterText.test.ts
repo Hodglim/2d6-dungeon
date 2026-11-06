@@ -234,3 +234,30 @@ describe('scanReference', () => {
     expect(scanReference('XX1', null)).toEqual([{ kind: 'text', text: 'XX1' }]);
   });
 });
+
+describe('scanReference amounts', () => {
+  const amounts = (s: string) => scanReference(s, t, { amounts: true });
+  it('turns dice amounts with their bonus and coin into parts of their own', () => {
+    expect(amounts('a pouch with 2D6 +10 SC, 4D6 +10 GC and a potion')).toEqual([
+      { kind: 'text', text: 'a pouch with ' },
+      { kind: 'amount', text: '2D6 +10 SC', dice: '2d6', modifier: 10 },
+      { kind: 'text', text: ', ' },
+      { kind: 'amount', text: '4D6 +10 GC', dice: '4d6', modifier: 10 },
+      { kind: 'text', text: ' and a potion' },
+    ]);
+  });
+  it('reads a lone die, a minus and big counts', () => {
+    expect(amounts('Lose D6 HP')[1]).toEqual({ kind: 'amount', text: 'D6 HP', dice: 'd6', modifier: 0 });
+    expect(amounts('worth 10D6 gold')[1]).toEqual({ kind: 'amount', text: '10D6', dice: '10d6', modifier: 0 });
+    expect(amounts('take 2D3 −1 damage')[1]).toEqual({ kind: 'amount', text: '2D3 −1', dice: '2d3', modifier: -1 });
+  });
+  it('leaves D66, roll phrases and codes alone', () => {
+    expect(amounts('a D66 roll').map((p) => p.kind)).toEqual(['text']);
+    expect(amounts('Roll a D6 then XX1').map((p) => p.kind)).toEqual(['dice', 'text', 'table']);
+  });
+  it('without the option amounts stay text, and the input round-trips', () => {
+    const s = 'a pouch with 2D6 +10 SC, 4D6 +10 GC. Roll a D6 on XX1';
+    expect(scanReference(s, t).some((p) => p.kind === 'amount')).toBe(false);
+    expect(amounts(s).map((p) => p.text).join('')).toBe(s);
+  });
+});

@@ -211,7 +211,7 @@
       <div class="result" data-testid="dice-result" aria-live="polite">
         {#if shown}
           <span class="faces">
-            {#each shown.faces as f, i (i)}<DieFace value={f} colour={i === 0 ? 'red' : 'blue'} size={48} />{/each}
+            {#each shown.faces as f, i (i)}<DieFace value={f} colour={i === 0 ? 'red' : 'blue'} size={shown.faces.length > 3 ? 30 : 48} />{/each}
           </span>
           {#if total !== null}
             <span class="total" class:long={totalText.length > 9} data-testid="dice-total">{totalText}</span>
@@ -321,6 +321,7 @@
   }
   .faces {
     display: inline-flex;
+    flex-wrap: wrap;
     gap: 6px;
   }
   .total {
@@ -387,6 +388,7 @@
   }
   .boxes {
     display: flex;
+    flex-wrap: wrap;
     gap: 6px;
   }
   .boxes input {

@@ -64,9 +64,14 @@
           rolled: (faces, m) => apply(faces, m),
           enter: (values, m) => enter(values, m),
           error: typedError,
+          // With a row showing, only this table's own button rolls it again: other rolls (an amount in the row) leave it be.
+          idle: result !== null,
         }
       : null,
   );
+
+  /** What an amount in the result is from, for the roller's For line: "XX1 9". */
+  const rowLabel = $derived(`${isSlug(code) ? table.name : code}${hit?.roll ? ` ${hit.roll}` : ''}`);
 
   const sum = $derived.by(() => {
     if (!result) return '';
@@ -130,9 +135,10 @@
         <p class="line"><span class="sum">{sum}</span>{#if result.clamped !== result.total}<span class="counts">{` · counts as ${minus(result.clamped)}`}</span>{/if}</p>
         {#if hit}
           <div class="cells">
-            {#each hit.cells as c, j (j)}
-              <p>{#if cellHeads.length > 1 && cellHeads[j]}<span class="label">{cellHeads[j]}:</span>{' '}{/if}<RefText text={c} {tables} {onopen} /></p>
-            {/each}
+            <!-- A new roll on the table starts the amounts' totals over. -->
+            {#key result}{#each hit.cells as c, j (j)}
+              <p>{#if cellHeads.length > 1 && cellHeads[j]}<span class="label">{cellHeads[j]}:</span>{' '}{/if}<RefText text={c} {tables} {onopen} amounts={rowLabel} /></p>
+            {/each}{/key}
           </div>
         {:else}
           <p class="none">No row for {minus(result.clamped)}</p>

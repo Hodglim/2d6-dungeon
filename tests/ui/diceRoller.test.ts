@@ -145,3 +145,23 @@ describe('findDice', () => {
     expect(findDice('see AD6 room')).toBeNull();
   });
 });
+
+describe('any number of dice', () => {
+  it('rolls as many D6s or D3s as the dice name', () => {
+    expect(rollDice('4d6', seq(0, 0.5, 0.9, 0.2))).toHaveLength(4);
+    expect(rollDice('10d6', seq(0))).toHaveLength(10);
+    expect(rollDice('5d3', seq(0))).toHaveLength(5);
+  });
+  it('labels them in capitals', () => {
+    expect(diceLabel('4d6')).toBe('4D6');
+    expect(diceLabel('10d6')).toBe('10D6');
+    expect(rollLabel('4d6', 10)).toBe('4D6 +10');
+  });
+  it('adds every die and the bonus', () => {
+    expect(rollTotal('4d6', [3, 5, 1, 6], 10)).toBe('25');
+    expect(describeRoll('4d6', [3, 5, 1, 6], 10)).toBe('4D6 +10: 3 + 5 + 1 + 6 + 10 = 25');
+  });
+  it('reads every D3 in halves', () => {
+    expect(rollTotal('4d3', [1, 2, 5, 6], 2)).toBe('10');
+  });
+});

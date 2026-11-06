@@ -12,23 +12,18 @@ export const DICE: { kind: DiceKind; label: string }[] = [
   { kind: 'd66', label: 'D66' },
   { kind: 'd3', label: 'D3' },
 ];
-/** Dice a damage roll can ask for that have no chip of their own. */
-const BIGGER: { kind: DiceKind; label: string }[] = [
-  { kind: '2d3', label: '2D3' },
-  { kind: '3d3', label: '3D3' },
-  { kind: '3d6', label: '3D6' },
-];
-const ALL = [...DICE, ...BIGGER];
+/** "d6", "d3", "d66", or a count of D6s or D3s from 2 up ("4d6"). */
+export const isDiceKind = (v: unknown): v is DiceKind => typeof v === 'string' && /^(?:d66|d6|d3|(?:[2-9]|[1-9]\d)d[36])$/.test(v);
 
-export const diceLabel = (kind: DiceKind): string => ALL.find((d) => d.kind === kind)?.label ?? kind.toUpperCase();
+export const diceLabel = (kind: DiceKind): string => kind.toUpperCase();
 
-/** How many dice, and whether each is a D3 (a D6 read in halves). D66 is two dice read as tens and units. */
-const COUNT: Record<DiceKind, number> = { d6: 1, d3: 1, '2d6': 2, d66: 2, '2d3': 2, '3d3': 3, '3d6': 3 };
-const isD3 = (kind: DiceKind) => kind === 'd3' || kind === '2d3' || kind === '3d3';
+/** How many dice ("4d6" is four), and whether each is a D3 (a D6 read in halves). D66 is two dice read as tens and units. */
+const diceCount = (kind: DiceKind): number => (kind === 'd66' ? 2 : Number(/^(\d*)d/.exec(kind)?.[1] || 1));
+const isD3 = (kind: DiceKind) => kind.endsWith('d3');
 
 /** The faces rolled: real D6 faces, one per die (red first). A D3 face is read in halves. */
 export function rollDice(kind: DiceKind, rng: Rng): number[] {
-  return Array.from({ length: COUNT[kind] }, () => rollD6(rng));
+  return Array.from({ length: diceCount(kind) }, () => rollD6(rng));
 }
 
 const readings = (kind: DiceKind, faces: number[]) => (isD3(kind) ? faces.map(d3FromD6) : faces);
@@ -123,7 +118,7 @@ export function readDicePrefs(storage: Storage | undefined): DicePrefs {
     const raw = storage?.getItem(DICE_PREFS_KEY);
     if (!raw) return { ...DEFAULT_PREFS };
     const v = JSON.parse(raw) as Partial<DicePrefs>;
-    if (typeof v.open !== 'boolean' || !ALL.some((d) => d.kind === v.dice)) return { ...DEFAULT_PREFS };
+    if (typeof v.open !== 'boolean' || !isDiceKind(v.dice)) return { ...DEFAULT_PREFS };
     return { open: v.open, dice: v.dice as DiceKind, enter: v.enter === true };
   } catch {
     return { ...DEFAULT_PREFS };

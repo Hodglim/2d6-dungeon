@@ -7,10 +7,11 @@ export type EncounterPart =
   | { kind: 'roll'; text: string; code: string; modifier: number }
   | { kind: 'table'; text: string; code: string; modifier: number }
   | { kind: 'fight'; text: string; name: string }
-  | { kind: 'dice'; text: string; dice: DiceKind };
+  | { kind: 'dice'; text: string; dice: DiceKind }
+  | { kind: 'amount'; text: string; dice: DiceKind; modifier: number };
 
-/** The dice a "Roll a D6" phrase can name; the bigger damage dice (2D3, 3D3, 3D6) too. */
-export type DiceKind = 'd6' | '2d6' | 'd66' | 'd3' | '2d3' | '3d3' | '3d6';
+/** One D6, one D3, D66, or any number of D6s or D3s ("4d6", "10d6", "2d3"). */
+export type DiceKind = 'd6' | 'd66' | 'd3' | `${number}d6` | `${number}d3`;
 
 /** "Roll a D6", "roll 2D6", "Roll an D66", "Roll D3": "roll" (any case), an optional "a"/"an", then the dice. */
 const DICE_RE = /(?<![A-Za-z0-9])roll\s+(?:an?\s+)?(3d6|2d6|2d3|3d3|d66|1?d6|d3)(?![A-Za-z0-9])/gi;
@@ -137,12 +138,35 @@ function firstFightOnly(parts: EncounterPart[]): EncounterPart[] {
  * including a code that is also a creature table, and dice phrases (kind 'dice').
  * Creature-only codes and creature names stay text.
  */
-export function scanReference(text: string, t: DungeonTables | null): EncounterPart[] {
+export function scanReference(text: string, t: DungeonTables | null, opts: { amounts?: boolean } = {}): EncounterPart[] {
   const parts: EncounterPart[] = [];
   for (const p of scanEncounter(text, t, { fights: false })) {
     if (p.kind === 'table' || p.kind === 'dice') parts.push(p);
     else if (p.kind === 'roll' && findTable(t, p.code)) parts.push({ ...p, kind: 'table' });
+    else if (opts.amounts) scanAmounts(p.text, parts);
     else pushText(parts, p.text);
   }
   return parts;
+}
+
+/**
+ * "2D6 +10 SC", "4D6 +10 GC", "D6 HP", "2D3 −1": dice the text says to count, with an optional bonus
+ * and the two- or three-letter thing counted. D66 isn't an amount.
+ */
+const AMOUNT_RE = /(?<![A-Za-z0-9])(\d{0,2})d([36])(?![A-Za-z0-9])(?:\s*([+\-−–])\s*(\d+)(?![A-Za-z0-9]))?(?:\s+[A-Z]{2,3}(?![A-Za-z0-9]))?/gi;
+
+function amountDice(count: string, sides: string): DiceKind {
+  const n = count ? Number(count) : 1;
+  return (n <= 1 ? `d${sides}` : `${n}d${sides}`) as DiceKind;
+}
+
+function scanAmounts(text: string, parts: EncounterPart[]): void {
+  let pos = 0;
+  for (const m of text.matchAll(AMOUNT_RE)) {
+    pushText(parts, text.slice(pos, m.index!));
+    const modifier = m[4] ? (m[3] === '+' ? 1 : -1) * Number(m[4]) : 0;
+    parts.push({ kind: 'amount', text: m[0], dice: amountDice(m[1]!, m[2]!), modifier });
+    pos = m.index! + m[0].length;
+  }
+  pushText(parts, text.slice(pos));
 }

@@ -2484,6 +2484,21 @@ for (const reduced of [false, true]) {
     await p.waitForTimeout(200);
   };
   const typeD6 = (v) => useTyped(v);
+  // A table showing a result rolls again only from its own card button.
+  const tableAgain = async () => {
+    await p.click(`${pane} [data-testid=roll-card] button`);
+    await p.waitForTimeout(150);
+  };
+  const typeAgain = async (...vals) => {
+    await enterMode(true);
+    await tableAgain();
+    await useTyped(...vals);
+  };
+  const rollAgain = async () => {
+    await enterMode(false);
+    await tableAgain();
+    await p.waitForTimeout(900);
+  };
   const rollerRoll = async () => {
     await enterMode(false);
     await p.click(`${panel} button.roll`);
@@ -2524,8 +2539,10 @@ for (const reduced of [false, true]) {
   await p.waitForTimeout(150);
   if (await p.isVisible(pane)) problems.push(`${tag}: second Tables tap did not close the pane`);
 
-  // A hero (for the Hero tab), on the fixture tables.
-  await p.setInputFiles('input[data-extra="tables"]', { name: 'tables.json', mimeType: 'application/json', buffer: Buffer.from(readFileSync('tests/fixtures/dungeon-tables.fixture.json')) });
+  // A hero (for the Hero tab), on the fixture tables, plus a made-up table whose row names dice amounts.
+  const fx19 = JSON.parse(readFileSync('tests/fixtures/dungeon-tables.fixture.json', 'utf8'));
+  fx19.tables.referenceTables.XX9 = { name: 'Made-up Pouch Table', group: 'generic', page: 99, dice: 'd6', columns: ['Roll', 'Result'], rows: [{ roll: '1-6', cells: ['A made-up pouch with 2D6 +10 SC and 4D6 +10 GC.'] }] };
+  await p.setInputFiles('input[data-extra="tables"]', { name: 'tables.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(fx19)) });
   await p.waitForTimeout(500);
   await menu();
   await p.click('[role=menuitem]:text-is("New game…")');
@@ -2575,7 +2592,11 @@ for (const reduced of [false, true]) {
   await p.waitForTimeout(900);
   if (!(await p.isVisible(`${pane} [data-testid=ref-result]`)) || (await hitRow()) < 0) problems.push(`${tag}: the card's Roll gave no result row (hit ${await hitRow()})`);
   console.log(`${tag}: card Roll "${await resultText()}"`);
-  if (!(await rollerFor()).startsWith('XX1 Practice Crate Table · D6')) problems.push(`${tag}: roller For line "${await rollerFor()}"`);
+  // With a result showing, the table lets go of the roller: other rolls can't move its row.
+  if ((await rollerFor()) !== 'Free roll') problems.push(`${tag}: after a result the roller is for "${await rollerFor()}"`);
+  await enterMode(true);
+  await tableAgain();
+  if (!(await rollerFor()).startsWith('XX1 Practice Crate Table · D6')) problems.push(`${tag}: the card's button did not aim the roller ("${await rollerFor()}")`);
   await p.click(`${panel} button[aria-label="Modifier down"]`);
   await p.click(`${panel} button[aria-label="Modifier down"]`);
   await typeD6(1);
@@ -2584,6 +2605,7 @@ for (const reduced of [false, true]) {
   if (!r.startsWith('1 − 2 = −1 · counts as 1')) problems.push(`${tag}: clamped result "${r}"`);
   if ((await hitRow()) !== 0) problems.push(`${tag}: clamped roll highlights row ${await hitRow()}`);
   await shot('72-xx1-clamped.png', p);
+  await tableAgain();
   await setMod('-1');
   await typeD6(2);
   r = await resultText();
@@ -2611,7 +2633,7 @@ for (const reduced of [false, true]) {
   if (!r.startsWith('4 + 1 = 5') || !r.includes('No row for 5')) problems.push(`${tag}: gap result "${r}"`);
   if ((await hitRow()) !== -1) problems.push(`${tag}: a gap highlights row ${await hitRow()}`);
   await shot('74-xx2-gap.png', p);
-  await rollerRoll();
+  await rollAgain();
   r = await resultText();
   if (!/^\d+ \+ 1 = \d+/.test(r)) problems.push(`${tag}: animated roll result "${r}"`);
   console.log(`${tag}: XX2 rolled "${r}"`);
@@ -2622,18 +2644,15 @@ for (const reduced of [false, true]) {
   await p.waitForSelector(`${pane} h3:has-text("Practice Crate Table")`);
   r = await resultText();
   if (!r.startsWith('2 − 1 = 1')) problems.push(`${tag}: Back lost XX1's result ("${r}")`);
-  // The roller's modifier is the roller's: Back restarts the table's job from the modifier the table state holds.
-  if (!(await rollerFor()).startsWith('XX1 Practice Crate Table · D6')) problems.push(`${tag}: after Back the roller is for "${await rollerFor()}"`);
+  // XX1 still shows its result, so the roller stays free.
+  if ((await rollerFor()) !== 'Free roll') problems.push(`${tag}: after Back the roller is for "${await rollerFor()}"`);
   if ((await hitRow()) !== 0) problems.push(`${tag}: Back lost the highlight`);
   await shot('75-back-to-xx1.png', p);
-  // With the table open, a free D6 roll (the roller's own Roll after ×) also fills the result and the row.
-  await p.click(`${panel} button[aria-label="Roll freely"]`);
+  // A free D6 roll leaves the table's result and row alone.
   await rollerRoll();
-  const freeFace = ((await p.textContent(`${panel} [data-testid=dice-history] li`)) ?? '').match(/^Free D6: (\d)$/)?.[1];
   r = await resultText();
-  console.log(`${tag}: free D6 "${r}"`);
-  if (!freeFace || !r.startsWith(freeFace) || r.includes('=')) problems.push(`${tag}: free roll ${freeFace} did not reach the table ("${r}")`);
-  if ((await hitRow()) < 0) problems.push(`${tag}: a free D6 roll left no highlighted row`);
+  console.log(`${tag}: after a free D6 "${r}"`);
+  if (!r.startsWith('2 − 1 = 1') || (await hitRow()) !== 0) problems.push(`${tag}: a free roll moved XX1's result ("${r}", row ${await hitRow()})`);
   freeResult = r;
 
   // 5. The Hero tab and back: the pane keeps its state.
@@ -2672,15 +2691,38 @@ for (const reduced of [false, true]) {
   await useTyped(4);
   r = await resultText();
   if (!r.startsWith('4 → 2') || (await hitRow()) !== 1) problems.push(`${tag}: d3 typed 4 gave "${r}" (row ${await hitRow()})`);
-  await useTyped(5);
+  await typeAgain(5);
   r = await resultText();
   console.log(`${tag}: d3 typed 5 → "${r}"`);
   if (!r.startsWith('5 → 3') || !r.includes('Surprisingly deep.')) problems.push(`${tag}: d3 result "${r}"`);
-  await rollerRoll();
+  await rollAgain();
   r = await resultText();
   const d3m = r.match(/^([1-6]) → ([1-3])\b/);
   if (!d3m || Math.ceil(Number(d3m[1]) / 2) !== Number(d3m[2])) problems.push(`${tag}: d3 animated roll "${r}"`);
   await shot('77-d3.png', p);
+
+  // Dice amounts in a result are roll buttons: 4D6 +10 rolls four dice, the total shows beside it, the row stays.
+  await p.click(`${pane} button:text-is("☰ List")`);
+  await p.fill(`${pane} input[type=search]`, 'XX9');
+  await p.click(`${pane} .list button:has-text("XX9 —")`);
+  await p.waitForSelector(`${pane} .rolling`);
+  await useTyped(3);
+  await enterMode(false);
+  await p.click(`${pane} [data-testid=ref-result] button:text-is("🎲 4D6 +10 GC")`);
+  await p.waitForTimeout(900);
+  const dieCount = await p.$$eval(`${panel} [data-testid=dice-result] .faces > *`, (e) => e.length);
+  const amountFor = ((await p.textContent(`${panel} [data-testid=dice-history] li`)) ?? '').trim();
+  const gc = Number(((await resultText()).match(/4D6 \+10 GC = (\d+)/) ?? [])[1]);
+  console.log(`${tag}: amount "${amountFor}", ${dieCount} dice, total ${gc}`);
+  if (dieCount !== 4) problems.push(`${tag}: 4D6 showed ${dieCount} dice`);
+  if (!amountFor.startsWith('XX9 1-6 GC +10:')) problems.push(`${tag}: amount history line "${amountFor}"`);
+  if (!(gc >= 14 && gc <= 34)) problems.push(`${tag}: 4D6 +10 total ${gc} ("${await resultText()}")`);
+  if (!(await resultText()).startsWith('3') || (await hitRow()) !== 0) problems.push(`${tag}: rolling an amount moved the table ("${await resultText()}")`);
+  await p.click(`${pane} [data-testid=ref-result] button:text-is("🎲 2D6 +10 SC")`);
+  await p.waitForTimeout(900);
+  if (!/2D6 \+10 SC = \d+/.test(await resultText()) || (await hitRow()) !== 0) problems.push(`${tag}: second amount "${await resultText()}"`);
+  await smallButtons('amounts');
+  await shot('77a-amounts.png', p);
 
   // 7. A list has no Roll button.
   await p.click(`${pane} button:text-is("☰ List")`);

@@ -28,6 +28,8 @@ export interface DiceJob {
   /** A request that stays registered for a whole turn (the attack dice): other requests take over from it, and the roller falls back to it last. */
   standing?: boolean;
   shift?: ShiftControl;
+  /** Rolls only from its own Roll button: never aimed at on its own, and free rolls pass it by (a table showing a result). */
+  idle?: boolean;
 }
 
 export interface DeskView {
@@ -123,20 +125,23 @@ export class DiceDesk {
       const old = this.jobs[i]!;
       this.jobs[i] = job;
       if (this.targetId === job.id) {
-        if (old.dice !== job.dice) this.aim(job);
+        if (job.idle && !old.idle) this.fallBack();
+        else if (old.dice !== job.dice) this.aim(job);
         else if (job.modifier === null) this.modifier = 0;
       }
     } else {
       this.jobs.push(job);
       const t = this.target;
-      if (!t || (t.kind === 'watcher' && job.kind === 'request') || (t.standing && job.kind === 'request' && !job.standing)) this.aim(job);
+      if (job.idle) {
+        /* waits for its own Roll button */
+      } else if (!t || (t.kind === 'watcher' && job.kind === 'request') || (t.standing && job.kind === 'request' && !job.standing)) this.aim(job);
     }
     this.rebuild();
   }
 
   /** After the target goes: the newest request, then the newest watcher, then a free roll. */
   private fallBack(): void {
-    const newest = (ok: (j: DiceJob) => boolean) => [...this.jobs].reverse().find(ok) ?? null;
+    const newest = (ok: (j: DiceJob) => boolean) => [...this.jobs].reverse().find((j) => !j.idle && ok(j)) ?? null;
     this.aim(newest((j) => j.kind === 'request' && !j.standing) ?? newest((j) => j.kind === 'request') ?? newest((j) => j.kind === 'watcher'));
   }
 
@@ -243,8 +248,9 @@ export class DiceDesk {
     if (job) {
       job.rolled(faces, job.modifier === null ? 0 : mod);
       if (job.oneShot) this.drop(job.id);
+      else if (job.idle && this.targetId === job.id) this.fallBack();
     } else if (jobId === null) {
-      for (const w of this.jobs.filter((j) => j.kind === 'watcher' && j.dice === dice)) w.rolled(faces, mod);
+      for (const w of this.jobs.filter((j) => j.kind === 'watcher' && !j.idle && j.dice === dice)) w.rolled(faces, mod);
     }
     this.rebuild();
   }
@@ -267,6 +273,7 @@ export class DiceDesk {
       if (!valid) return standard;
       this.record(t, dice, faces, mod);
       if (t.oneShot) this.drop(t.id);
+      else if (t.idle) this.fallBack();
       this.rebuild();
       return null;
     }
