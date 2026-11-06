@@ -11,6 +11,7 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit && svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
     "creature-pack": "node scripts/make-creature-pack.mjs",
+    "add-cards": "node scripts/add-cards.mjs",
     "screenshot": "node scripts/screenshot.mjs",
     "e2e:pwa": "node scripts/e2e-pwa.mjs",
     "e2e:persistence": "node scripts/e2e-persistence.mjs",

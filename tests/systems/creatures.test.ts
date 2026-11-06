@@ -42,6 +42,10 @@ describe('findCard', () => {
   it('ignores case', () => {
     expect(findCard(pack, 'MOSS lurker')!.id).toBe('c1');
   });
+  it('never returns a god or herb card', () => {
+    const p: CardPack = { ...pack, cards: [{ id: 'g1', name: 'Moss Lurker', level: 0, kind: 'god', image: 'data:image/png;base64,AA==' }] };
+    expect(findCard(p, 'Moss Lurker')).toBeNull();
+  });
   it('returns null for unknown or missing pack', () => {
     expect(findCard(pack, 'Nobody')).toBeNull();
     expect(findCard(null, 'Moss Lurker')).toBeNull();

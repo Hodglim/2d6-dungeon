@@ -914,10 +914,12 @@ if (!(await page.isVisible('text=This replaces your current game.'))) problems.p
   {
     const imgs = await p.evaluate(() =>
       [['#c96', 'A'], ['#6a9', 'B'], ['#69c', 'C']].map(([bg, ch]) => {
+        // A real card's size (700 × 968), so a full-screen card that does not fit the screen shows up.
         const c = document.createElement('canvas');
-        c.width = 300;
-        c.height = 420;
+        c.width = 700;
+        c.height = 968;
         const g = c.getContext('2d');
+        g.scale(700 / 300, 968 / 420);
         g.fillStyle = bg;
         g.fillRect(0, 0, 300, 420);
         g.strokeStyle = '#222';
@@ -976,6 +978,11 @@ if (!(await page.isVisible('text=This replaces your current game.'))) problems.p
     // Full screen closes on tap and on Escape.
     await p.click('.encounter-pane .thumb');
     if (!(await p.isVisible('.full img'))) problems.push('full-screen card missing');
+    const fullFits = await p.$eval('.full img', (e) => {
+      const r = e.getBoundingClientRect();
+      return r.top >= 0 && r.left >= 0 && r.bottom <= innerHeight && r.right <= innerWidth;
+    });
+    if (!fullFits) problems.push('full-screen card runs off the screen');
     await p.click('.full');
     if (await p.isVisible('.full')) problems.push('full-screen card did not close on tap');
     await p.click('.encounter-pane .thumb');
@@ -2693,6 +2700,53 @@ for (const reduced of [false, true]) {
   await p.waitForTimeout(150);
   if (!(await p.isVisible(`${pane} [data-testid=tables-empty]`))) problems.push(`${tag}: no explanation after removing the table file`);
   await shot('79-tables-removed.png', p);
+
+  // 9. God and herb cards from the card pack: chips of their own (even with no table file), a picture grid,
+  // full screen on a tap (fitting the screen), found by an All search; the encounter picker leaves them out.
+  const cardImg = await p.evaluate(() => {
+    const c = document.createElement('canvas');
+    c.width = 700;
+    c.height = 968;
+    const g = c.getContext('2d');
+    g.fillStyle = '#b9a';
+    g.fillRect(0, 0, 700, 968);
+    g.strokeStyle = '#222';
+    g.lineWidth = 16;
+    g.strokeRect(16, 16, 668, 936);
+    return c.toDataURL('image/png');
+  });
+  const godPack = { format: 1, systemId: 'dungeon', name: 'Made-up cards', cards: [
+    { id: 'c1', name: 'Mossy Gribbler', level: 1, image: cardImg },
+    { id: 'g1', name: 'Zorbin the Hollow', level: 0, kind: 'god', image: cardImg },
+    { id: 'g2', name: 'Pell the Quiet', level: 0, kind: 'god', image: cardImg },
+    { id: 'h1', name: 'Fizzleroot', level: 0, kind: 'herb', image: cardImg },
+  ] };
+  await p.setInputFiles('input[data-extra="cards"]', { name: 'cards.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(godPack)) });
+  await p.waitForTimeout(500);
+  const chipText = await p.$$eval(`${pane} .chips button`, (b) => b.map((x) => x.textContent.trim()).join('|'));
+  if (chipText !== 'All|Gods|Herbs') problems.push(`${tag}: chips with cards and no table file "${chipText}"`);
+  const cardNames = () => p.$$eval(`${pane} .cards .card span`, (b) => b.map((x) => x.textContent.trim()).join('|'));
+  await p.click(`${pane} .chips button:text-is("Gods")`);
+  if ((await cardNames()) !== 'Zorbin the Hollow|Pell the Quiet') problems.push(`${tag}: Gods shows "${await cardNames()}"`);
+  await shot('79a-gods.png', p);
+  await p.click(`${pane} .chips button:text-is("Herbs")`);
+  if ((await cardNames()) !== 'Fizzleroot') problems.push(`${tag}: Herbs shows "${await cardNames()}"`);
+  await p.click(`${pane} .cards .card`);
+  await p.waitForSelector('.full img');
+  const godFits = await p.$eval('.full img', (e) => {
+    const r = e.getBoundingClientRect();
+    return r.top >= 0 && r.left >= 0 && r.bottom <= innerHeight && r.right <= innerWidth;
+  });
+  if (!godFits) problems.push(`${tag}: full-screen herb card runs off the screen`);
+  await shot('79b-herb-full.png', p);
+  await p.keyboard.press('Escape');
+  if (await p.isVisible('.full')) problems.push(`${tag}: full-screen herb card did not close on Escape`);
+  await p.click(`${pane} .chips button:text-is("All")`);
+  await p.fill(`${pane} input[type=search]`, 'the');
+  if ((await cardNames()) !== 'Zorbin the Hollow|Pell the Quiet') problems.push(`${tag}: All search "the" shows "${await cardNames()}"`);
+  await p.fill(`${pane} input[type=search]`, 'gribbler');
+  if ((await cardNames()) !== '') problems.push(`${tag}: a creature card shows in the Tables pane`);
+  await smallButtons('cards');
   await ctx.close();
 }
 

@@ -1,10 +1,15 @@
 export const CARD_PACK_FORMAT = 1;
 export const MAX_CARD_PACK_BYTES = 60_000_000;
 
+/** A card that is not a creature: a god or a herb, read in the Tables pane. Creature cards have no kind. */
+export type CardKind = 'god' | 'herb';
+export const CARD_KINDS: CardKind[] = ['god', 'herb'];
+
 export interface CreatureCard {
   id: string;
   name: string;
   level: number;
+  kind?: CardKind;
   /** data:image/(jpeg|webp|png);base64,… */
   image: string;
 }
@@ -56,15 +61,26 @@ export function validateCardPack(data: unknown): CardsParse {
     if (typeof c.name !== 'string' || !c.name.trim()) return damaged(`Cards[${i}] name`);
     if (typeof c.level !== 'number' || !Number.isInteger(c.level) || c.level < 0) return damaged(`Cards[${i}] level`);
     if (typeof c.image !== 'string' || !IMAGE_URL.test(c.image)) return damaged(`Cards[${i}] image (must be a data:image/ URL)`);
-    cards.push({ id: c.id, name: c.name, level: c.level, image: c.image });
+    if (c.kind !== undefined && !CARD_KINDS.includes(c.kind as CardKind)) return damaged(`Cards[${i}] kind (use one of ${CARD_KINDS.join(', ')}, or leave it out for a creature)`);
+    const card: CreatureCard = { id: c.id, name: c.name, level: c.level, image: c.image };
+    if (c.kind !== undefined) card.kind = c.kind as CardKind;
+    cards.push(card);
   }
   return { ok: true, pack: { format: 1, systemId: 'dungeon', name: data.name, cards } };
 }
 
-/** Case-insensitive substring on the name, then the level filter; sorted by level then name. */
+export const isCreatureCard = (c: CreatureCard): boolean => c.kind === undefined;
+
+/** Creature cards only: case-insensitive substring on the name, then the level filter; sorted by level then name. */
 export function searchCards(pack: CardPack, query: string, level: number | null): CreatureCard[] {
   const q = query.trim().toLowerCase();
   return pack.cards
-    .filter((c) => (!q || c.name.toLowerCase().includes(q)) && (level === null || c.level === level))
+    .filter((c) => isCreatureCard(c) && (!q || c.name.toLowerCase().includes(q)) && (level === null || c.level === level))
     .sort((a, b) => a.level - b.level || a.name.localeCompare(b.name));
+}
+
+/** The pack's cards of one kind whose name contains the query (any case), in pack order. */
+export function cardsOfKind(pack: CardPack | null, kind: CardKind, query: string): CreatureCard[] {
+  const q = query.trim().toLowerCase();
+  return (pack?.cards ?? []).filter((c) => c.kind === kind && (!q || c.name.toLowerCase().includes(q)));
 }

@@ -437,6 +437,12 @@ A creature card pack is a separate JSON file, loaded from the menu next to the t
 
 `format` must be 1 and `systemId` must be `"dungeon"`. Each card has a unique `id`, a `name`, a dungeon `level`, and an `image` as a `data:image/jpeg;base64,...` (or webp/png) URL. The file may be up to 60 MB.
 
+A card may also have a `kind` of `"god"` or `"herb"` (leave it out for a creature). God and herb cards are never fought: they appear in the Tables pane under their own Gods and Herbs chips, as pictures that open full screen on a tap, and an All search finds them by name. Their `level` is not used (0 is fine).
+
+```json
+{ "id": "god-p2-1", "name": "Example God", "level": 0, "kind": "god", "image": "data:image/jpeg;base64,..." }
+```
+
 ### Making a pack from your PDF
 
 You need `pdftoppm` and `pdftotext` (poppler-utils) and ImageMagick (`magick` or `convert`) installed. Then:
@@ -460,6 +466,20 @@ node scripts/make-creature-pack.mjs path/to/codex.pdf [--first N --last N] [--in
 ```
 
 The output is written to `local-data/creature-cards.json` by default, which is git-ignored. The script prints the card count and total size.
+
+### Adding god and herb cards
+
+God and herb cards are pictures with no text the script can read, so you name each one yourself. Write a names file mapping `"page:slot"` to the card's name (slot 1-4 or TL, TR, BL, BR, as above), then:
+
+```
+node scripts/add-cards.mjs path/to/rules.pdf --kind god --pages 2,4 --names god-names.json [--pack local-data/creature-cards.json]
+```
+
+(`npm run add-cards -- ...` does the same.)
+
+- Only the slots named in the names file are kept, so card backs printed on the same pages are skipped.
+- The cards are added to the pack (made if it does not exist yet). Running it again for the same kind replaces that kind's cards and leaves the rest.
+- Run it once with `--kind god` and once with `--kind herb`, then load the pack again from the menu.
 
 ## If the app refuses your file
 

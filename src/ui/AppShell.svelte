@@ -1023,7 +1023,7 @@
           }}
         />
       {:else if activeTab === 'tables'}
-        <TablesPane {tables} state={tablesState} onstate={(st) => (tablesState = st)} onclose={closeTablesPane} />
+        <TablesPane {tables} {cards} state={tablesState} onstate={(st) => (tablesState = st)} onclose={closeTablesPane} />
       {:else}
         <EncounterPane
           {history}

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { searchCards, type CardPack } from '../../systems/dungeon/cards';
+  import { isCreatureCard, searchCards, type CardPack } from '../../systems/dungeon/cards';
   import type { DungeonTables } from '../../systems/dungeon/tables';
 
   interface Props {
@@ -15,15 +15,17 @@
 
   let query = $state('');
   let level = $state('all');
+  /** God and herb cards are read in the Tables pane, never fought. */
+  const creatureCards = $derived((pack?.cards ?? []).filter(isCreatureCard));
   const levels = $derived(
-    [...new Set([...(pack?.cards ?? []).map((c) => c.level), ...Object.values(tables?.tables.creatures ?? {}).map((c) => c.level)])].sort((a, b) => a - b),
+    [...new Set([...creatureCards.map((c) => c.level), ...Object.values(tables?.tables.creatures ?? {}).map((c) => c.level)])].sort((a, b) => a - b),
   );
   const want = $derived(level === 'all' ? null : Number(level));
   const cardHits = $derived(pack ? searchCards(pack, query, want) : []);
   /** Creatures in the table file that have no card of their own. */
   const tableHits = $derived.by(() => {
     const q = query.trim().toLowerCase();
-    const carded = new Set((pack?.cards ?? []).map((c) => c.name.toLowerCase()));
+    const carded = new Set(creatureCards.map((c) => c.name.toLowerCase()));
     return Object.entries(tables?.tables.creatures ?? {})
       .filter(([n, c]) => !carded.has(n.toLowerCase()) && (!q || n.toLowerCase().includes(q)) && (want === null || c.level === want))
       .map(([n, c]) => ({ name: n, level: c.level }))

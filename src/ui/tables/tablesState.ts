@@ -1,5 +1,6 @@
 import type { RefGroup, RefRoll, RefTable } from '../../systems/dungeon/referenceTables';
 import type { DungeonTables } from '../../systems/dungeon/tables';
+import type { CardKind } from '../../systems/dungeon/cards';
 
 export { isSlug } from '../../systems/dungeon/encounterText';
 
@@ -13,8 +14,11 @@ export interface TablesState {
   modifier: Record<string, number>;
   results: Record<string, RefRoll>;
   query: string;
-  group: RefGroup | 'all';
+  /** A table group, or a kind of card (gods, herbs) from the card pack, shown as pictures. */
+  group: TablesGroup;
 }
+
+export type TablesGroup = RefGroup | 'all' | CardKind;
 
 export const initialTablesState: TablesState = { open: null, back: [], modifier: {}, results: {}, query: '', group: 'all' };
 
@@ -46,8 +50,8 @@ export function setResult(s: TablesState, code: string, r: RefRoll): TablesState
   return { ...s, results: { ...s.results, [code]: r } };
 }
 
-/** Tables whose code or name contains the query (any case), in the group; sorted by group, then page, then code. */
-export function searchTables(t: DungeonTables | null, query: string, group: RefGroup | 'all'): { code: string; table: RefTable }[] {
+/** Tables whose code or name contains the query (any case), in the group (none for a card kind); sorted by group, then page, then code. */
+export function searchTables(t: DungeonTables | null, query: string, group: TablesGroup): { code: string; table: RefTable }[] {
   const all = t?.tables.referenceTables;
   if (!all) return [];
   const q = query.trim().toLowerCase();
