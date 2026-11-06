@@ -1,10 +1,13 @@
 <script lang="ts">
   // The Tables pane: search and browse the table file's reference tables, read one, roll on it;
   // and look at the card pack's god and herb cards, full screen on a tap.
-  // Its state belongs to the app shell, so switching tabs keeps it; none of it is game state.
+  // Its state belongs to the app shell, so switching tabs keeps it; none of it is game state
+  // (a rolled potion added to the hero goes through History like any other hero edit).
   import { findTable } from '../../systems/dungeon/referenceTables';
   import { CARD_KINDS, cardsOfKind, type CardKind, type CardPack, type CreatureCard } from '../../systems/dungeon/cards';
   import type { DungeonTables } from '../../systems/dungeon/tables';
+  import type { Hero } from '../../systems/dungeon/hero';
+  import type { KnownPotion } from '../../systems/dungeon/potions';
   import TableView from './TableView.svelte';
   import { goBack, isSlug, openTable, searchTables, setResult, showList, type TablesGroup, type TablesState } from './tablesState';
 
@@ -15,8 +18,11 @@
     state: TablesState;
     onstate: (s: TablesState) => void;
     onclose: () => void;
+    /** The hero: a potion rolled on a table can be added to their sheet. */
+    hero?: Hero | null;
+    onaddpotion?: (p: KnownPotion) => void;
   }
-  let { tables, cards = null, state: s, onstate, onclose }: Props = $props();
+  let { tables, cards = null, state: s, onstate, onclose, hero = null, onaddpotion }: Props = $props();
 
   const KIND_LABEL: Record<CardKind, string> = { god: 'Gods', herb: 'Herbs' };
   /** The card kinds the pack has, each with a chip of its own after the table groups. */
@@ -97,6 +103,8 @@
           onopen={open}
           onback={() => onstate(goBack(s))}
           onlist={() => onstate(showList(s))}
+          {hero}
+          {onaddpotion}
         />
       {/key}
     {:else}

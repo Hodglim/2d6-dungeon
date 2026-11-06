@@ -31,3 +31,17 @@ export function knownPotions(t: DungeonTables | null): { label: string; items: K
     { label: 'Potion bombs', items: bombs },
   ].filter((g) => g.items.length > 0);
 }
+
+/**
+ * The known potion a rolled table row names, with the potion list's name and effect: the first
+ * cell whose whole text is a known potion's name (capitals and spaces at the ends don't matter).
+ */
+export function potionInRow(t: DungeonTables | null, cells: readonly string[]): KnownPotion | null {
+  const all = knownPotions(t).flatMap((g) => g.items);
+  for (const c of cells) {
+    const k = c.trim().toLowerCase();
+    const p = all.find((x) => x.name.trim().toLowerCase() === k);
+    if (p) return p;
+  }
+  return null;
+}

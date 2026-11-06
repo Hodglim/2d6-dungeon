@@ -1,8 +1,11 @@
 <script lang="ts">
   // One reference table: header, intro, rows, notes, and (when it has dice) a roll with a modifier.
-  // Rolling only shows a result: nothing here touches the game.
+  // Rolling only shows a result; the one way it touches the game is the button that puts a rolled
+  // potion on the hero sheet.
   import { naturalTotal, rollReference, type RefRoll, type RefTable } from '../../systems/dungeon/referenceTables';
   import type { DungeonTables } from '../../systems/dungeon/tables';
+  import { listLimit, type Hero } from '../../systems/dungeon/hero';
+  import { potionInRow, type KnownPotion } from '../../systems/dungeon/potions';
   import type { DiceJob } from '../diceDesk';
   import RollCard from '../RollCard.svelte';
   import RefText from './RefText.svelte';
@@ -23,8 +26,11 @@
     nav?: boolean;
     /** The roller job's id; a second view of the same table (the unconscious dialog) needs its own. */
     jobId?: string;
+    /** The hero, for adding a rolled potion to their sheet (left out where that isn't offered). */
+    hero?: Hero | null;
+    onaddpotion?: (p: KnownPotion) => void;
   }
-  let { code, table, tables, modifier, result, canBack, onresult, onopen, onback, onlist, nav = true, jobId }: Props = $props();
+  let { code, table, tables, modifier, result, canBack, onresult, onopen, onback, onlist, nav = true, jobId, hero = null, onaddpotion }: Props = $props();
 
   const minus = (n: number) => (n < 0 ? `−${Math.abs(n)}` : String(n));
   const rolls = $derived(table.dice !== null);
@@ -34,6 +40,17 @@
   const hit = $derived(result && result.row !== null ? (table.rows[result.row] ?? null) : null);
 
   let typedError = $state<string | null>(null);
+
+  /** A known potion the result's row names, when there is a hero to give it to. */
+  const potion = $derived(hit && hero && onaddpotion ? potionInRow(tables, hit.cells) : null);
+  const potionRoom = $derived(hero ? listLimit(hero, 'potions') - hero.potions.length : 0);
+  /** The result whose potion was added, so the button isn't tapped twice for one roll. */
+  let addedFrom = $state.raw<RefRoll | null>(null);
+  function addPotion() {
+    if (!potion || !result || potionRoom <= 0) return;
+    onaddpotion?.(potion);
+    addedFrom = result;
+  }
 
   function apply(faces: number[], m: number) {
     const r = rollReference(table, faces, m);
@@ -140,6 +157,17 @@
               <p>{#if cellHeads.length > 1 && cellHeads[j]}<span class="label">{cellHeads[j]}:</span>{' '}{/if}<RefText text={c} {tables} {onopen} amounts={rowLabel} /></p>
             {/each}{/key}
           </div>
+          {#if potion && hero}
+            <div class="potion" data-testid="add-potion">
+              {#if addedFrom === result}
+                <p>Added {potion.name} to the hero's potions.</p>
+              {:else if potionRoom <= 0}
+                <p>No room for {potion.name}: potions {hero.potions.length} / {listLimit(hero, 'potions')}.</p>
+              {:else}
+                <button type="button" onclick={addPotion}>Add {potion.name} to hero</button>
+              {/if}
+            </div>
+          {/if}
         {:else}
           <p class="none">No row for {minus(result.clamped)}</p>
         {/if}
@@ -250,6 +278,10 @@
   }
   .label {
     font-weight: 600;
+  }
+  .potion {
+    margin-top: 10px;
+    font-size: 17px;
   }
   .none {
     margin-top: 6px !important;

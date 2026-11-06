@@ -28,6 +28,7 @@
   import type { CardPack } from '../systems/dungeon/cards';
   import { allDefeated, type Encounter } from '../systems/dungeon/combat';
   import { restOnStairs, type Hero } from '../systems/dungeon/hero';
+  import { commitHero } from './hero/heroActions';
   import { levelLabel } from './levelLabel';
   import type { DungeonTables } from '../systems/dungeon/tables';
   import { classicTheme } from '../systems/dungeon/classic';
@@ -561,6 +562,12 @@
   }
 
   /** The toolbar's Hero button: create one, or show or hide the sheet. */
+  /** A potion rolled on a table goes on the hero sheet (the Tables pane only offers it while there's room). */
+  function addRolledPotion(p: { name: string; effect: string }) {
+    const h = history.hero as Hero | null;
+    if (h) commitHero(history, { ...h, potions: [...h.potions, { name: p.name, effect: p.effect }] });
+  }
+
   function onHeroButton() {
     if (!started || loadError) return;
     if ($view.hero === null && !tables) {
@@ -1023,7 +1030,15 @@
           }}
         />
       {:else if activeTab === 'tables'}
-        <TablesPane {tables} {cards} state={tablesState} onstate={(st) => (tablesState = st)} onclose={closeTablesPane} />
+        <TablesPane
+          {tables}
+          {cards}
+          state={tablesState}
+          onstate={(st) => (tablesState = st)}
+          onclose={closeTablesPane}
+          hero={$view.hero as Hero | null}
+          onaddpotion={addRolledPotion}
+        />
       {:else}
         <EncounterPane
           {history}
