@@ -123,6 +123,10 @@ describe('selectionOverlay', () => {
     expect(selectionOverlay(m, { kind: 'wall', edge: { x: 3, y: 3, side: 'N' } })).toEqual([{ kind: 'edge', at: { x: 3, y: 3, side: 'N' }, tone: 'bad' }]);
   });
 
+  it('highlights the door a lock panel is open for', () => {
+    expect(selectionOverlay(base(), { kind: 'lock', doorId: 'd1', then: 'exit' })).toEqual([{ kind: 'edge', at: { x: 3, y: 2, side: 'N' }, tone: 'highlight' }]);
+  });
+
   it('is empty when the selected thing is gone', () => {
     expect(selectionOverlay(base(), { kind: 'door', doorId: 'gone' })).toEqual([]);
   });

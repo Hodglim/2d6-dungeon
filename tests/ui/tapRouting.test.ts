@@ -1,8 +1,12 @@
 import type { DungeonMap, Feature } from '../../src/core/types';
 import type { Step } from '../../src/interaction/playflow';
 import { pick } from '../../src/render/hit';
-import { entryNote, nearestEdge, resolveSelection, roomAfterWin, roomExitCount, roomTabShown, routeEditorTap, routePlayTap } from '../../src/ui/tapRouting';
+import { entryNote, exitTapAction, nearestEdge, resolveSelection, roomAfterWin, roomExitCount, roomTabShown, routeEditorTap, routePlayTap } from '../../src/ui/tapRouting';
+import { readFileSync } from 'node:fs';
+import type { DungeonTables } from '../../src/systems/dungeon/tables';
 import { door, emptyMap, room, withContent } from '../core/fixtures';
+
+const tables = JSON.parse(readFileSync('tests/fixtures/dungeon-tables.fixture.json', 'utf8')) as DungeonTables;
 
 /**
  * Room 1 at (2,2) 3×3 entered through d-in on its south wall (from a passage below it),
@@ -112,6 +116,22 @@ describe('entryNote and roomExitCount', () => {
 
 describe('routePlayTap', () => {
   const opts = { gapMode: false, allowedExits: [] };
+  const lockIn = (m: DungeonMap, locked: boolean): DungeonMap => ({
+    ...m,
+    doors: m.doors.map((d) => (d.id === 'd-in' ? { ...d, lock: { locked, note: '', quality: null } } : d)),
+  });
+
+  it('idle: a locked door between two rooms goes to the lock panel', () => {
+    const m = lockIn(sample(), true);
+    const w = { x: 3.5, y: 4.9 };
+    expect(routePlayTap(IDLE, m, tap(m, w.x, w.y), w, opts)).toEqual({ kind: 'lockedDoor', doorId: 'd-in' });
+  });
+
+  it('idle: an unlocked door between rooms is passed by, to the room', () => {
+    const m = lockIn(sample(), false);
+    const w = { x: 3.5, y: 4.9 };
+    expect(routePlayTap(IDLE, m, tap(m, w.x, w.y), w, opts)).toEqual({ kind: 'select', selection: { kind: 'room', roomId: 'r1' } });
+  });
 
   it('idle on an empty map starts the entrance on the tapped square', () => {
     const m = emptyMap(10, 10);
@@ -213,5 +233,35 @@ describe('roomAfterWin', () => {
 
   it('ignores a selected room that is no longer on the map', () => {
     expect(roomAfterWin({ ...sample(), token: null }, { kind: 'room', roomId: 'gone' })).toBeNull();
+  });
+});
+
+describe('exitTapAction', () => {
+  const withOut = (patch: object): DungeonMap => {
+    const m = sample();
+    return { ...m, doors: m.doors.map((d) => (d.id === 'd-out' ? { ...d, type: 'metal', ...patch } : d)) };
+  };
+  it('an unchecked lockable exit goes to the lock panel, then the room or the gap', () => {
+    expect(exitTapAction(withOut({}), tables, 'd-out', 'exit')).toEqual({ kind: 'lock', selection: { kind: 'lock', doorId: 'd-out', then: 'exit' } });
+    expect(exitTapAction(withOut({}), tables, 'd-out', 'gap')).toEqual({ kind: 'lock', selection: { kind: 'lock', doorId: 'd-out', then: 'gap' } });
+  });
+  it('without tables an unchecked exit goes straight to the flow', () => {
+    expect(exitTapAction(withOut({}), null, 'd-out', 'exit')).toEqual({ kind: 'flow' });
+  });
+  it('an exit a table locked goes to the lock panel even without tables', () => {
+    const m = withOut({ lock: { locked: true, note: '', quality: null } });
+    expect(exitTapAction(m, null, 'd-out', 'exit').kind).toBe('lock');
+  });
+  it('a secret door goes straight to the flow', () => {
+    expect(exitTapAction(withOut({ secret: true }), tables, 'd-out', 'exit')).toEqual({ kind: 'flow' });
+  });
+});
+
+describe('resolveSelection: lock', () => {
+  it('keeps a lock selection while its door is there, and drops it after', () => {
+    const m = sample();
+    const sel = { kind: 'lock' as const, doorId: 'd-out', then: 'exit' as const };
+    expect(resolveSelection(m, sel)).toEqual(sel);
+    expect(resolveSelection({ ...m, doors: m.doors.filter((d) => d.id !== 'd-out') }, sel)).toBeNull();
   });
 });

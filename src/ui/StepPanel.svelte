@@ -65,6 +65,8 @@
         return `newNote:${s.cell.x},${s.cell.y}`;
       case 'room':
         return `room:${s.roomId}`;
+      case 'lock':
+        return `lock:${s.doorId}`;
     }
   }
 

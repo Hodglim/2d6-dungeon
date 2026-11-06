@@ -60,6 +60,7 @@ export function selectionOverlay(map: DungeonMap, sel: Selection | null): Overla
   if (!sel) return [];
   switch (sel.kind) {
     case 'door':
+    case 'lock':
       return exitEdge(map, sel.doorId);
     case 'wall':
       return [{ kind: 'edge', at: plainEdge(sel.edge), tone: checkDoorTool(map, sel.edge).ok ? 'ok' : 'bad' }];

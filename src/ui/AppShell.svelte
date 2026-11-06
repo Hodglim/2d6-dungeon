@@ -54,7 +54,7 @@
   import LevelViewer from './LevelViewer.svelte';
   import StairsDialog from './StairsDialog.svelte';
   import StepPanel from './StepPanel.svelte';
-  import { resolveSelection, roomAfterWin, roomTabShown, routeEditorTap, routePlayTap, type Selection } from './tapRouting';
+  import { exitTapAction, resolveSelection, roomAfterWin, roomTabShown, routeEditorTap, routePlayTap, type Selection } from './tapRouting';
   import Toolbar from './Toolbar.svelte';
   import TablesPane from './tables/TablesPane.svelte';
   import { initialTablesState, openTable, setResult, type TablesState } from './tables/tablesState';
@@ -785,9 +785,20 @@
       case 'startEntrance':
         return flow.startEntrance(action.cell); // the flow explains an invalid square
       case 'startExit':
-        return flow.startFromExit(action.doorId);
-      case 'startGap':
-        return flow.startGap(action.doorId);
+      case 'startGap': {
+        const then = action.kind === 'startExit' ? 'exit' : 'gap';
+        const next = exitTapAction(history.map, tables, action.doorId, then);
+        if (next.kind === 'lock') {
+          selection = next.selection;
+          sidebar = 'steps';
+          return;
+        }
+        return then === 'exit' ? flow.startFromExit(action.doorId) : flow.startGap(action.doorId);
+      }
+      case 'lockedDoor':
+        selection = { kind: 'lock', doorId: action.doorId, then: null };
+        sidebar = 'steps';
+        return;
       case 'select':
         selection = action.selection;
         // A room opens in the Room tab beside the side panes; anything else takes the sidebar.

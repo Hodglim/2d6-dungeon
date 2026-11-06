@@ -8,6 +8,8 @@ import type { Cell, DungeonMap, Edge, Room } from '../core/types';
 import type { Step } from '../interaction/playflow';
 import type { Point } from '../render/camera';
 import type { Pick } from '../render/hit';
+import { lockGate } from '../systems/dungeon/locks';
+import type { DungeonTables } from '../systems/dungeon/tables';
 import type { Tool } from './historyStore';
 
 /** What an editor tool (Door, Stairs, Note) or a Play tap has picked for the panel to edit. */
@@ -19,7 +21,9 @@ export type Selection =
   | { kind: 'feature'; featureId: string }
   /** A floor square a new note is being written for (not on the map yet). */
   | { kind: 'newNote'; cell: Cell }
-  | { kind: 'room'; roomId: string };
+  | { kind: 'room'; roomId: string }
+  /** A door to check or unlock before going through: `then` is what follows once it opens. */
+  | { kind: 'lock'; doorId: string; then: 'exit' | 'gap' | null };
 
 export type EditorTap =
   | { kind: 'select'; selection: Selection }
@@ -35,6 +39,8 @@ export type PlayTap =
   | { kind: 'select'; selection: Selection }
   | { kind: 'slideAndPlace'; cell: Cell }
   | { kind: 'toggleExit'; edge: Edge }
+  /** A locked door between two rooms: the lock panel. */
+  | { kind: 'lockedDoor'; doorId: string }
   | { kind: 'hint'; text: string }
   /** A tap that doesn't belong to the current step. */
   | { kind: 'ignore' };
@@ -72,6 +78,8 @@ export function routePlayTap(
       const exit = nearestEdge(openExits(map), world);
       if (exit) return { kind: opts.gapMode ? 'startGap' : 'startExit', doorId: exit.id };
       if (opts.gapMode) return { kind: 'hint', text: 'Tap an open exit (highlighted)' };
+      const locked = nearestEdge(map.doors.filter((d) => d.lock?.locked === true), world);
+      if (locked) return { kind: 'lockedDoor', doorId: locked.id };
       const f = map.features.find((x) => sameCell(x, p.cell));
       if (f) return { kind: 'select', selection: { kind: 'feature', featureId: f.id } };
       if (p.room) return { kind: 'select', selection: { kind: 'room', roomId: p.room.id } };
@@ -134,7 +142,21 @@ export function resolveSelection(map: DungeonMap, sel: Selection | null): Select
       return roomAt(map, sel.cell) ? sel : null;
     case 'room':
       return map.rooms.some((r) => r.id === sel.roomId) ? sel : null;
+    case 'lock':
+      return map.doors.some((d) => d.id === sel.doorId) ? sel : null;
   }
+}
+
+/** An open exit tapped in Play: straight into the room (or gap) flow, or to the lock panel first. */
+export function exitTapAction(
+  map: DungeonMap,
+  tables: DungeonTables | null,
+  doorId: string,
+  then: 'exit' | 'gap',
+): { kind: 'flow' } | { kind: 'lock'; selection: Selection } {
+  const d = map.doors.find((x) => x.id === doorId);
+  if (!d || lockGate(d, tables) === null) return { kind: 'flow' };
+  return { kind: 'lock', selection: { kind: 'lock', doorId, then } };
 }
 
 /** "This is how Room N was entered" when the door is some room's (or passage's) entry door, else null. */
