@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MAX_CARD_PACK_BYTES, parseCardPack, searchCards } from '../../src/systems/dungeon/cards';
+import { MAX_CARD_PACK_BYTES, cardsOfKind, parseCardPack, searchCards } from '../../src/systems/dungeon/cards';
 
 const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
 const pack = () => ({
@@ -56,5 +56,40 @@ describe('searchCards', () => {
   it('filters by level', () => {
     expect(searchCards(p, '', 1).map((c) => c.name)).toEqual(['Bog Wobbler', 'Gobbo Cousin']);
     expect(searchCards(p, 'gob', 2).map((c) => c.name)).toEqual(['Goblin Thing']);
+  });
+});
+
+describe('card kinds', () => {
+  const mixed = () => ({
+    ...pack(),
+    cards: [
+      ...pack().cards,
+      { id: 'g1', name: 'Zorbin the Hollow', level: 0, kind: 'god', image: PNG },
+      { id: 'h1', name: 'Fizzleroot', level: 0, kind: 'herb', image: PNG },
+    ],
+  });
+  it('keeps a god or herb kind and leaves creature cards without one', () => {
+    const r = parse(mixed());
+    if (!r.ok) throw new Error(r.error);
+    expect(r.pack.cards.map((c) => c.kind)).toEqual([undefined, undefined, undefined, 'god', 'herb']);
+  });
+  it('refuses an unknown kind', () => {
+    const bad = mixed();
+    (bad.cards[3] as { kind: string }).kind = 'spell';
+    expect(err(parse(bad))).toMatch(/damaged.*kind/);
+  });
+  it('searchCards finds creature cards only', () => {
+    const r = parse(mixed());
+    if (!r.ok) throw new Error(r.error);
+    expect(searchCards(r.pack, '', 0)).toEqual([]);
+    expect(searchCards(r.pack, 'z', null)).toEqual([]);
+  });
+  it('cardsOfKind lists one kind in pack order, filtered by name', () => {
+    const r = parse(mixed());
+    if (!r.ok) throw new Error(r.error);
+    expect(cardsOfKind(r.pack, 'god', '').map((c) => c.id)).toEqual(['g1']);
+    expect(cardsOfKind(r.pack, 'herb', 'ROOT').map((c) => c.id)).toEqual(['h1']);
+    expect(cardsOfKind(r.pack, 'herb', 'zor')).toEqual([]);
+    expect(cardsOfKind(null, 'god', '')).toEqual([]);
   });
 });

@@ -1,4 +1,4 @@
-import type { CardPack, CreatureCard } from './cards';
+import { isCreatureCard, type CardPack, type CreatureCard } from './cards';
 import type { CreatureStats, CreatureTableEntry, DungeonTables } from './tables';
 
 export function findCreature(t: DungeonTables | null, name: string): { name: string; stats: CreatureStats } | null {
@@ -14,7 +14,7 @@ export function findCreature(t: DungeonTables | null, name: string): { name: str
 export function findCard(pack: CardPack | null, name: string): CreatureCard | null {
   if (!pack) return null;
   const want = name.trim().toLowerCase();
-  return pack.cards.find((c) => c.name.toLowerCase() === want) ?? null;
+  return pack.cards.find((c) => isCreatureCard(c) && c.name.toLowerCase() === want) ?? null;
 }
 
 export interface CreatureRoll { die: number; modifier: number; total: number; entry: CreatureTableEntry }
