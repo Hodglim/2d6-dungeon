@@ -79,7 +79,7 @@
           <dt>Type</dt>
           <dd>{room.contents.type}</dd>
           <dt>Description</dt>
-          <dd>{room.contents.description}</dd>
+          <dd data-testid="room-description">{#if encounter}<EncounterText text={room.contents.description} {tables} onopentable={encounter.onopentable} />{:else}{room.contents.description}{/if}</dd>
           {#if room.contents.encounter}
             <dt>Encounter</dt>
             <dd data-testid="encounter-text">{#if encounter}<EncounterText text={room.contents.encounter} {tables} {...encounter} />{:else}{room.contents.encounter}{/if}</dd>

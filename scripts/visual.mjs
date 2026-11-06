@@ -1900,6 +1900,8 @@ for (const reduced of [false, true]) {
     else if (v && typeof v === 'object') for (const k of Object.keys(v)) k === 'encounter' && typeof v[k] === 'string' ? (v[k] = ENC) : swap(v[k]);
   };
   swap(fx.tables.dungeonLevels);
+  // A description can send you to a table too (a small room has no encounter text to do it).
+  fx.tables.dungeonLevels[0].rooms['11'].description = 'A made-up room, number 11. Roll on XX2.';
   await p.setInputFiles('input[data-extra="tables"]', { name: 'tables.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(fx)) });
   await p.waitForTimeout(500);
 
@@ -1942,20 +1944,26 @@ for (const reduced of [false, true]) {
   if (await p.isVisible('aside.panel [data-testid=encounter-text]')) problems.push(`${tag}: encounter text shown before the exit type`);
   const pending = (await p.textContent('aside.panel [data-testid=room-result]'))?.replace(/\s+/g, ' ').trim() ?? '';
   if (!pending.includes('Practice Room 11') || !pending.includes('A made-up room, number 11.')) problems.push(`${tag}: room before the exit type "${pending}"`);
+  const descButtons = async (where) => {
+    const b = await p.$$eval(`${where} [data-testid=room-description] [data-testid=encounter-actions] button`, (els) => els.map((e) => e.textContent.trim()));
+    if (b.join('|') !== '📖 Open XX2') problems.push(`${tag}: description buttons ${JSON.stringify(b)} in ${where}`);
+  };
+  await descButtons('aside.panel');
   await shot('55a-encounter-waits-for-exit-type.png', p);
   await rollerEnterOn(p, '1', '1');
   await p.waitForSelector('aside.panel [data-testid=encounter-text]');
   if (!(await p.isVisible('aside.panel [data-testid=exit-result]'))) problems.push(`${tag}: no exit result with the encounter text`);
   const encText = (await p.textContent('aside.panel [data-testid=encounter-text] .enc-text'))?.trim();
   if (encText !== ENC) problems.push(`${tag}: label step text "${encText}"`);
-  const labels = await p.$$eval('aside.panel [data-testid=encounter-actions] button', (els) => els.map((e) => e.textContent.trim()));
+  const labels = await p.$$eval('aside.panel [data-testid=encounter-text] [data-testid=encounter-actions] button', (els) => els.map((e) => e.textContent.trim()));
   console.log(`${tag}: buttons ${JSON.stringify(labels)}`);
   if (labels.join('|') !== '🎲 Roll on PRAC1 −1|🎲 Roll on PRAC2|⚔ Fight Grumbler') problems.push(`${tag}: buttons ${JSON.stringify(labels)}`);
   const refs = await p.$$eval('aside.panel [data-testid=encounter-text] .ref', (els) => els.map((e) => e.textContent.trim()));
   if (refs.some((r) => /LOOT9|FP/.test(r)) || labels.some((l) => /LOOT9|FP/.test(l))) problems.push(`${tag}: LOOT9 or FP became an action`);
-  const small = await p.$$eval('aside.panel [data-testid=encounter-actions] button', (els) => els.map((e) => e.getBoundingClientRect()).filter((r) => r.width < 44 || r.height < 44).length);
+  const small = await p.$$eval('aside.panel [data-testid=encounter-text] [data-testid=encounter-actions] button', (els) => els.map((e) => e.getBoundingClientRect()).filter((r) => r.width < 44 || r.height < 44).length);
   if (small) problems.push(`${tag}: ${small} encounter buttons under 44 px`);
   await shot('55-encounter-text-buttons.png', p);
+  await descButtons('aside.panel');
 
   // Roll: places the room first (as Done would), then a pending roll at the top of the pane, which
   // comes to the front. The placed room stays selected: a Room tab beside the fight keeps its text.
@@ -1968,6 +1976,7 @@ for (const reduced of [false, true]) {
     await p.waitForSelector('[data-editor=room] [data-testid=encounter-actions]', { timeout: 3000 }).catch(() => problems.push(`${tag}: Room tab shows no encounter buttons`));
     const roomText = (await p.textContent('[data-editor=room]').catch(() => '')) ?? '';
     if (!roomText.includes(ENC)) problems.push(`${tag}: Room tab does not show the placed room's encounter text`);
+    await descButtons('[data-editor=room]');
     await shot('56a-encounter-room-tab.png', p);
     await p.click('#side-tab-encounter');
     await p.waitForSelector(`${pane} [data-testid=pending-roll]`);
@@ -2118,7 +2127,7 @@ for (const reduced of [false, true]) {
 
   // The room inspector (a tap in Play) shows the same buttons as the room result did.
   await roomButtons();
-  const insp = await p.$$eval('[data-editor=room] [data-testid=encounter-actions] button', (els) => els.map((e) => e.textContent.trim()));
+  const insp = await p.$$eval('[data-editor=room] [data-testid=encounter-text] [data-testid=encounter-actions] button', (els) => els.map((e) => e.textContent.trim()));
   if (insp.join('|') !== '🎲 Roll on PRAC1 −1|🎲 Roll on PRAC2|⚔ Fight Grumbler') problems.push(`${tag}: inspector buttons ${JSON.stringify(insp)}`);
   await shot('59-encounter-inspector-buttons.png', p);
   await p.click('[data-editor=room] button:text-is("⚔ Fight Grumbler")');

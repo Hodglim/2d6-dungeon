@@ -126,7 +126,7 @@
       {#if twoD6}<span class="sum">= {r.dice[0]! + r.dice[1]!}</span>{/if}
     </div>
     <p class="type">{r.entry.type}{#if r.entry.unique}<span class="badge">Unique</span>{/if}</p>
-    <p>{r.entry.description}</p>
+    <p data-testid="room-description">{#if roomEncounter}<EncounterText text={r.entry.description} {tables} onopentable={roomEncounter.onopentable} />{:else}{r.entry.description}{/if}</p>
     {#if r.entry.encounter && !r.needsExit}<p data-testid="encounter-text"><strong>Encounter:</strong> {#if roomEncounter}<EncounterText text={r.entry.encounter} {tables} {...roomEncounter} />{:else}{r.entry.encounter}{/if}</p>{/if}
     {#if r.contents}
       <p data-testid="exit-result"><strong>Exits:</strong> {doorName(r.contents.door)}{r.contents.locked ? ', locked' : ''}</p>
