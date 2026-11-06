@@ -226,6 +226,54 @@ export function levelUp(h: Hero): Hero {
   };
 }
 
+type WeaponManoeuvre = DungeonTables['tables']['weapons'][number]['manoeuvres'][number];
+
+/**
+ * Manoeuvre choices on passing a level: `add` fills the new level's extra slots, and `swap` (if
+ * any) trades held manoeuvre `out` (an index) for the weapon's manoeuvre `in`, in the same place.
+ */
+export interface LevelUpChoice {
+  add: string[];
+  swap: { out: number; in: string } | null;
+}
+
+/**
+ * What a level up may change in the manoeuvres: the weapon's manoeuvres up to the next level's
+ * max manoeuvre level that aren't held (none without the table file), how many slots the next
+ * level has free, and those held now.
+ */
+export function levelUpOptions(h: Hero, t: DungeonTables | null): { offered: WeaponManoeuvre[]; newSlots: number; held: Hero['manoeuvres'] } {
+  const next = nextLevelRow(h);
+  const weapon = t?.tables.weapons.find((w) => w.name === h.weapon);
+  const offered = next && weapon ? weapon.manoeuvres.filter((m) => m.level <= next.maxManoeuvreLevel && !h.manoeuvres.some((x) => x.name === m.name)) : [];
+  return { offered, newSlots: next ? Math.max(0, next.manoeuvres - h.manoeuvres.length) : 0, held: h.manoeuvres };
+}
+
+export function levelUpChoiceProblem(h: Hero, t: DungeonTables | null, c: LevelUpChoice): string | null {
+  const { offered, newSlots, held } = levelUpOptions(h, t);
+  if (c.add.length > newSlots) return `There ${newSlots === 1 ? 'is 1 new slot' : `are ${newSlots} new slots`}`;
+  const picked = [...c.add, ...(c.swap ? [c.swap.in] : [])];
+  const twice = picked.find((n, i) => picked.indexOf(n) !== i);
+  if (twice) return `${twice} is chosen twice`;
+  const bad = picked.find((n) => !offered.some((m) => m.name === n));
+  if (bad) return `${bad} can't be chosen at this level`;
+  if (c.swap && !held[c.swap.out]) return 'Choose a manoeuvre to swap out';
+  return null;
+}
+
+/** Level up with manoeuvre choices. Callers check `levelUpAvailable`; bad choices throw. */
+export function levelUpWith(h: Hero, t: DungeonTables | null, c: LevelUpChoice): Hero {
+  const problem = levelUpChoiceProblem(h, t, c);
+  if (problem) throw new Error(problem);
+  const { offered } = levelUpOptions(h, t);
+  const take = (n: string) => {
+    const m = offered.find((x) => x.name === n)!;
+    return { name: m.name, dice: [...m.dice], modifier: m.damage };
+  };
+  const manoeuvres = h.manoeuvres.map((m, i) => (c.swap && i === c.swap.out ? take(c.swap.in) : { ...m, dice: [...m.dice] }));
+  return { ...levelUp(h), manoeuvres: [...manoeuvres, ...c.add.map(take)] };
+}
+
 export const canEat = (h: Hero): boolean => h.rations > 0;
 
 /** Resting on the stairs (Core Rules p. 18): eat to heal, or lose half the current HP (at most 20). */

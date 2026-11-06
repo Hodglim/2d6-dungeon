@@ -69,8 +69,9 @@
     grid-template-columns: minmax(0, 1fr) 40px 40px max-content;
     column-gap: 10px;
   }
+  /* 44px: a row's padding and border come out of its edge tracks, leaving 32px for the tick box. */
   .mtable.selectable {
-    grid-template-columns: 32px minmax(0, 1fr) 40px 40px max-content;
+    grid-template-columns: 44px minmax(0, 1fr) 40px 40px max-content;
   }
   .section {
     grid-column: 1 / -1;
@@ -81,12 +82,24 @@
     letter-spacing: 0.06em;
     color: var(--muted);
   }
-  .head,
-  .row {
+  /*
+   * .mtable twice: Svelte scopes the inner class with :where(), so a host panel's own
+   * `.panel :global(.row)` flex rule would otherwise tie with this one and win on order.
+   */
+  .mtable.mtable .head,
+  .mtable.mtable .row {
     grid-column: 1 / -1;
     display: grid;
     grid-template-columns: subgrid;
     align-items: center;
+    gap: normal;
+  }
+  /* The same for padding: a host's `button` rule would otherwise squeeze the tick-box column. */
+  .mtable.mtable .row {
+    padding: 4px 10px;
+  }
+  .mtable.mtable button.row.on {
+    padding: 2px 8px;
   }
   .head {
     font-size: 15px;

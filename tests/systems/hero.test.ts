@@ -3,7 +3,7 @@ import fixture from '../fixtures/dungeon-tables.fixture.json';
 import { parseTableFile } from '../../src/systems/dungeon/tables';
 import type { DungeonTables } from '../../src/systems/dungeon/tables';
 import {
-  canEat, createHero, creationProblem, heroEdit, heroProblem, levelUp, levelUpAvailable, listLimit, overLimit, restOnStairs,
+  canEat, createHero, creationProblem, heroEdit, heroProblem, levelUp, levelUpAvailable, levelUpChoiceProblem, levelUpOptions, levelUpWith, listLimit, overLimit, restOnStairs,
   type CreationChoices, type Hero,
 } from '../../src/systems/dungeon/hero';
 
@@ -84,6 +84,49 @@ describe('levels', () => {
     const h = { ...hero(), level: 3, xp: 9999 };
     expect(levelUpAvailable(h)).toBe(false);
     expect(levelUp(h)).toBe(h);
+  });
+});
+
+describe('manoeuvres on level up', () => {
+  const ready = () => ({ ...hero(), xp: 10 });
+  const names = (h: Hero) => h.manoeuvres.map((m) => m.name);
+
+  it("offers the weapon's manoeuvres up to the new level's max, not held, and the new slots", () => {
+    const o = levelUpOptions(ready(), t);
+    expect(o.offered.map((m) => m.name)).toEqual(['Cheerful Flourish']);
+    expect(o.newSlots).toBe(1);
+    expect(o.held.map((m) => m.name)).toEqual(['Wobbly Poke', 'Gentle Swipe']);
+  });
+
+  it('without the table file there is nothing to offer, but the level up still works', () => {
+    expect(levelUpOptions(ready(), null)).toMatchObject({ offered: [], newSlots: 1 });
+    expect(levelUpWith(ready(), null, { add: [], swap: null }).level).toBe(2);
+  });
+
+  it('fills a new slot', () => {
+    const h = levelUpWith(ready(), t, { add: ['Cheerful Flourish'], swap: null });
+    expect(h.level).toBe(2);
+    expect(h.manoeuvres.at(-1)).toEqual({ name: 'Cheerful Flourish', dice: [3, 3], modifier: '3' });
+  });
+
+  it('swaps one manoeuvre for another in its place', () => {
+    const h = levelUpWith(ready(), t, { add: [], swap: { out: 0, in: 'Cheerful Flourish' } });
+    expect(names(h)).toEqual(['Cheerful Flourish', 'Gentle Swipe']);
+    expect(h.hp).toBe(levelUp(ready()).hp);
+  });
+
+  it('refuses a manoeuvre above the new max level, one not on the weapon, too many, or the same one twice', () => {
+    const c = (add: string[], swap: { out: number; in: string } | null = null) => levelUpChoiceProblem(ready(), t, { add, swap });
+    expect(c([])).toBeNull();
+    expect(c(['Grand Wave'])).toMatch(/Grand Wave/);
+    expect(c(['Soft Bonk'])).toMatch(/Soft Bonk/);
+    expect(c(['Wobbly Poke'])).toMatch(/Wobbly Poke/);
+    expect(c(['Cheerful Flourish'], { out: 0, in: 'Cheerful Flourish' })).toMatch(/Cheerful Flourish/);
+    expect(c([], { out: 5, in: 'Cheerful Flourish' })).not.toBeNull();
+    const two = { ...ready(), level: 2, xp: 25, manoeuvres: ready().manoeuvres.slice(0, 1) };
+    expect(levelUpOptions(two, t).newSlots).toBe(3);
+    expect(levelUpChoiceProblem(two, t, { add: ['Gentle Swipe', 'Cheerful Flourish', 'Grand Wave'], swap: null })).toBeNull();
+    expect(() => levelUpWith(ready(), t, { add: ['Grand Wave'], swap: null })).toThrow();
   });
 });
 

@@ -31,7 +31,7 @@
   } from '../../systems/dungeon/combat';
   import { findCard, findCreature, rollCreatureTable } from '../../systems/dungeon/creatures';
   import type { CreatureTableEntry } from '../../systems/dungeon/tables';
-  import { levelUp, levelUpAvailable, nextLevelRow, type Hero } from '../../systems/dungeon/hero';
+  import { levelUp, levelUpAvailable, levelUpOptions, nextLevelRow, type Hero } from '../../systems/dungeon/hero';
   import type { CreatureInterrupt, DungeonTables } from '../../systems/dungeon/tables';
   import { foePool, heroPool, locked, matches, type DiceState } from '../../systems/dungeon/shift';
   import DieFace from '../DieFace.svelte';
@@ -45,6 +45,7 @@
   import { adjustHp, commitHero } from '../hero/heroActions';
   import { shouldAskWin } from '../endings';
   import VictoryPanel from './VictoryPanel.svelte';
+  import LevelUpPanel from '../hero/LevelUpPanel.svelte';
   import EncounterPicker from './EncounterPicker.svelte';
   import EncounterText from './EncounterText.svelte';
   import HpTracker from './HpTracker.svelte';
@@ -446,10 +447,23 @@
 
   /** A creature's XP comes in as it falls, so a level up can be taken mid-fight, stats and all. */
   const levelOffer = $derived(hero && levelUpAvailable(hero) ? nextLevelRow(hero) : null);
+  /** The level-up step is open (manoeuvres to fill or swap). */
+  let levelling = $state(false);
+  $effect(() => {
+    if (!levelOffer) levelling = false;
+  });
+  /** With manoeuvres to choose from, open the level-up step; otherwise level up at once. */
   function acceptLevelUp() {
     const h = history.hero as Hero | null;
     const row = h && levelUpAvailable(h) ? nextLevelRow(h) : null;
-    if (h && row) commitHero(history, levelUp(h), { label: `Level up to ${row.title}` });
+    if (!h || !row) return;
+    if (levelUpOptions(h, tables).offered.length) levelling = true;
+    else commitHero(history, levelUp(h), { label: `Level up to ${row.title}` });
+  }
+  function confirmLevelUp(next: Hero, label: string) {
+    levelling = false;
+    const h = history.hero as Hero | null;
+    if (h && levelUpAvailable(h)) commitHero(history, next, { label });
   }
 
   function winDone() {
@@ -708,7 +722,9 @@
           <div class="hero" class:current={!foeTurn} data-testid="hero-hp">
             <div class="name"><span>{hero.name}</span>{#if !foeTurn}<span class="tag turn-tag">Attacking</span>{/if}</div>
             <HpTracker name={hero.name} value={hero.hp} onstep={heroStep} onset={heroSet} />
-            {#if levelOffer}
+            {#if levelOffer && levelling}
+              <LevelUpPanel {hero} {tables} onconfirm={confirmLevelUp} oncancel={() => (levelling = false)} />
+            {:else if levelOffer}
               <div class="level-up" role="status">
                 <span class="grow">Enough XP: level up to {levelOffer.title}?</span>
                 <button class="primary" onclick={acceptLevelUp}>Level up</button>

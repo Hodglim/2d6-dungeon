@@ -769,11 +769,22 @@ if (!(await page.isVisible('text=This replaces your current game.'))) problems.p
 
   // Level up, twice.
   if (!(await undoText()).includes('Add Anvil')) problems.push(`undo label after Add anyway: ${await undoText()}`);
+  // Each opens the level-up step: new slots to fill and a swap, from the weapon up to the new max level.
+  const step = `${panel} .level-up`;
   await p.click(`${panel} .offer button:text-is("Level up")`);
+  if (!(await p.isVisible(`${step} [aria-label="Manoeuvres for the new slots"] .row:has-text("Cheerful Flourish")`))) problems.push('level-up step: level 2 manoeuvre not offered');
+  if (await p.isVisible(`${step} .row:has-text("Grand Wave")`)) problems.push('level-up step: level 3 manoeuvre offered at level 2');
+  await p.click(`${step} [aria-label="Manoeuvre to swap out"] .row:has-text("Wobbly Poke")`);
+  if (!(await p.isDisabled(`${step} button:text-is("Level up")`))) problems.push('level-up step: a half-made swap does not hold the level up');
+  await wshot('37b-level-up-step.png');
+  await smallHero('level-up step');
+  await p.click(`${step} [aria-label="Manoeuvre to swap out"] .row:has-text("Wobbly Poke")`);
+  await p.click(`${step} button:text-is("Level up")`);
   if (!(await undoText()).includes('Level up to Explorer')) problems.push(`level-up label: ${await undoText()}`);
   if (!(await p.isVisible(`${panel} .offer:has-text("Level up to Seasoned Snoozer?")`))) problems.push('second level-up offer missing');
   await p.click(`${panel} .offer button:text-is("Level up")`);
-  if (await p.isVisible(`${panel} .offer`)) problems.push('level-up offer still showing at the top level');
+  await p.click(`${step} button:text-is("Level up")`);
+  if (await p.isVisible(`${panel} .offer, ${step}`)) problems.push('level-up offer still showing at the top level');
 
   // Combat page: manoeuvres offered from the loaded table file.
   await p.click(`${panel} #hero-tab-combat`);
@@ -2120,7 +2131,7 @@ for (const reduced of [false, true]) {
   await ctx.close();
 }
 
-// 18. Endings: win a fight (the question, Not yet, the Victory panel's treasure lines, Add XP, Done);
+// 18. Endings: win a fight (the question, Not yet, XP as each creature falls, the Victory panel's treasure lines, Done);
 // the End-encounter confirm goes when the fight goes; death from the sheet's HP − (Cancel, no loop,
 // asked again), Game Over (survives a reload, Undo off, Export, New game via the wizard).
 {
@@ -2199,6 +2210,8 @@ for (const reduced of [false, true]) {
   if (!(await undoText()).includes('Throw Bootlace')) problems.push(`${tag}: throw before the win: undo "${await undoText()}"`);
   await setFoe('Grumbler', 0);
   if (await p.isVisible(winQ)) problems.push(`${tag}: win asked with a foe standing`);
+  // Each creature's XP goes to the hero as it falls, in the same undo step.
+  if (!(await undoText()).includes('Grumbler HP 0, XP +2')) problems.push(`${tag}: defeat XP undo "${await undoText()}"`);
   await setFoe('Moss Lurker', 0);
   await p.waitForSelector(winQ, { timeout: 2000 }).catch(() => problems.push(`${tag}: no win question with every foe at 0`));
   const q = (await p.textContent(`${winQ} p`))?.trim();
@@ -2216,7 +2229,7 @@ for (const reduced of [false, true]) {
   console.log(`${tag}: treasure ${JSON.stringify(lines)}`);
   if (JSON.stringify(lines) !== JSON.stringify(['Grumbler: Made-up: a pouch of pebbles.'])) problems.push(`${tag}: treasure lines ${JSON.stringify(lines)}`);
   const xpLine = (await p.textContent(`${pane} [data-testid=victory-xp]`))?.trim();
-  if (xpLine !== 'XP total: 5') problems.push(`${tag}: victory XP "${xpLine}"`);
+  if (xpLine !== 'XP total: 5 (added as each creature fell)') problems.push(`${tag}: victory XP "${xpLine}"`);
   if (await p.isVisible(`${pane} button:text-is("End encounter")`)) problems.push(`${tag}: End encounter shown beside Victory`);
   const smallV = await p.$$eval(`${pane} .victory button`, (els) => els.map((e) => e.getBoundingClientRect()).filter((r) => r.width < 44 || r.height < 44).length);
   if (smallV) problems.push(`${tag}: ${smallV} Victory buttons under 44 px`);
@@ -2232,29 +2245,19 @@ for (const reduced of [false, true]) {
   await rollerEnterOn(p, '5');
   if (!(await undoText()).includes('Recover Bootlace')) problems.push(`${tag}: recovery undo "${await undoText()}"`);
   if (!(await p.textContent(`${pane} .victory [data-testid=thrown-weapon]`))?.includes('recovered, back in your pack')) problems.push(`${tag}: weapon not recovered`);
-  await p.click(`${pane} .victory button:text-is("Add 5 XP")`);
-  await p.waitForTimeout(200);
-  if (!(await undoText()).includes('XP +5')) problems.push(`${tag}: Add XP undo "${await undoText()}"`);
-  if (!(await p.isDisabled(`${pane} .victory button:has-text("XP")`))) problems.push(`${tag}: Add XP still enabled after use`);
-  // The XP award is on the undo timeline: Undo offers it again, Redo awards it once more.
-  await p.keyboard.press('Control+z');
-  await p.waitForTimeout(200);
-  if (!(await p.isEnabled(`${pane} .victory button:text-is("Add 5 XP")`).catch(() => false))) problems.push(`${tag}: Undo of Add XP did not offer it again`);
-  await p.keyboard.press('Control+y');
-  await p.waitForTimeout(200);
-  if ((await p.textContent(`${pane} .victory button:has-text("XP")`))?.trim() !== '5 XP added') problems.push(`${tag}: Redo of Add XP: "${await p.textContent(`${pane} .victory button:has-text("XP")`)}"`);
+  if (await p.isVisible(`${pane} .victory button:has-text("XP")`)) problems.push(`${tag}: Victory still offers to add XP`);
   await p.click('header.toolbar button.hero');
   await p.waitForTimeout(300);
   if (await p.isVisible('#side-tab-hero')) await p.click('#side-tab-hero');
   const sheetXp = (await p.textContent('[aria-label="XP total"]'))?.trim();
-  if (sheetXp !== '5') problems.push(`${tag}: sheet XP ${sheetXp} after Add 5 XP`);
+  if (sheetXp !== '5') problems.push(`${tag}: sheet XP ${sheetXp} after both creatures fell`);
   await shot('63-victory-xp-on-sheet.png', p);
   await p.click('#side-tab-encounter');
   await p.click(`${pane} .victory button:text-is("Done")`);
   await p.waitForTimeout(300);
   if (!(await undoText()).includes('Win the fight')) problems.push(`${tag}: Done undo "${await undoText()}"`);
   if (await p.isVisible(pane)) problems.push(`${tag}: pane still shown after Done`);
-  // Undo of Done reopens the fight and asks again; the XP is still awarded, so it isn't offered twice.
+  // Undo of Done reopens the fight and asks again; the XP is not added a second time.
   await p.keyboard.press('Control+z');
   await p.waitForTimeout(300);
   if (!(await p.isVisible(pane))) await p.click('header.toolbar button.encounter');
@@ -2262,11 +2265,12 @@ for (const reduced of [false, true]) {
   await p.waitForSelector(winQ, { timeout: 2000 }).catch(() => problems.push(`${tag}: no win question after undoing Done`));
   await p.click(`${winQ} button:text-is("Win the fight")`);
   await p.waitForSelector(`${pane} .victory`);
-  const again = (await p.textContent(`${pane} .victory button:has-text("XP")`))?.trim();
-  if (again !== '5 XP added' || !(await p.isDisabled(`${pane} .victory button:has-text("XP")`))) problems.push(`${tag}: after undoing Done the XP button reads "${again}"`);
   await p.click(`${pane} .victory button:text-is("Done")`);
   await p.waitForTimeout(300);
   if (await p.isVisible(pane)) problems.push(`${tag}: pane still shown after the second Done`);
+  if (await p.isVisible('#side-tab-hero')) await p.click('#side-tab-hero');
+  const xpAgain = (await p.textContent('[aria-label="XP total"]'))?.trim();
+  if (xpAgain !== '5') problems.push(`${tag}: sheet XP ${xpAgain} after undoing Done and winning again`);
 
   // 18c. Death from the sheet's − button.
   if (await p.isVisible('#side-tab-hero')) await p.click('#side-tab-hero');

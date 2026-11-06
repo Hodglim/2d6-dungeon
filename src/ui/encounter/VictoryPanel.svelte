@@ -43,7 +43,7 @@
       {/each}
     </ul>
   {/if}
-  <p class="xp" data-testid="victory-xp">XP total: {xp}{#if hasHero && xp > 0}<span class="small"> (added as each creature fell)</span>{/if}</p>
+  <p class="xp" data-testid="victory-xp">XP total: {xp}{#if hasHero && xp > 0}{" "}<span class="small">(added as each creature fell)</span>{/if}</p>
   <div class="row">
     <button type="button" class="primary" onclick={ondone}>Done</button>
   </div>

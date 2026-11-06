@@ -1,8 +1,9 @@
 <script lang="ts">
   import type { History } from '../../core/history';
-  import { levelUp, levelUpAvailable, listLimit, nextLevelRow, overLimit, type Hero, type ListKey } from '../../systems/dungeon/hero';
+  import { levelUp, levelUpAvailable, levelUpOptions, listLimit, nextLevelRow, overLimit, type Hero, type ListKey } from '../../systems/dungeon/hero';
   import type { DungeonTables } from '../../systems/dungeon/tables';
   import { commitHero } from './heroActions';
+  import LevelUpPanel from './LevelUpPanel.svelte';
   import QuickStrip from './QuickStrip.svelte';
   import SheetCombat from './SheetCombat.svelte';
   import SheetHero from './SheetHero.svelte';
@@ -82,9 +83,20 @@
   }
 
   const offer = $derived(levelUpAvailable(hero) ? nextLevelRow(hero) : null);
+  /** The level-up step is open (manoeuvres to fill or swap). */
+  let levelling = $state(false);
+  $effect(() => {
+    if (!offer) levelling = false;
+  });
+  /** With manoeuvres to choose from, open the level-up step; otherwise level up at once. */
   function acceptLevelUp() {
     if (!offer || !levelUpAvailable(hero)) return;
-    commitHero(history, levelUp(hero), { label: `Level up to ${offer.title}` });
+    if (levelUpOptions(hero, tables).offered.length) levelling = true;
+    else commitHero(history, levelUp(hero), { label: `Level up to ${offer.title}` });
+  }
+  function confirmLevelUp(next: Hero, label: string) {
+    levelling = false;
+    if (levelUpAvailable(history.hero as Hero)) commitHero(history, next, { label });
   }
 </script>
 
@@ -95,7 +107,9 @@
       <button class="close" onclick={onclose} aria-label="Close hero panel">Close</button>
     </header>
 
-    {#if offer}
+    {#if offer && levelling}
+      <LevelUpPanel {hero} {tables} onconfirm={confirmLevelUp} oncancel={() => (levelling = false)} />
+    {:else if offer}
       <div class="offer" role="status">
         <span class="grow">Level up to {offer.title}?</span>
         <button class="primary" onclick={acceptLevelUp}>Level up</button>
