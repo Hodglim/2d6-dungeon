@@ -54,7 +54,7 @@
   import LevelViewer from './LevelViewer.svelte';
   import StairsDialog from './StairsDialog.svelte';
   import StepPanel from './StepPanel.svelte';
-  import { resolveSelection, roomTabShown, routeEditorTap, routePlayTap, type Selection } from './tapRouting';
+  import { resolveSelection, roomAfterWin, roomTabShown, routeEditorTap, routePlayTap, type Selection } from './tapRouting';
   import Toolbar from './Toolbar.svelte';
   import TablesPane from './tables/TablesPane.svelte';
   import { initialTablesState, openTable, setResult, type TablesState } from './tables/tablesState';
@@ -635,6 +635,22 @@
     },
   };
 
+  /**
+   * A won fight brings its room back up (the win is noted there, and its text may go on to a loot
+   * roll): the room the hero stands in, as the Room tab beside any open panes or in the step panel.
+   * A room still being placed is already the Room tab.
+   */
+  function showRoomAfterWin() {
+    if (step.kind === 'idle') {
+      if (tool !== 'play') return;
+      const room = roomAfterWin(history.map, selection);
+      if (!room) return;
+      selection = room;
+      panelCollapsed = false;
+    }
+    sideTab = 'room';
+  }
+
   function closeEncounterPane() {
     encounterPaneOpen = false;
     if (!heroShown && !tablesShown) sidebar = 'steps';
@@ -1052,6 +1068,7 @@
           onrequesttaken={() => (fightRequest = null)}
           {win}
           onwin={(w) => (win = w)}
+          onwon={showRoomAfterWin}
           holdWin={askingDeath || gameOver !== null}
           onopentable={showTable}
           dungeonLevel={$view.map.level}

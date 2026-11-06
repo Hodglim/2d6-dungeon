@@ -1,7 +1,7 @@
 import type { DungeonMap, Feature } from '../../src/core/types';
 import type { Step } from '../../src/interaction/playflow';
 import { pick } from '../../src/render/hit';
-import { entryNote, nearestEdge, resolveSelection, roomExitCount, roomTabShown, routeEditorTap, routePlayTap } from '../../src/ui/tapRouting';
+import { entryNote, nearestEdge, resolveSelection, roomAfterWin, roomExitCount, roomTabShown, routeEditorTap, routePlayTap } from '../../src/ui/tapRouting';
 import { door, emptyMap, room, withContent } from '../core/fixtures';
 
 /**
@@ -186,5 +186,32 @@ describe('roomTabShown', () => {
 
   it('is not shown for a room selection outside Play (the editor tools show their own panel)', () => {
     expect(roomTabShown({ ...base, tool: 'door', selection: room1 })).toBe(false);
+  });
+});
+
+describe('roomAfterWin', () => {
+  const at = (x: number, y: number) => ({ x, y, trail: [] });
+
+  it('is the room the hero token stands in, so its text (and any loot roll) is back on screen', () => {
+    expect(roomAfterWin({ ...sample(), token: at(3, 3) }, null)).toEqual({ kind: 'room', roomId: 'r1' });
+  });
+
+  it('prefers the token\'s room over another room that was selected', () => {
+    expect(roomAfterWin({ ...sample(), token: at(3, 5) }, { kind: 'room', roomId: 'r1' })).toEqual({ kind: 'room', roomId: 'p1' });
+  });
+
+  it('keeps a selected room when there is no token, or the token is outside every room', () => {
+    const r1 = { kind: 'room', roomId: 'r1' } as const;
+    expect(roomAfterWin({ ...sample(), token: null }, r1)).toEqual(r1);
+    expect(roomAfterWin({ ...sample(), token: at(8, 8) }, r1)).toEqual(r1);
+  });
+
+  it('is null with no room to show (a note or stairs selection is not a room)', () => {
+    expect(roomAfterWin({ ...sample(), token: null }, null)).toBeNull();
+    expect(roomAfterWin({ ...sample(), token: null }, { kind: 'feature', featureId: 'n1' })).toBeNull();
+  });
+
+  it('ignores a selected room that is no longer on the map', () => {
+    expect(roomAfterWin({ ...sample(), token: null }, { kind: 'room', roomId: 'gone' })).toBeNull();
   });
 });

@@ -2968,6 +2968,12 @@ for (const reduced of [false, true]) {
   await shot('83-table-opened-from-victory.png', p);
   await p.click('#side-tab-encounter');
   await p.waitForSelector(`${enc} .victory`);
+  // Done brings the room the hero stands in back to the front (its text may go on to a loot roll).
+  await p.click(`${enc} .victory button:text-is("Done")`);
+  await p.waitForTimeout(300);
+  if ((await p.getAttribute('#side-tab-room', 'aria-selected')) !== 'true') problems.push(`${tag}: Room tab not in front after Done`);
+  if (!(await p.isVisible('[data-editor=room]'))) problems.push(`${tag}: room text not shown after Done`);
+  await shot('84-room-after-victory.png', p);
   await ctx.close();
 }
 

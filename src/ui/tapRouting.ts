@@ -159,3 +159,14 @@ export function roomTabShown(o: { sideShown: boolean; stepIdle: boolean; tool: T
   if (!o.sideShown) return false;
   return !o.stepIdle || (o.tool === 'play' && o.selection?.kind === 'room');
 }
+
+/**
+ * The room to show once a fight is won: the one the hero token stands in (where the win is noted
+ * and any loot roll waits), else a room already selected, else null.
+ */
+export function roomAfterWin(map: DungeonMap, selection: Selection | null): Selection | null {
+  const r = map.token ? roomAt(map, map.token) : undefined;
+  if (r) return { kind: 'room', roomId: r.id };
+  if (selection?.kind === 'room' && map.rooms.some((x) => x.id === selection.roomId)) return selection;
+  return null;
+}

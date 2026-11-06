@@ -83,6 +83,8 @@
     /** The win question and Victory panel, kept by the shell so switching tabs doesn't lose them. */
     win?: WinState;
     onwin?: (w: WinState) => void;
+    /** The Victory panel's Done closed the fight (the shell brings the room's text back). */
+    onwon?: () => void;
     /** Don't ask "win the fight?" now (the death question goes first, or the game is over). */
     holdWin?: boolean;
     /** Show a reference table in the Tables pane. */
@@ -102,6 +104,7 @@
     onrequesttaken,
     win = NO_WIN,
     onwin = () => {},
+    onwon,
     holdWin = false,
     onopentable,
     dungeonLevel = 1,
@@ -467,7 +470,7 @@
   }
 
   function winDone() {
-    winFight(history);
+    if (winFight(history).ok) onwon?.();
   }
 
   function foeStep(f: Foe, d: number) {
