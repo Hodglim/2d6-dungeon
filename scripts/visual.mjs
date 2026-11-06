@@ -420,7 +420,7 @@ if (!(await page.isVisible('text=This replaces your current game.'))) problems.p
     p2.evaluate(
       () =>
         new Promise((resolve, reject) => {
-          const r = indexedDB.open('2d6-map-maker', 1);
+          const r = indexedDB.open('2d6-dungeon-companion', 1);
           r.onsuccess = () => {
             const g = r.result.transaction('saves').objectStore('saves').get('current');
             g.onsuccess = () => resolve(JSON.stringify(g.result ?? null));
@@ -432,7 +432,7 @@ if (!(await page.isVisible('text=This replaces your current game.'))) problems.p
   await p2.evaluate(
     () =>
       new Promise((resolve, reject) => {
-        const r = indexedDB.open('2d6-map-maker', 1);
+        const r = indexedDB.open('2d6-dungeon-companion', 1);
         r.onsuccess = () => {
           const tx = r.result.transaction('saves', 'readwrite');
           tx.objectStore('saves').put({ format: 1, broken: true }, 'current');
@@ -581,7 +581,7 @@ if (!(await page.isVisible('text=This replaces your current game.'))) problems.p
     p.evaluate(
       () =>
         new Promise((resolve, reject) => {
-          const r = indexedDB.open('2d6-map-maker', 1);
+          const r = indexedDB.open('2d6-dungeon-companion', 1);
           r.onsuccess = () => {
             const g = r.result.transaction('saves').objectStore('saves').get('current');
             g.onsuccess = () => resolve(JSON.stringify(g.result ?? null));
@@ -1416,7 +1416,7 @@ for (const reduced of [false, true]) {
     p.evaluate(
       () =>
         new Promise((resolve, reject) => {
-          const r = indexedDB.open('2d6-map-maker', 1);
+          const r = indexedDB.open('2d6-dungeon-companion', 1);
           r.onsuccess = () => {
             const g = r.result.transaction('saves').objectStore('saves').get('current');
             g.onsuccess = () => resolve(g.result ?? null);
@@ -2402,7 +2402,7 @@ for (const reduced of [false, true]) {
     p.evaluate(
       () =>
         new Promise((res) => {
-          const r = indexedDB.open('2d6-map-maker', 1);
+          const r = indexedDB.open('2d6-dungeon-companion', 1);
           r.onsuccess = () => {
             const g = r.result.transaction('saves', 'readonly').objectStore('saves').get('current');
             g.onsuccess = () => res(JSON.stringify(g.result?.history ?? null));
@@ -3255,7 +3255,7 @@ for (const reduced of [false, true]) {
     p.evaluate(
       () =>
         new Promise((resolve, reject) => {
-          const r = indexedDB.open('2d6-map-maker', 1);
+          const r = indexedDB.open('2d6-dungeon-companion', 1);
           r.onsuccess = () => {
             const g = r.result.transaction('saves').objectStore('saves').get('current');
             g.onsuccess = () => resolve(g.result.history.current.rooms.filter((o) => o.kind === 'room'));
@@ -3289,7 +3289,7 @@ for (const reduced of [false, true]) {
     const feats = await p.evaluate(
       () =>
         new Promise((resolve, reject) => {
-          const r = indexedDB.open('2d6-map-maker', 1);
+          const r = indexedDB.open('2d6-dungeon-companion', 1);
           r.onsuccess = () => {
             const g = r.result.transaction('saves').objectStore('saves').get('current');
             g.onsuccess = () => resolve(g.result.history.current.features);
@@ -3333,7 +3333,7 @@ for (const reduced of [false, true]) {
       p.evaluate(
         ([tok, cells]) =>
           new Promise((resolve, reject) => {
-            const r = indexedDB.open('2d6-map-maker', 1);
+            const r = indexedDB.open('2d6-dungeon-companion', 1);
             r.onsuccess = () => {
               const store = r.result.transaction('saves', 'readwrite').objectStore('saves');
               const g = store.get('current');

@@ -256,7 +256,7 @@ try {
     await page.evaluate(
       () =>
         new Promise((resolve, reject) => {
-          const req = indexedDB.open('2d6-map-maker', 1);
+          const req = indexedDB.open('2d6-dungeon-companion', 1);
           req.onsuccess = () => {
             const tx = req.result.transaction('saves', 'readwrite');
             tx.objectStore('saves').put({ garbage: true }, 'current');
@@ -275,7 +275,7 @@ try {
     const stillGarbage = await page.evaluate(
       () =>
         new Promise((resolve) => {
-          const req = indexedDB.open('2d6-map-maker', 1);
+          const req = indexedDB.open('2d6-dungeon-companion', 1);
           req.onsuccess = () => {
             const g = req.result.transaction('saves').objectStore('saves').get('current');
             g.onsuccess = () => resolve(g.result?.garbage === true);
