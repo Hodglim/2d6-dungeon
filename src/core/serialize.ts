@@ -42,7 +42,8 @@ function contentsOk(c: unknown): boolean {
 function doorOk(d: unknown): boolean {
   if (!isObj(d) || !isStr(d.id) || !isStr(d.type) || !isCell(d) || !isBool(d.secret)) return false;
   if (d.side !== 'N' && d.side !== 'W') return false;
-  return d.lock === null || (isObj(d.lock) && isBool(d.lock.locked) && isStr(d.lock.note) && (d.lock.quality === null || isInt(d.lock.quality)));
+  if (d.checked !== undefined && d.checked !== true) return false;
+  return d.lock === null || (isObj(d.lock) && isBool(d.lock.locked) && isStr(d.lock.note) && (d.lock.quality === null || isInt(d.lock.quality)) && (d.lock.damaged === undefined || d.lock.damaged === true));
 }
 
 function featureOk(f: unknown): boolean {

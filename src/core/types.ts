@@ -59,6 +59,8 @@ export interface DoorLock {
   locked: boolean;
   note: string;
   quality: number | null;
+  /** A failed lock pick damaged it: it can't be picked again (absent = not damaged). */
+  damaged?: true;
 }
 
 export interface Door extends Edge {
@@ -66,6 +68,8 @@ export interface Door extends Edge {
   type: string;
   secret: boolean;
   lock: DoorLock | null;
+  /** The lock check has been made (absent on doors never checked and on old saves). */
+  checked?: true;
 }
 
 export type Feature =
