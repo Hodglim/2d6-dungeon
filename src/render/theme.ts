@@ -17,6 +17,8 @@ export interface Theme {
   /** Floor shades, picked per square for subtle variation. */
   floor: string[];
   decal: string;
+  /** Blood splashes in rooms where a fight was won. */
+  blood: string;
   ink: string;
   hatch: string;
   /** Colour at the wall edge of the inner shadow (fades to transparent). */

@@ -14,6 +14,7 @@ import {
   drawLabels,
   drawPaper,
   drawShadows,
+  drawSplats,
   drawToken,
   drawWalls,
   LABEL_FONT_SIZE,
@@ -21,7 +22,7 @@ import {
   LABEL_PAD_Y,
   measureText,
 } from './draw';
-import { floorDecals, floorTiles } from './floor';
+import { battleSplats, floorDecals, floorTiles } from './floor';
 import { hatchStrokes } from './hatching';
 import { type LabelBox, type MeasureText, placeLabels } from './labels';
 import type { Theme } from './theme';
@@ -84,16 +85,26 @@ export function renderStatic(
   toggles: DisplayToggles,
   options: { exitStubs?: boolean; labels?: boolean; features?: boolean } = {},
 ): void {
+  const labels = placeLabels(map, canvasMeasure(ctx, theme));
   const layers: (() => void)[] = [
     () => { drawPaper(ctx, map, theme, toggles.grid); },
     () => { if (toggles.hatching && theme.rockStyle === 'hatch') drawHatching(ctx, hatchStrokes(map, theme.hatchReach), theme); },
     () => { drawFloors(ctx, floorTiles(map, theme.floor.length), theme); },
     () => { if (toggles.decals) drawDecals(ctx, floorDecals(map), theme); },
+    () => {
+      // Signs of battle where fights were won, kept to the floor so no droplet lands in the rock.
+      const splats = toggles.decals ? battleSplats(map, labels) : [];
+      if (!splats.length) return;
+      ctx.beginPath();
+      for (const r of map.rooms) ctx.rect(r.x, r.y, r.w, r.h);
+      ctx.clip();
+      drawSplats(ctx, splats, theme);
+    },
     () => { if (toggles.shadows) drawShadows(ctx, wallShadows(map), theme); },
     () => { drawWalls(ctx, wallSegments(map), theme); },
     () => { drawDoors(ctx, doorGlyphs(map), theme); },
     () => { if (options.exitStubs ?? true) drawExitStubs(ctx, exitStubs(map), theme, fadedExits(map)); },
-    () => { if (options.labels ?? true) drawLabels(ctx, placeLabels(map, canvasMeasure(ctx, theme)), theme); },
+    () => { if (options.labels ?? true) drawLabels(ctx, labels, theme); },
     () => { if (options.features ?? true) drawFeatures(ctx, map.features, theme); },
   ];
   for (const layer of layers) {

@@ -149,6 +149,12 @@ describe('mapProblem', () => {
     expect(mapProblem({ ...m, level: 1.5 })).not.toBeNull();
     expect(mapProblem({ ...m, level: 10 })).toBeNull();
   });
+  it('keeps a count of fights won in a room, a whole number of at least 1', () => {
+    const m = sample().maps[0]!;
+    const r = room('rc', 2, 2, 3, 3, 'room', 1);
+    expect(mapProblem({ ...m, rooms: [{ ...r, battles: 2 }] })).toBeNull();
+    for (const bad of [0, -1, 1.5, '2']) expect(mapProblem({ ...m, rooms: [{ ...r, battles: bad as number }] })).not.toBeNull();
+  });
   it('validates room contents when present', () => {
     const m = sample().maps[0]!;
     const r = room('rc', 2, 2, 3, 3, 'room', 1);

@@ -92,6 +92,7 @@ export const classicTheme: Theme = {
   boundary: 'rgba(60, 60, 60, 0.45)',
   floor: ['#f8f8f6', '#f4f4f1', '#f0f0ec'],
   decal: 'rgba(70, 70, 70, 0.28)',
+  blood: 'rgba(126, 26, 18, 0.85)',
   ink: '#1b1b1b',
   hatch: '#2a2a2a',
   shadow: 'rgba(0, 0, 0, 0.22)',

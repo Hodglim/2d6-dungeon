@@ -3,7 +3,7 @@
 import type { DungeonMap, Feature } from '../core/types';
 import { worldBounds } from './camera';
 import type { DoorGlyph, ExitStub } from './doors';
-import type { Decal, FloorTile } from './floor';
+import type { Decal, FloorTile, Splat } from './floor';
 import type { Stroke } from './hatching';
 import type { LabelBox } from './labels';
 import { mulberry32 } from './rng';
@@ -132,6 +132,39 @@ export function drawDecals(ctx: CanvasRenderingContext2D, decals: Decal[], theme
       }
     }
     ctx.restore();
+  }
+}
+
+/** Blood splashes: a lumpy blot with droplets thrown around it, each drawn from its own seed. */
+export function drawSplats(ctx: CanvasRenderingContext2D, splats: Splat[], theme: Theme): void {
+  ctx.fillStyle = theme.blood;
+  for (const s of splats) {
+    const rng = mulberry32(s.seed);
+    const n = 14;
+    const pts: [number, number][] = [];
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2;
+      let r = s.size * (0.7 + rng() * 0.5);
+      if (rng() < 0.3) r *= 1.5;
+      pts.push([s.x + Math.cos(a) * r, s.y + Math.sin(a) * r * 0.85]);
+    }
+    const mid = (p: [number, number], q: [number, number]): [number, number] => [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2];
+    ctx.beginPath();
+    const start = mid(pts[n - 1]!, pts[0]!);
+    ctx.moveTo(start[0], start[1]);
+    for (let i = 0; i < n; i++) {
+      const p = pts[i]!;
+      const m = mid(p, pts[(i + 1) % n]!);
+      ctx.quadraticCurveTo(p[0], p[1], m[0], m[1]);
+    }
+    ctx.fill();
+    for (let i = 0; i < 9; i++) {
+      const a = rng() * Math.PI * 2;
+      const d = s.size * (1.4 + rng() * 1.6);
+      ctx.beginPath();
+      ctx.arc(s.x + Math.cos(a) * d, s.y + Math.sin(a) * d, s.size * (0.06 + rng() * 0.14), 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
 }
 

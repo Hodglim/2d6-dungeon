@@ -30,6 +30,7 @@ function roomOk(r: unknown): boolean {
   if (r.sizeClass !== null && !SIZE_CLASSES.includes(r.sizeClass as string)) return false;
   if (r.entryDoorId !== null && !isStr(r.entryDoorId)) return false;
   if (r.contents !== undefined && !contentsOk(r.contents)) return false;
+  if (r.battles !== undefined && !(isInt(r.battles) && r.battles >= 1)) return false;
   return ['x', 'y', 'w', 'h', 'number'].every((k) => isInt(r[k]));
 }
 

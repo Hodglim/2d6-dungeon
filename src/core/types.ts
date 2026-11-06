@@ -51,6 +51,8 @@ export interface Room extends Rect {
   /** The door this room was entered through (its label anchors there); null for the entrance. */
   entryDoorId: string | null;
   contents?: RoomContents;
+  /** Fights won here (absent until the first); the map shows signs of battle. */
+  battles?: number;
 }
 
 export interface DoorLock {

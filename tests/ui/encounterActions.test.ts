@@ -436,12 +436,31 @@ describe('encounterActions', () => {
       expect(narrative(h)).toBe('Smells of moss.\nDefeated Grumbler ×2, Moss Lurker.');
     });
 
+    it("marks the hero's room as fought in and won, in the same undo step", () => {
+      const h = inRoom('');
+      expect(h.map.rooms[0]!.battles).toBeUndefined();
+      winFight(h);
+      expect(h.map.rooms[0]!.battles).toBe(1);
+      h.undo();
+      expect(h.map.rooms[0]!.battles).toBeUndefined();
+    });
+
+    it('counts a second won fight in the same room', () => {
+      const h = inRoom('');
+      winFight(h);
+      startOrJoin(h, t, ['Grumbler'], ids(), noAsk);
+      for (const f of enc(h).foes) commitEncounter(h, setFoeHp(enc(h), f.id, 0), 'down');
+      winFight(h);
+      expect(h.map.rooms[0]!.battles).toBe(2);
+    });
+
     it('with no token, or the token outside a room, only closes the fight', () => {
       for (const token of [null, { x: 8, y: 8 }]) {
         const h = inRoom('', token);
         expect(winFight(h)).toEqual({ ok: true });
         expect(h.encounter).toBeNull();
         expect(narrative(h)).toBe('');
+        expect(h.map.rooms[0]!.battles).toBeUndefined();
       }
     });
   });

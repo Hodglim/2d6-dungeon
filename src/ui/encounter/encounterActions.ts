@@ -191,13 +191,14 @@ export function winFight(history: History): ExecResult {
   const e = history.encounter as Encounter | null;
   const line = e ? defeatedLine(e) : null;
   const map = history.map;
-  const r = line && map.token ? roomAt(map, map.token) : undefined;
+  const r = map.token ? roomAt(map, map.token) : undefined;
   const h = history.hero as Hero | null;
   const hero = e && h ? withDefeatXp(e, h).hero : h;
   const cmd = setPlay({ hero, encounter: null }, 'Win the fight');
-  if (r && line) {
-    const narrative = r.label.narrative ? `${r.label.narrative}\n${line}` : line;
-    cmd.apply = updateRoom(r, { ...r, label: { ...r.label, narrative } }).apply;
+  // The hero's room gets the defeated foes in its narrative and one more won fight (signs of battle on the map).
+  if (r) {
+    const narrative = !line ? r.label.narrative : r.label.narrative ? `${r.label.narrative}\n${line}` : line;
+    cmd.apply = updateRoom(r, { ...r, label: { ...r.label, narrative }, battles: (r.battles ?? 0) + 1 }).apply;
   }
   return history.execute(cmd);
 }
