@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  newEncounter, addFoe, setFoeHp, nextRound, queueRoll, resolveRoll, recordRoll, dropRolled, awardXp, fatigueDie, fatigueShift,
+  newEncounter, addFoe, setFoeHp, nextRound, queueRoll, resolveRoll, recordRoll, dropRolled, defeatedXp, fatigueDie, fatigueShift,
   momentumShift, allDefeated, totalXp, treasureLines, interruptReminder, encounterProblem, nextTurn, turnFoe, logThrow, setRecovered, bombEffect, defeatedLine,
 } from '../../src/systems/dungeon/combat';
 
@@ -87,8 +87,14 @@ describe('rolls and purity', () => {
     e = recordRoll(e, { code: 'y', modifier: 0, die: 5, total: 5 });
     expect(e.rolled.map((r) => r.code)).toEqual(['x', 'y']);
     expect(dropRolled(e, 0).rolled).toEqual([{ code: 'y', modifier: 0, die: 5, total: 5 }]);
-    expect(awardXp(awardXp(e, 3), 2).xpAwarded).toBe(5);
     expect(newEncounter().xpAwarded).toBe(0);
+  });
+  it('defeatedXp counts only the foes at 0 HP or below', () => {
+    let e = addFoe(addFoe(addFoe(newEncounter(), 'A', { ...stats, xp: 3 }, 5, 'a'), 'B', { ...stats, xp: 4 }, 5, 'b'), 'C', null, 5, 'c');
+    expect(defeatedXp(e)).toBe(0);
+    e = setFoeHp(setFoeHp(e, 'a', 0), 'c', -1);
+    expect(defeatedXp(e)).toBe(3);
+    expect(defeatedXp(setFoeHp(e, 'b', -2))).toBe(7);
   });
   it('returns new objects, leaves input unchanged', () => {
     const e = two();
@@ -96,7 +102,7 @@ describe('rolls and purity', () => {
     const outs = [
       addFoe(e, 'z', null, 1, 'z'), setFoeHp(e, 'a', 0), nextRound(e),
       queueRoll(e, { code: 'x', modifier: 0 }), resolveRoll(queueRoll(e, { code: 'x', modifier: 0 }), 0),
-      recordRoll(e, { code: 'x', modifier: 0, die: 1, total: 1 }), awardXp(e, 2),
+      recordRoll(e, { code: 'x', modifier: 0, die: 1, total: 1 }),
     ];
     const r = recordRoll(e, { code: 'x', modifier: 0, die: 1, total: 1 });
     const rs = JSON.stringify(r);

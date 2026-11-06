@@ -8,39 +8,18 @@
     tables?: DungeonTables | null;
     /** Treasure lines name reference tables as buttons. */
     onopentable?: (code: string, modifier: number) => void;
-    /** Add XP is offered only with a hero. */
+    /** Thrown weapons can be recovered only with a hero. */
     hasHero: boolean;
-    onaddxp: () => void;
     ondone: () => void;
     /** Roll a D6 to get thrown weapon `i` (an index into encounter.throws) back. */
     onrecover?: (i: number) => void;
   }
-  let { encounter, tables = null, onopentable, hasHero, onaddxp, ondone, onrecover }: Props = $props();
+  let { encounter, tables = null, onopentable, hasHero, ondone, onrecover }: Props = $props();
   /** Weapons thrown this fight, with their index in encounter.throws. */
   const thrown = $derived((encounter.throws ?? []).map((t, i) => ({ t, i })).filter(({ t }) => t.kind === 'weapon'));
 
   const lines = $derived(treasureLines(encounter));
   const xp = $derived(totalXp(encounter));
-  /** XP not yet added to the hero (kept in the encounter, so Undo and reloads agree with the sheet). */
-  const toAdd = $derived(Math.max(0, xp - encounter.xpAwarded));
-  /** Done was tapped with XP still to add: ask before closing the fight without it. */
-  let confirming = $state(false);
-  const unadded = $derived(hasHero && toAdd > 0);
-  $effect(() => {
-    if (!unadded) confirming = false;
-  });
-
-  function done() {
-    if (unadded && !confirming) {
-      confirming = true;
-      return;
-    }
-    ondone();
-  }
-  function addAndDone() {
-    onaddxp();
-    ondone();
-  }
 </script>
 
 <section class="victory" aria-labelledby="victory-title">
@@ -64,23 +43,10 @@
       {/each}
     </ul>
   {/if}
-  <p class="xp" data-testid="victory-xp">XP total: {xp}</p>
+  <p class="xp" data-testid="victory-xp">XP total: {xp}{#if hasHero && xp > 0}<span class="small"> (added as each creature fell)</span>{/if}</p>
   <div class="row">
-    {#if hasHero && xp > 0}
-      <button type="button" disabled={toAdd === 0} onclick={onaddxp}>{toAdd === 0 ? `${xp} XP added` : `Add ${toAdd} XP`}</button>
-    {/if}
-    <button type="button" class="primary" onclick={done}>Done</button>
+    <button type="button" class="primary" onclick={ondone}>Done</button>
   </div>
-  {#if confirming}
-    <div class="confirm" role="alert">
-      <p>You haven't added the {toAdd} XP to your hero yet.</p>
-      <div class="row">
-        <button type="button" class="primary" onclick={addAndDone}>Add {toAdd} XP and finish</button>
-        <button type="button" onclick={ondone}>Finish without XP</button>
-        <button type="button" onclick={() => (confirming = false)}>Back</button>
-      </div>
-    </div>
-  {/if}
 </section>
 
 <style>
@@ -132,26 +98,12 @@
     cursor: pointer;
     touch-action: manipulation;
   }
-  .confirm {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    padding: 8px 10px;
-    background: var(--paper);
-    border: 2px solid var(--ink);
-    border-radius: 6px;
-  }
-  .confirm p {
-    margin: 0;
-    font-size: 17px;
-    font-weight: 600;
-  }
   button.primary {
     color: var(--paper);
     background: var(--ink);
   }
-  button:disabled {
-    opacity: 0.5;
-    cursor: default;
+  .small {
+    font-size: 15px;
+    font-weight: 400;
   }
 </style>

@@ -1,11 +1,11 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { addRoom } from '../../src/core/commands';
+import { addRoom, setPlay } from '../../src/core/commands';
 import { History } from '../../src/core/history';
-import { setFoeHp, totalXp as totalXpOf, type Encounter } from '../../src/systems/dungeon/combat';
-import { createHero, type Hero } from '../../src/systems/dungeon/hero';
+import { setFoeHp, type Encounter } from '../../src/systems/dungeon/combat';
+import { createHero, levelUpAvailable, type Hero } from '../../src/systems/dungeon/hero';
 import type { DungeonTables } from '../../src/systems/dungeon/tables';
-import { applyCreatureRoll, awardVictoryXp, commitEncounter, winFight, dismissRolled, dropPendingRoll, placingFirst, queueCreatureRoll, recoverThrown, startOrJoin, throwBomb, throwWeapon, xpToAward, type EncounterHooks } from '../../src/ui/encounter/encounterActions';
+import { applyCreatureRoll, commitEncounter, winFight, dismissRolled, dropPendingRoll, placingFirst, queueCreatureRoll, recoverThrown, startOrJoin, throwBomb, throwWeapon, type EncounterHooks } from '../../src/ui/encounter/encounterActions';
 import { adjustHp } from '../../src/ui/hero/heroActions';
 import { emptyMap, room, withContent } from '../core/fixtures';
 
@@ -302,58 +302,110 @@ describe('encounterActions', () => {
     });
   });
 
-  describe('victory XP', () => {
-    const won = () => {
+  describe('XP as each creature falls', () => {
+    const fight = (names = ['Grumbler', 'Moss Lurker']) => {
       const h = new History(emptyMap(), 20, hero());
-      startOrJoin(h, t, ['Grumbler', 'Moss Lurker'], ids(), noAsk);
-      for (const f of enc(h).foes) commitEncounter(h, setFoeHp(enc(h), f.id, 0), 'down');
+      startOrJoin(h, t, names, ids(), noAsk);
       return h;
     };
     const xp = (h: History) => (h.hero as Hero).xp;
+    const down = (h: History, i: number, hp = 0) => {
+      const f = enc(h).foes[i]!;
+      return commitEncounter(h, setFoeHp(enc(h), f.id, hp), `${f.name} HP ${hp}`);
+    };
 
-    it('adds the XP and marks it awarded in one step; a second award is refused', () => {
-      const h = won();
-      expect(xpToAward(enc(h))).toBe(5);
-      expect(awardVictoryXp(h)).toEqual({ ok: true });
+    it("adds a creature's XP to the hero in the step that defeats it, with the rest still standing", () => {
+      const h = fight();
+      down(h, 0);
+      expect(xp(h)).toBe(2);
+      expect(enc(h).xpAwarded).toBe(2);
+      expect(h.undoLabel).toBe('Grumbler HP 0, XP +2');
+      down(h, 1, -1);
       expect(xp(h)).toBe(5);
       expect(enc(h).xpAwarded).toBe(5);
-      expect(xpToAward(enc(h))).toBe(0);
-      expect(h.undoLabel).toBe('XP +5');
-      expect(awardVictoryXp(h).ok).toBe(false);
-      expect(xp(h)).toBe(5);
-    });
-
-    it('Undo of the XP step takes the XP back and offers it again', () => {
-      const h = won();
-      awardVictoryXp(h);
+      h.undo();
+      expect(xp(h)).toBe(2);
       h.undo();
       expect(xp(h)).toBe(0);
       expect(enc(h).xpAwarded).toBe(0);
-      expect(xpToAward(enc(h))).toBe(5);
     });
 
-    it('Undo of Done reopens the fight with the XP still awarded, so it is not offered twice', () => {
-      const h = won();
-      awardVictoryXp(h);
-      commitEncounter(h, null, 'Win the fight');
-      h.undo();
-      expect(enc(h).xpAwarded).toBe(5);
-      expect(xpToAward(enc(h))).toBe(0);
-      expect(awardVictoryXp(h).ok).toBe(false);
-      expect(xp(h)).toBe(5);
+    it('takes the XP back when a defeated creature is brought back above 0 HP', () => {
+      const h = fight();
+      down(h, 0);
+      down(h, 0, 1);
+      expect(xp(h)).toBe(0);
+      expect(enc(h).xpAwarded).toBe(0);
+      expect(h.undoLabel).toBe('Grumbler HP 1, XP −2');
     });
 
-    it('a creature added after the award offers only its own XP', () => {
-      const h = won();
-      awardVictoryXp(h);
-      startOrJoin(h, t, ['Dust Wisp'], () => 'w', noAsk);
-      expect(xpToAward(enc(h))).toBe(totalXpOf(enc(h)) - 5);
+    it('HP taps that reach 0 and come back up leave no step and no XP', () => {
+      let clock = 0;
+      const h = new History(emptyMap(), 20, hero(), () => clock);
+      startOrJoin(h, t, ['Dust Wisp', 'Grumbler'], ids(), noAsk);
+      const id = enc(h).foes[0]!.id;
+      const tap = (d: number) => {
+        clock += 100;
+        const e = enc(h);
+        commitEncounter(h, setFoeHp(e, id, e.foes[0]!.hp + d), 'HP', { mergeKey: `foe-hp:${id}` });
+      };
+      for (let i = 0; i < 3; i++) tap(-1);
+      expect(xp(h)).toBe(1);
+      expect(h.undoLabel).toBe('Dust Wisp HP −3, XP +1');
+      tap(1);
+      expect(xp(h)).toBe(0);
+      expect(h.undoLabel).toBe('Dust Wisp HP −2');
+      tap(1);
+      tap(1);
+      expect(h.undoLabel).toBe('Start encounter');
     });
 
-    it('needs a hero', () => {
+    it('a throw that defeats a creature adds its XP in the same step', () => {
+      const h = fight(['Dust Wisp', 'Grumbler']);
+      const e = enc(h);
+      commitEncounter(h, setFoeHp(e, e.foes[0]!.id, 0), 'Throw', { hero: { ...(h.hero as Hero), name: 'Pip the Thrower' } });
+      expect(h.hero).toMatchObject({ name: 'Pip the Thrower', xp: 1 });
+    });
+
+    it('the XP can make a level up available mid-fight', () => {
+      const h = new History(emptyMap(), 20, { ...hero(), xp: 9 });
+      startOrJoin(h, t, ['Dust Wisp', 'Grumbler'], ids(), noAsk);
+      down(h, 0);
+      expect(levelUpAvailable(h.hero as Hero)).toBe(true);
+    });
+
+    it('without a hero no XP is recorded', () => {
       const h = new History(emptyMap());
-      startOrJoin(h, t, ['Grumbler'], ids(), noAsk);
-      expect(awardVictoryXp(h).ok).toBe(false);
+      startOrJoin(h, t, ['Grumbler', 'Dust Wisp'], ids(), noAsk);
+      down(h, 0);
+      expect(h.hero).toBeNull();
+      expect(enc(h).xpAwarded).toBe(0);
+    });
+
+    it('ending the fight early keeps the XP of creatures already defeated', () => {
+      const h = fight();
+      down(h, 0);
+      commitEncounter(h, null, 'End encounter');
+      expect(xp(h)).toBe(2);
+    });
+
+    it('winning adds any defeated XP not yet added (a fight saved before XP came per creature)', () => {
+      const h = fight();
+      const e = enc(h);
+      const allDown = { ...e, foes: e.foes.map((f) => ({ ...f, hp: 0, defeatedInRound: 1 })) };
+      h.execute(setPlay({ hero: h.hero, encounter: allDown }, 'old save'));
+      expect(xp(h)).toBe(0);
+      winFight(h);
+      expect(xp(h)).toBe(5);
+      h.undo();
+      expect(xp(h)).toBe(0);
+    });
+
+    it('winning adds nothing more when the XP is already in', () => {
+      const h = fight();
+      for (let i = 0; i < 2; i++) down(h, i);
+      winFight(h);
+      expect(xp(h)).toBe(5);
     });
   });
 
@@ -451,7 +503,8 @@ describe('throwing weapons and potion bombs', () => {
       { kind: 'weapon', name: 'Spike', foeId: 'f1', round: 1, faces: [3, 4], damage: 5, interrupts: ['Damp Hide'], item: 'Spike +1', list: 'largeItems', deflected: true },
     ]);
     expect((h.hero as Hero).largeItems).toEqual([]);
-    expect(h.undoLabel).toBe('Throw Spike');
+    expect(h.undoLabel).toBe('Throw Spike, XP +2'); // the Grumbler (4 HP) falls, and its XP comes in the same step
+    expect((h.hero as Hero).xp).toBe(2);
     h.undo();
     expect((h.hero as Hero).largeItems).toEqual(['Spike +1']);
     expect(enc(h).throws).toBeUndefined();

@@ -2,7 +2,7 @@
 import { setPlay, updateRoom } from '../../core/commands';
 import { roomAt } from '../../core/query';
 import type { ExecResult, History } from '../../core/history';
-import { addFoe, awardXp, defeatedLine, dropRolled, logThrow, newEncounter, queueRoll, recordRoll, resolveRoll, setFoeHp, setRecovered, totalXp, type Encounter, type ThrowLog } from '../../systems/dungeon/combat';
+import { addFoe, defeatedLine, defeatedXp, dropRolled, logThrow, newEncounter, queueRoll, recordRoll, resolveRoll, setFoeHp, setRecovered, type Encounter, type ThrowLog } from '../../systems/dungeon/combat';
 import { bombDamage, recovers, throwDamage, type CarriedWeapon, type PotionBomb } from '../../systems/dungeon/throwing';
 import { parseDamage, rollTotal } from '../diceRoller';
 import { findCreature, rollCreatureTable, type CreatureRoll } from '../../systems/dungeon/creatures';
@@ -50,10 +50,19 @@ function foeHpLabel(id: string, before: Encounter | null, after: Encounter | nul
 }
 
 /**
+ * Each creature's XP goes to the hero the moment it falls (so a level up can come mid-fight), and
+ * comes back off if it is brought back above 0 HP. `xpAwarded` keeps what has gone in so far.
+ */
+function withDefeatXp(e: Encounter, hero: Hero): { e: Encounter; hero: Hero } {
+  const d = defeatedXp(e) - e.xpAwarded;
+  return d === 0 ? { e, hero } : { e: { ...e, xpAwarded: e.xpAwarded + d }, hero: addXp(hero, d) };
+}
+
+/**
  * Run an encounter change through History as one step. With `hero`, the same step sets the hero
- * too; otherwise the hero is left as it is. A foe-HP tap (mergeKey "foe-hp:<id>") is labelled from
- * the encounter as it was before the whole run of taps, and a run that nets out to nothing leaves
- * no step behind.
+ * too; otherwise the hero is left as it is, apart from the XP of creatures defeated or revived.
+ * A foe-HP tap (mergeKey "foe-hp:<id>") is labelled from the encounter as it was before the whole
+ * run of taps, and a run that nets out to nothing leaves no step behind.
  */
 export function commitEncounter(
   history: History,
@@ -62,7 +71,8 @@ export function commitEncounter(
   opts: { mergeKey?: string; hero?: Hero } = {},
 ): ExecResult {
   if (import.meta.env?.DEV) structuredClone({ next, hero: opts.hero }); // reactive proxies fail here, not at save time
-  const hero = opts.hero ?? history.hero;
+  let hero = (opts.hero ?? history.hero) as Hero | null;
+  if (next && hero) ({ e: next, hero } = withDefeatXp(next, hero));
   const merging = opts.mergeKey !== undefined && history.canMerge(opts.mergeKey);
   const base = merging ? { hero: history.heroBeforeLast, encounter: history.encounterBeforeLast } : { hero: history.hero, encounter: history.encounter };
   if (merging && JSON.stringify(next) === JSON.stringify(base.encounter) && JSON.stringify(hero) === JSON.stringify(base.hero)) {
@@ -73,6 +83,8 @@ export function commitEncounter(
   if (opts.mergeKey?.startsWith(FOE_HP)) {
     text = foeHpLabel(opts.mergeKey.slice(FOE_HP.length), base.encounter as Encounter | null, next) ?? label;
   }
+  const gained = hero && base.hero ? hero.xp - (base.hero as Hero).xp : 0;
+  if (gained && next && defeatedXp(next) !== defeatedXp((base.encounter as Encounter | null) ?? next)) text += `, XP ${signed(gained)}`;
   return history.execute(setPlay({ hero, encounter: next }, text), { mergeKey: opts.mergeKey });
 }
 
@@ -170,34 +182,24 @@ export function dismissRolled(history: History, index: number): ExecResult {
   return commitEncounter(history, dropRolled(e, index), `Clear ${rollName(r.code, r.modifier)} result`);
 }
 
-/** XP from the fight not yet added to the hero (0 when it all has been, or there is none). */
-export const xpToAward = (e: Encounter): number => Math.max(0, totalXp(e) - e.xpAwarded);
-
 /**
  * The Victory panel's Done: the fight closes and the foes defeated are noted on a new line of the
  * narrative of the room the hero token stands in (none without a token in a room), as one step.
+ * Any defeated XP not in yet (a fight saved before XP came per creature) goes to the hero too.
  */
 export function winFight(history: History): ExecResult {
   const e = history.encounter as Encounter | null;
   const line = e ? defeatedLine(e) : null;
   const map = history.map;
   const r = line && map.token ? roomAt(map, map.token) : undefined;
-  const cmd = setPlay({ hero: history.hero, encounter: null }, 'Win the fight');
+  const h = history.hero as Hero | null;
+  const hero = e && h ? withDefeatXp(e, h).hero : h;
+  const cmd = setPlay({ hero, encounter: null }, 'Win the fight');
   if (r && line) {
     const narrative = r.label.narrative ? `${r.label.narrative}\n${line}` : line;
     cmd.apply = updateRoom(r, { ...r, label: { ...r.label, narrative } }).apply;
   }
   return history.execute(cmd);
-}
-
-/** The Victory panel's Add XP: the hero's XP and the encounter's record of it change in one step. */
-export function awardVictoryXp(history: History): ExecResult {
-  const e = history.encounter as Encounter | null;
-  const h = history.hero as Hero | null;
-  if (!e || !h) return { ok: false, reason: 'No fight or no hero' };
-  const n = xpToAward(e);
-  if (n <= 0) return { ok: false, reason: 'That XP has already been added' };
-  return commitEncounter(history, awardXp(e, n), `XP +${n}`, { hero: addXp(h, n) });
 }
 
 // ---- throwing weapons and potion bombs ----

@@ -40,7 +40,8 @@ export interface ThrowLog {
 
 /**
  * `rolled`: resolved creature-table rolls, oldest first. `xpAwarded`: the XP already added to the
- * hero from this fight's Victory panel (on the undo timeline with the rest of the encounter).
+ * hero from this fight, one creature at a time as each falls (on the undo timeline with the rest
+ * of the encounter).
  * `turn`: whose attack it is, 'hero' (the player's, with or without a hero) or a foe's id.
  */
 export interface Encounter {
@@ -142,9 +143,6 @@ export function dropRolled(e: Encounter, index: number): Encounter {
   return { ...c, rolled: c.rolled.filter((_, i) => i !== index) };
 }
 
-/** Mark `n` more XP as added to the hero from this fight. */
-export const awardXp = (e: Encounter, n: number): Encounter => ({ ...copy(e), xpAwarded: e.xpAwarded + n });
-
 export const fatigueDie = (round: number): number => Math.min(round, 6);
 export const fatigueShift = (round: number): number => {
   const d = fatigueDie(round);
@@ -163,6 +161,8 @@ export function defeatedLine(e: Encounter): string | null {
   return `Defeated ${[...counts].map(([name, n]) => (n > 1 ? `${name} ×${n}` : name)).join(', ')}.`;
 }
 export const totalXp = (e: Encounter): number => e.foes.reduce((s, f) => s + (f.xp ?? 0), 0);
+/** The XP of the foes at 0 HP or below: what the hero has earned from this fight so far. */
+export const defeatedXp = (e: Encounter): number => e.foes.reduce((s, f) => s + (f.hp <= 0 ? (f.xp ?? 0) : 0), 0);
 export const treasureLines = (e: Encounter): string[] =>
   e.foes.filter((f) => f.treasure).map((f) => `${f.name}: ${f.treasure}`);
 export const interruptReminder = (round: number): boolean => round >= 7;

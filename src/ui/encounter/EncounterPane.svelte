@@ -31,7 +31,7 @@
   } from '../../systems/dungeon/combat';
   import { findCard, findCreature, rollCreatureTable } from '../../systems/dungeon/creatures';
   import type { CreatureTableEntry } from '../../systems/dungeon/tables';
-  import type { Hero } from '../../systems/dungeon/hero';
+  import { levelUp, levelUpAvailable, nextLevelRow, type Hero } from '../../systems/dungeon/hero';
   import type { CreatureInterrupt, DungeonTables } from '../../systems/dungeon/tables';
   import { foePool, heroPool, locked, matches, type DiceState } from '../../systems/dungeon/shift';
   import DieFace from '../DieFace.svelte';
@@ -53,7 +53,6 @@
   import ThrowPanel from './ThrowPanel.svelte';
   import {
     applyCreatureRoll,
-    awardVictoryXp,
     commitEncounter,
     dismissRolled,
     dropPendingRoll,
@@ -445,8 +444,12 @@
     onwin({ ...win, dismissed: current() });
   }
 
-  function addVictoryXp() {
-    awardVictoryXp(history);
+  /** A creature's XP comes in as it falls, so a level up can be taken mid-fight, stats and all. */
+  const levelOffer = $derived(hero && levelUpAvailable(hero) ? nextLevelRow(hero) : null);
+  function acceptLevelUp() {
+    const h = history.hero as Hero | null;
+    const row = h && levelUpAvailable(h) ? nextLevelRow(h) : null;
+    if (h && row) commitHero(history, levelUp(h), { label: `Level up to ${row.title}` });
   }
 
   function winDone() {
@@ -624,7 +627,6 @@
             {tables}
             {onopentable}
             hasHero={hero !== null}
-            onaddxp={addVictoryXp}
             ondone={winDone}
             onrecover={askRecover}
           />
@@ -706,6 +708,12 @@
           <div class="hero" class:current={!foeTurn} data-testid="hero-hp">
             <div class="name"><span>{hero.name}</span>{#if !foeTurn}<span class="tag turn-tag">Attacking</span>{/if}</div>
             <HpTracker name={hero.name} value={hero.hp} onstep={heroStep} onset={heroSet} />
+            {#if levelOffer}
+              <div class="level-up" role="status">
+                <span class="grow">Enough XP: level up to {levelOffer.title}?</span>
+                <button class="primary" onclick={acceptLevelUp}>Level up</button>
+              </div>
+            {/if}
             <div class="stats">
               <span class="shift">SH {plain(hero.shift + fatigue + momentum)}</span>
               <span class="small">{plain(hero.shift)} base {signed(fatigue)} fatigue{momentum ? ` ${signed(momentum)} momentum` : ''}</span>
@@ -1090,6 +1098,21 @@
     flex: 1;
     font-size: 17px;
     font-weight: 600;
+  }
+  .level-up {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    font-size: 17px;
+    font-weight: 600;
+    background: #f1e3b8;
+    border: 2px solid var(--ink);
+    border-radius: 8px;
+  }
+  .level-up .grow {
+    flex: 1;
   }
   .reminder {
     margin: 0;
