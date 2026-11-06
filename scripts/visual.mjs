@@ -2723,6 +2723,15 @@ for (const reduced of [false, true]) {
   if (!/2D6 \+10 SC = \d+/.test(await resultText()) || (await hitRow()) !== 0) problems.push(`${tag}: second amount "${await resultText()}"`);
   await smallButtons('amounts');
   await shot('77a-amounts.png', p);
+  // The totals outlast the pane: put it away (as going to the hero does) and bring it back.
+  const bothTotals = (await resultText()).match(/= \d+/g)?.join(' ');
+  await p.click('header.toolbar button.tables');
+  await p.waitForTimeout(200);
+  await p.click('header.toolbar button.tables');
+  await p.waitForSelector(`${pane} [data-testid=ref-result]`);
+  const totalsBack = (await resultText()).match(/= \d+/g)?.join(' ');
+  console.log(`${tag}: amount totals "${bothTotals}", after reopening "${totalsBack}"`);
+  if (!bothTotals || totalsBack !== bothTotals) problems.push(`${tag}: amount totals "${bothTotals}" were "${totalsBack}" after reopening the pane`);
 
   // 7. A list has no Roll button.
   await p.click(`${pane} button:text-is("☰ List")`);

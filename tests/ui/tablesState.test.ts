@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import fixture from '../fixtures/dungeon-tables.fixture.json';
 import type { RefRoll } from '../../src/systems/dungeon/referenceTables';
 import type { DungeonTables } from '../../src/systems/dungeon/tables';
-import { goBack, initialTablesState, openTable, searchTables, setModifier, setResult, showList } from '../../src/ui/tables/tablesState';
+import { goBack, initialTablesState, openTable, searchTables, setModifier, setResult, setTotal, showList } from '../../src/ui/tables/tablesState';
 
 const tables = JSON.parse(JSON.stringify(fixture)) as DungeonTables;
 const roll = (row: number | null): RefRoll => ({ natural: 2, modifier: -1, total: 1, clamped: 1, row });
@@ -111,5 +111,32 @@ describe('searchTables', () => {
     const bare = JSON.parse(JSON.stringify(fixture)) as DungeonTables;
     delete bare.tables.referenceTables;
     expect(searchTables(bare, '', 'all')).toEqual([]);
+  });
+});
+
+describe('setTotal', () => {
+  it('keeps the totals of amounts rolled in a result, per table, beside the result', () => {
+    let s = setResult(initialTablesState, 'XX1', roll(0));
+    s = setTotal(s, 'XX1', '0:1', '12');
+    s = setTotal(s, 'XX1', '1:1', '27');
+    s = setResult(s, 'XX2', roll(1));
+    s = setTotal(s, 'XX2', '0:1', '3');
+    expect(s.totals.XX1).toEqual({ '0:1': '12', '1:1': '27' });
+    expect(s.totals.XX2).toEqual({ '0:1': '3' });
+  });
+  it('survives going to the list and back, as the result does', () => {
+    let s = openTable(initialTablesState, 'XX1');
+    s = setResult(s, 'XX1', roll(0));
+    s = setTotal(s, 'XX1', '0:1', '12');
+    s = openTable(showList(s), 'XX1');
+    expect(s.totals.XX1).toEqual({ '0:1': '12' });
+  });
+  it('a new result on the table starts its totals over, and leaves other tables be', () => {
+    let s = setResult(initialTablesState, 'XX1', roll(0));
+    s = setTotal(s, 'XX1', '0:1', '12');
+    s = setTotal(setResult(s, 'XX2', roll(1)), 'XX2', '0:1', '3');
+    s = setResult(s, 'XX1', roll(1));
+    expect(s.totals.XX1).toBeUndefined();
+    expect(s.totals.XX2).toEqual({ '0:1': '3' });
   });
 });

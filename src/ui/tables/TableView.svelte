@@ -29,8 +29,21 @@
     /** The hero, for adding a rolled potion to their sheet (left out where that isn't offered). */
     hero?: Hero | null;
     onaddpotion?: (p: KnownPotion) => void;
+    /** Totals of dice amounts rolled in the result, by "cell:part", kept by the parent so they outlast this view. */
+    totals?: Record<string, string>;
+    ontotal?: (key: string, total: string) => void;
   }
-  let { code, table, tables, modifier, result, canBack, onresult, onopen, onback, onlist, nav = true, jobId, hero = null, onaddpotion }: Props = $props();
+  let { code, table, tables, modifier, result, canBack, onresult, onopen, onback, onlist, nav = true, jobId, hero = null, onaddpotion, totals, ontotal }: Props = $props();
+
+  /** One result cell's amount totals, by place in its text. */
+  function cellTotals(j: number): Record<number, string> {
+    const out: Record<number, string> = {};
+    for (const [k, v] of Object.entries(totals ?? {})) {
+      const [cell, part] = k.split(':');
+      if (Number(cell) === j) out[Number(part)] = v;
+    }
+    return out;
+  }
 
   const minus = (n: number) => (n < 0 ? `−${Math.abs(n)}` : String(n));
   const rolls = $derived(table.dice !== null);
@@ -152,9 +165,16 @@
         <p class="line"><span class="sum">{sum}</span>{#if result.clamped !== result.total}<span class="counts">{` · counts as ${minus(result.clamped)}`}</span>{/if}</p>
         {#if hit}
           <div class="cells">
-            <!-- A new roll on the table starts the amounts' totals over. -->
+            <!-- A new roll on the table starts the amounts' totals over (the parent's go with the old result). -->
             {#key result}{#each hit.cells as c, j (j)}
-              <p>{#if cellHeads.length > 1 && cellHeads[j]}<span class="label">{cellHeads[j]}:</span>{' '}{/if}<RefText text={c} {tables} {onopen} amounts={rowLabel} /></p>
+              <p>{#if cellHeads.length > 1 && cellHeads[j]}<span class="label">{cellHeads[j]}:</span>{' '}{/if}<RefText
+                text={c}
+                {tables}
+                {onopen}
+                amounts={rowLabel}
+                totals={ontotal ? cellTotals(j) : undefined}
+                ontotal={ontotal ? (i, t) => ontotal(`${j}:${i}`, t) : undefined}
+              /></p>
             {/each}{/key}
           </div>
           {#if potion && hero}

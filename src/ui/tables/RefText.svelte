@@ -19,14 +19,22 @@
     onopen: (code: string, modifier: number) => void;
     /** Make dice amounts roll buttons; the text is what they're from ("XX1 9"). */
     amounts?: string;
+    /** The amounts' totals by place in the text, kept by the parent (so they outlast this text); without it they're kept here. */
+    totals?: Record<number, string>;
+    ontotal?: (i: number, total: string) => void;
   }
-  let { text, tables, onopen, amounts }: Props = $props();
+  let { text, tables, onopen, amounts, totals: kept, ontotal }: Props = $props();
 
   const desk = useDiceDesk();
   const parts = $derived(scanReference(text, tables, { amounts: amounts !== undefined }));
 
-  // Each amount's total, by its place in the text. Lives as long as this text is on screen.
-  let totals = $state<Record<number, string>>({});
+  // Each amount's total, by its place in the text: the parent's, or else our own (which lives as long as this text is on screen).
+  let own = $state<Record<number, string>>({});
+  const totals = $derived(kept ?? own);
+  function setTotal(i: number, total: string) {
+    if (ontotal) ontotal(i, total);
+    else own[i] = total;
+  }
   const jobBase = `amount:${++seq}`;
 
   function rollAmount(i: number, what: string, dice: DiceKind, modifier: number) {
@@ -41,10 +49,10 @@
       modifier,
       modifierEditable: false,
       oneShot: true,
-      rolled: (faces) => void (totals[i] = rollTotal(dice, faces, modifier)),
+      rolled: (faces) => setTotal(i, rollTotal(dice, faces, modifier)),
       enter: (values) => {
         const faces = values.map((v) => (/^\s*[1-6]\s*$/.test(v) ? Number(v) : NaN));
-        if (faces.length === count && !faces.some(Number.isNaN)) totals[i] = rollTotal(dice, faces, modifier);
+        if (faces.length === count && !faces.some(Number.isNaN)) setTotal(i, rollTotal(dice, faces, modifier));
       },
     });
   }

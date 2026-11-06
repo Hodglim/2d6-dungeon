@@ -13,6 +13,8 @@ export interface TablesState {
   back: { code: string; modifier: number }[];
   modifier: Record<string, number>;
   results: Record<string, RefRoll>;
+  /** Totals of dice amounts rolled in each table's result ("2D6 +10 SC" = 17), by "cell:part"; a new result clears them. */
+  totals: Record<string, Record<string, string>>;
   query: string;
   /** A table group, or a kind of card (gods, herbs) from the card pack, shown as pictures. */
   group: TablesGroup;
@@ -20,7 +22,7 @@ export interface TablesState {
 
 export type TablesGroup = RefGroup | 'all' | CardKind;
 
-export const initialTablesState: TablesState = { open: null, back: [], modifier: {}, results: {}, query: '', group: 'all' };
+export const initialTablesState: TablesState = { open: null, back: [], modifier: {}, results: {}, totals: {}, query: '', group: 'all' };
 
 export const GROUP_ORDER: RefGroup[] = ['generic', 'random', 'loot', 'level', 'optional'];
 
@@ -46,8 +48,15 @@ export function setModifier(s: TablesState, code: string, modifier: number): Tab
   return { ...s, modifier: { ...s.modifier, [code]: modifier } };
 }
 
+/** A new result for a table; the totals of amounts rolled in its old result go. */
 export function setResult(s: TablesState, code: string, r: RefRoll): TablesState {
-  return { ...s, results: { ...s.results, [code]: r } };
+  const { [code]: _old, ...totals } = s.totals;
+  return { ...s, results: { ...s.results, [code]: r }, totals };
+}
+
+/** The total of a dice amount rolled in a table's result, by "cell:part". */
+export function setTotal(s: TablesState, code: string, key: string, total: string): TablesState {
+  return { ...s, totals: { ...s.totals, [code]: { ...s.totals[code], [key]: total } } };
 }
 
 /** Tables whose code or name contains the query (any case), in the group (none for a card kind); sorted by group, then page, then code. */
