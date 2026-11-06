@@ -78,11 +78,11 @@
           <dd>{room.contents.roll}</dd>
           <dt>Type</dt>
           <dd>{room.contents.type}</dd>
-          <dt>Description</dt>
-          <dd data-testid="room-description">{#if encounter}<EncounterText text={room.contents.description} {tables} onopentable={encounter.onopentable} />{:else}{room.contents.description}{/if}</dd>
+          <dt class="wide">Description</dt>
+          <dd class="wide" data-testid="room-description">{#if encounter}<EncounterText text={room.contents.description} {tables} onopentable={encounter.onopentable} />{:else}{room.contents.description}{/if}</dd>
           {#if room.contents.encounter}
-            <dt>Encounter</dt>
-            <dd data-testid="encounter-text">{#if encounter}<EncounterText text={room.contents.encounter} {tables} {...encounter} />{:else}{room.contents.encounter}{/if}</dd>
+            <dt class="wide">Encounter</dt>
+            <dd class="wide" data-testid="encounter-text">{#if encounter}<EncounterText text={room.contents.encounter} {tables} {...encounter} />{:else}{room.contents.encounter}{/if}</dd>
           {/if}
         </dl>
       {:else if rolling}
@@ -134,6 +134,16 @@
   }
   dd {
     margin: 0;
+  }
+  /* Long text: the label on its own row, the text across the full width beneath it. */
+  .wide {
+    grid-column: 1 / -1;
+  }
+  dt.wide {
+    margin-top: 4px;
+  }
+  dd.wide {
+    margin-top: -2px;
   }
   .cap {
     text-transform: capitalize;
