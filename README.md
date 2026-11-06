@@ -50,6 +50,16 @@ To use the room tables, locked doors, hero sheet, fights and Tables pane, load y
 
 Keep your PDFs in `pdf/` and your own data in `local-data/`. Both folders are git-ignored, and the deploy check refuses to publish them.
 
+### Keeping rulebook terms out of git
+
+Code, tests, docs and commit messages use made-up table codes and names (`XX1`, Grumbler), never the books' own. Git hooks in `.githooks/` enforce this. `npm install` turns them on (or run `git config core.hooksPath .githooks`):
+
+- **pre-commit** refuses a commit whose added lines use a rulebook term;
+- **commit-msg** does the same for the commit message;
+- **pre-push** checks every commit about to be pushed.
+
+The terms are read at run time from your own `local-data/` (table codes and names, room and level names, creatures, items, gods, herbs and card names), so the repo never holds them. Without `local-data/` the hooks say they can't check and let the commit through. `npm run check:terms` scans every tracked file. A generic word that happens to match (such as "Guard") can go in `scripts/book-terms-allow.json`.
+
 ## Publish
 
 The app is a static site hosted on Cloudflare Pages.

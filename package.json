@@ -8,6 +8,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run",
+    "check:terms": "node scripts/check-book-terms.mjs --all",
+    "prepare": "git config core.hooksPath .githooks || true",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit && svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
     "creature-pack": "node scripts/make-creature-pack.mjs",

@@ -1,0 +1,3 @@
+#!/bin/sh
+# Last check before anything leaves this machine: every commit being pushed, messages included.
+exec node scripts/check-book-terms.mjs --push

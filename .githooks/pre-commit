@@ -1,0 +1,3 @@
+#!/bin/sh
+# Refuse a commit that adds rulebook terms (read from your own local-data/, which git ignores).
+exec node scripts/check-book-terms.mjs --staged

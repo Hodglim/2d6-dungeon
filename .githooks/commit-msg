@@ -1,0 +1,3 @@
+#!/bin/sh
+# Refuse a commit message that uses rulebook terms.
+exec node scripts/check-book-terms.mjs --message "$1"
