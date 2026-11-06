@@ -2,20 +2,13 @@
 //          [--names names.json] [--out local-data/creature-cards.json]
 // Builds a creature card pack from your own Tables Codex PDF. Needs pdftoppm and pdftotext (poppler) and
 // ImageMagick (magick or convert). Contains no rulebook content; see docs/table-file-format.md.
-import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, readdirSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { SLOT_NAMES, requireTools, splitPage } from './card-split.mjs';
 
 const USAGE = `Usage: node scripts/make-creature-pack.mjs <codex.pdf> [--first N --last N] [--index-page N] [--offset N] [--names names.json] [--out local-data/creature-cards.json]`;
-const DPI = 170;
-const CARD_WIDTH = 700;
-const QUALITY = 80;
-const WHITE = 245; // grey level at or above this counts as paper
-const MIN_BLANK_FRACTION = 0.01; // a row/column with less ink than this is a gutter line
-const MIN_GAP_FRACTION = 0.004; // a gutter must be at least this fraction of the page (some books leave only a few px)
-const MIN_CARD_FRACTION = 0.15; // a band narrower than this fraction of the page is not a card
-
 const args = process.argv.slice(2);
 const opt = {};
 const positional = [];
@@ -39,12 +32,7 @@ if (positional.length !== 1 || opt.help !== undefined) fail(USAGE);
 const pdf = positional[0];
 const outFile = opt.out ?? 'local-data/creature-cards.json';
 
-const has = (cmd) => spawnSync(cmd, ['-v'], { stdio: 'ignore' }).error === undefined || spawnSync(cmd, ['--version'], { stdio: 'ignore' }).error === undefined;
-for (const tool of ['pdftoppm', 'pdftotext', 'pdfinfo']) {
-  if (!has(tool)) fail(`${tool} was not found. Install poppler (poppler-utils) and try again.`);
-}
-const magick = ['magick', 'convert'].find(has);
-if (!magick) fail('ImageMagick was not found (neither "magick" nor "convert"). Install ImageMagick and try again.');
+const magick = requireTools(fail);
 
 const text = (first, last) => execFileSync('pdftotext', ['-layout', '-f', String(first), '-l', String(last), pdf, '-'], { encoding: 'utf8', maxBuffer: 1 << 26 });
 const pageText = (n) => text(n, n);
@@ -112,56 +100,6 @@ const pages = [...namesByPage.keys()].sort((a, b) => a - b);
 const first = opt.first ? Number(opt.first) : pages[0];
 const last = Math.min(pageCount, opt.last ? Number(opt.last) : pages[pages.length - 1]);
 
-// --- image helpers ---
-const SLOT_NAMES = ['TL', 'TR', 'BL', 'BR'];
-/** Runs of true in a boolean array as [start,end) pairs. */
-const runs = (flags) => {
-  const r = [];
-  let s = -1;
-  flags.forEach((f, i) => {
-    if (f && s < 0) s = i;
-    if (!f && s >= 0) (r.push([s, i]), (s = -1));
-  });
-  if (s >= 0) r.push([s, flags.length]);
-  return r;
-};
-/** Content bands along one axis, separated by gutters, dropping bands that are too small to be a card. */
-function bands(inkFractions, total) {
-  const minGap = Math.max(2, Math.round(total * MIN_GAP_FRACTION));
-  const ink = inkFractions.map((f) => f >= MIN_BLANK_FRACTION);
-  // close gaps shorter than a gutter so thin white lines inside a card do not split it
-  const closed = [...ink];
-  for (const [s, e] of runs(ink.map((v) => !v))) if (e - s < minGap && s > 0 && e < total) for (let i = s; i < e; i++) closed[i] = true;
-  return runs(closed).filter(([s, e]) => e - s >= total * MIN_CARD_FRACTION);
-}
-function readGray(file) {
-  const buf = execFileSync(magick, [file, '-colorspace', 'Gray', '-depth', '8', 'pgm:-'], { maxBuffer: 1 << 28 });
-  const m = /^P5\s+(\d+)\s+(\d+)\s+255\s/.exec(buf.subarray(0, 40).toString('latin1'));
-  if (!m) throw new Error('unexpected image format from ImageMagick');
-  const w = Number(m[1]);
-  const h = Number(m[2]);
-  return { w, h, px: buf.subarray(buf.length - w * h) };
-}
-function cardBoxes({ w, h, px }) {
-  const rowInk = new Array(h).fill(0);
-  for (let y = 0; y < h; y++) {
-    let n = 0;
-    for (let x = 0; x < w; x++) if (px[y * w + x] < WHITE) n++;
-    rowInk[y] = n / w;
-  }
-  const boxes = [];
-  for (const [y0, y1] of bands(rowInk, h)) {
-    const colInk = new Array(w).fill(0);
-    for (let x = 0; x < w; x++) {
-      let n = 0;
-      for (let y = y0; y < y1; y++) if (px[y * w + x] < WHITE) n++;
-      colInk[x] = n / (y1 - y0);
-    }
-    for (const [x0, x1] of bands(colInk, w)) boxes.push({ x: x0, y: y0, w: x1 - x0, h: y1 - y0 });
-  }
-  return boxes;
-}
-
 // --- level headings ---
 // The heading may appear only on the first page of each level, so a page without one takes the level of the
 // nearest heading before it.
@@ -182,21 +120,16 @@ const summary = [];
 try {
   for (let page = first; page <= last; page++) {
     const level = levelOf(page);
-    const base = join(tmp, `p${page}`);
-    execFileSync('pdftoppm', ['-r', String(DPI), '-png', '-f', String(page), '-l', String(page), '-singlefile', pdf, base]);
-    const png = `${base}.png`;
-    const boxes = cardBoxes(readGray(png));
+    const { boxes, crop } = splitPage({ pdf, page, tmp, magick });
     const names = namesByPage.get(page) ?? [];
     const matched = names.length === boxes.length;
     if (!matched) console.warn(`warning: page ${page} has ${boxes.length} card(s) but the index lists ${names.length}; naming them "Page ${page} card K".`);
     if (!Number.isFinite(level)) console.warn(`warning: page ${page} has no "LEVEL n - CREATURE CARDS" heading on it or before it; using level 0.`);
     const labels = [];
-    boxes.forEach((b, i) => {
+    boxes.forEach((_b, i) => {
       const slot = SLOT_NAMES[i] ?? `S${i + 1}`;
       const name = nameOverrides[`${page}:${i + 1}`] ?? nameOverrides[`${page}:${slot}`] ?? (matched ? names[i] : `Page ${page} card ${i + 1}`);
-      const jpg = join(tmp, `p${page}-${i + 1}.jpg`);
-      execFileSync(magick, [png, '-crop', `${b.w}x${b.h}+${b.x}+${b.y}`, '+repage', '-resize', `${CARD_WIDTH}x`, '-quality', String(QUALITY), jpg]);
-      cards.push({ id: `p${page}-${i + 1}`, name, level: Number.isFinite(level) ? level : 0, image: `data:image/jpeg;base64,${readFileSync(jpg).toString('base64')}` });
+      cards.push({ id: `p${page}-${i + 1}`, name, level: Number.isFinite(level) ? level : 0, image: crop(i) });
       labels.push(`${slot}=${name}`);
     });
     summary.push(`page ${page}: ${labels.join(', ') || '(no cards found)'}`);
