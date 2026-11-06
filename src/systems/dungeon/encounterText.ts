@@ -99,7 +99,7 @@ export function scanEncounter(text: string, t: DungeonTables | null, opts: ScanO
     pos = m.index! + m[0].length;
   }
   scanCodes(text.slice(pos), t, opts, parts);
-  return firstFightOnly(parts);
+  return lastFightOnly(parts);
 }
 
 /** Table codes (with modifiers) and creature names in a stretch of text without dice phrases. */
@@ -118,18 +118,19 @@ function scanCodes(text: string, t: DungeonTables | null, opts: ScanOptions, par
   between(text.slice(pos));
 }
 
-/** A creature named twice in one text is the same creature: later mentions become plain text. */
-function firstFightOnly(parts: EncounterPart[]): EncounterPart[] {
-  const seen = new Set<string>();
+/**
+ * A creature named twice in one text is the same creature, and the last mention is where the text
+ * says to face it ("A GUARD lets loose a dog. Roll on X, then face the GUARD after."): only that
+ * one is a fight, so its button follows anything asked for before it. Earlier mentions become text.
+ */
+function lastFightOnly(parts: EncounterPart[]): EncounterPart[] {
+  const last = new Map<string, number>();
+  parts.forEach((p, i) => p.kind === 'fight' && last.set(p.name, i));
   const out: EncounterPart[] = [];
-  for (const p of parts) {
-    if (p.kind === 'fight' && seen.has(p.name)) pushText(out, p.text);
-    else {
-      if (p.kind === 'fight') seen.add(p.name);
-      if (p.kind === 'text') pushText(out, p.text);
-      else out.push(p);
-    }
-  }
+  parts.forEach((p, i) => {
+    if (p.kind === 'text' || (p.kind === 'fight' && last.get(p.name) !== i)) pushText(out, p.text);
+    else out.push(p);
+  });
   return out;
 }
 
