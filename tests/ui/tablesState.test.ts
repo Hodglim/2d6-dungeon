@@ -93,6 +93,10 @@ describe('searchTables', () => {
     expect(codes('', 'level')).toEqual(['XX4']);
     expect(codes('crate', 'loot')).toEqual([]);
   });
+  it('lists no tables under a card kind', () => {
+    expect(codes('', 'god')).toEqual([]);
+    expect(codes('', 'herb')).toEqual([]);
+  });
   it('orders by group before page and by code within a page', () => {
     const t = JSON.parse(JSON.stringify(fixture)) as DungeonTables;
     const ref = t.tables.referenceTables!;

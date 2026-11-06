@@ -1,20 +1,29 @@
 <script lang="ts">
-  // The Tables pane: search and browse the table file's reference tables, read one, roll on it.
+  // The Tables pane: search and browse the table file's reference tables, read one, roll on it;
+  // and look at the card pack's god and herb cards, full screen on a tap.
   // Its state belongs to the app shell, so switching tabs keeps it; none of it is game state.
-  import { findTable, type RefGroup } from '../../systems/dungeon/referenceTables';
+  import { findTable } from '../../systems/dungeon/referenceTables';
+  import { CARD_KINDS, cardsOfKind, type CardKind, type CardPack, type CreatureCard } from '../../systems/dungeon/cards';
   import type { DungeonTables } from '../../systems/dungeon/tables';
   import TableView from './TableView.svelte';
-  import { goBack, isSlug, openTable, searchTables, setResult, showList, type TablesState } from './tablesState';
+  import { goBack, isSlug, openTable, searchTables, setResult, showList, type TablesGroup, type TablesState } from './tablesState';
 
   interface Props {
     tables: DungeonTables | null;
+    /** The card pack: its god and herb cards are shown here. */
+    cards?: CardPack | null;
     state: TablesState;
     onstate: (s: TablesState) => void;
     onclose: () => void;
   }
-  let { tables, state: s, onstate, onclose }: Props = $props();
+  let { tables, cards = null, state: s, onstate, onclose }: Props = $props();
 
-  const CHIPS: { id: RefGroup | 'all'; label: string }[] = [
+  const KIND_LABEL: Record<CardKind, string> = { god: 'Gods', herb: 'Herbs' };
+  /** The card kinds the pack has, each with a chip of its own after the table groups. */
+  const kinds = $derived(CARD_KINDS.filter((k) => cardsOfKind(cards, k, '').length > 0));
+  const isKind = (g: TablesGroup): g is CardKind => (CARD_KINDS as string[]).includes(g);
+
+  const TABLE_CHIPS: { id: TablesGroup; label: string }[] = [
     { id: 'all', label: 'All' },
     { id: 'generic', label: 'Generic' },
     { id: 'random', label: 'Random' },
@@ -24,8 +33,28 @@
   ];
 
   const hasRef = $derived(Object.keys(tables?.tables.referenceTables ?? {}).length > 0);
+  const chips = $derived([...(hasRef ? TABLE_CHIPS : TABLE_CHIPS.slice(0, 1)), ...kinds.map((k) => ({ id: k, label: KIND_LABEL[k] }))]);
+  /** A card-kind chip left over from a pack since removed shows everything instead. */
+  const group = $derived(isKind(s.group) && !kinds.includes(s.group) ? 'all' : s.group);
   const shown = $derived(s.open !== null ? findTable(tables, s.open) : null);
-  const matches = $derived(searchTables(tables, s.query, s.group));
+  const matches = $derived(searchTables(tables, s.query, group));
+  /** Under a card chip, that kind's cards; under All with a search, any god or herb whose name matches. */
+  const cardHits = $derived(
+    isKind(group) ? cardsOfKind(cards, group, s.query) : group === 'all' && s.query.trim() ? kinds.flatMap((k) => cardsOfKind(cards, k, s.query)) : [],
+  );
+
+  /** The card shown full screen. */
+  let big = $state<CreatureCard | null>(null);
+  let closeBig = $state<HTMLButtonElement>();
+  $effect(() => {
+    if (big) closeBig?.focus();
+  });
+  function onKey(e: KeyboardEvent) {
+    if (big && e.key === 'Escape') {
+      e.preventDefault();
+      big = null;
+    }
+  }
 
   // Opening a table, going back or to the list starts the pane body at the top.
   let body: HTMLDivElement | undefined = $state();
@@ -42,6 +71,8 @@
   }
 </script>
 
+<svelte:window onkeydown={onKey} />
+
 <aside class="tables-pane" aria-label="Tables">
   <div class="body" bind:this={body}>
     <header>
@@ -49,7 +80,7 @@
       <button class="close" onclick={onclose} aria-label="Close tables">Close</button>
     </header>
 
-    {#if !hasRef}
+    {#if !hasRef && kinds.length === 0}
       <p class="empty" data-testid="tables-empty">
         {#if !tables}No table file is loaded. Load your table file (with referenceTables) to read and roll on its tables here, or see the format guide.{:else}Your table file has no reference tables yet. Load a table file with referenceTables, or see the format guide.{/if}
       </p>
@@ -72,20 +103,20 @@
       <input
         class="search"
         type="search"
-        placeholder="Search by code or name"
+        placeholder={hasRef ? 'Search by code or name' : 'Search by name'}
         aria-label="Search tables"
         autocomplete="off"
         value={s.query}
         oninput={(e) => onstate({ ...s, query: (e.currentTarget as HTMLInputElement).value })}
       />
       <div class="chips" role="group" aria-label="Table group">
-        {#each CHIPS as c (c.id)}
-          <button type="button" aria-pressed={s.group === c.id} onclick={() => onstate({ ...s, group: c.id })}>{c.label}</button>
+        {#each chips as c (c.id)}
+          <button type="button" aria-pressed={group === c.id} onclick={() => onstate({ ...s, group: c.id })}>{c.label}</button>
         {/each}
       </div>
-      {#if matches.length === 0}
-        <p class="empty">No tables match.</p>
-      {:else}
+      {#if matches.length === 0 && cardHits.length === 0}
+        <p class="empty">{isKind(group) ? 'No cards match.' : 'No tables match.'}</p>
+      {:else if matches.length > 0}
         <ul class="list">
           {#each matches as m (m.code)}
             <li>
@@ -97,9 +128,27 @@
           {/each}
         </ul>
       {/if}
+      {#if cardHits.length > 0}
+        <ul class="cards" aria-label="Cards">
+          {#each cardHits as c (c.id)}
+            <li>
+              <button type="button" class="card" aria-label="View {c.name} full screen" onclick={() => (big = c)}>
+                <img src={c.image} alt="" />
+                <span>{c.name}</span>
+              </button>
+            </li>
+          {/each}
+        </ul>
+      {/if}
     {/if}
   </div>
 </aside>
+
+{#if big}
+  <button class="full" bind:this={closeBig} aria-label="Close full screen card" onclick={() => (big = null)}>
+    <img src={big.image} alt={big.name} />
+  </button>
+{/if}
 
 <style>
   .tables-pane {
@@ -196,5 +245,53 @@
   }
   .page {
     color: var(--muted);
+  }
+  .cards {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 10px;
+  }
+  .cards .card {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 6px;
+    border-width: 1px;
+    border-color: var(--rule);
+    cursor: zoom-in;
+  }
+  .cards img {
+    display: block;
+    width: 100%;
+    height: auto;
+    border-radius: 4px;
+  }
+  .cards span {
+    font-size: 15px;
+    line-height: 1.2;
+    text-align: center;
+  }
+  .full {
+    position: fixed;
+    inset: 0;
+    z-index: 30;
+    display: grid;
+    place-items: center;
+    padding: 12px;
+    border: 0;
+    border-radius: 0;
+    background: rgba(20, 16, 10, 0.9);
+    cursor: zoom-out;
+  }
+  /* God and herb cards are taller than they are wide: fit the whole card on the screen. */
+  .full img {
+    max-width: calc(100vw - 24px);
+    max-height: calc(100dvh - 24px);
+    object-fit: contain;
   }
 </style>
