@@ -1,6 +1,6 @@
 import { inBounds, isBoundaryEdge, perimeterEdges, sameEdge, step } from './geometry';
 import { doorAt, roomAt } from './query';
-import type { Direction, DungeonMap, Edge, Room } from './types';
+import type { Cell, Direction, DungeonMap, Edge, Room } from './types';
 
 /** Walls in clockwise order N → E → S → W. */
 export const CLOCKWISE: readonly Direction[] = ['N', 'E', 'S', 'W'];
@@ -31,9 +31,19 @@ export function allowedExitEdges(map: DungeonMap, roomId: string, chosen: Edge[]
     const s2 = step(s1, p.dir);
     if (!inBounds(s1, map.width, map.height) || roomAt(map, s1)) continue;
     if (!inBounds(s2, map.width, map.height) || roomAt(map, s2)) continue;
+    if (besideWall(map, s1, p.dir)) continue;
     out.push(p.edge);
   }
   return out;
+}
+
+/** Is the square an exit leads to (`s`, reached heading `dir`) right beside another room's wall or the Outer Boundary? */
+function besideWall(map: DungeonMap, s: Cell, dir: Direction): boolean {
+  const sides: Direction[] = dir === 'N' || dir === 'S' ? ['W', 'E'] : ['N', 'S'];
+  return sides.some((d) => {
+    const n = step(s, d);
+    return !inBounds(n, map.width, map.height) || roomAt(map, n) !== undefined;
+  });
 }
 
 /** Auto-place up to `count` exits clockwise from the entry wall, starting at wall `firstWall` (0..2). */

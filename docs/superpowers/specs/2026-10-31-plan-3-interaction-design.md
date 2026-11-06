@@ -124,6 +124,8 @@ These would make it a failure even if it technically worked:
   - it is not on the Outer Boundary
   - it would not lead into a space only 1 square deep: the square beyond the exit square
     must be inside the map and not already floor (*user confirmed this reading*)
+  - it would not lead into a space 1 square from a wall: the squares on either side of
+    the exit square must be inside the map and not already floor (*user confirmed*)
   - it is not already a door
 - At most 3 new exits. Exits that can't be placed are dropped, and the user is told how
   many.

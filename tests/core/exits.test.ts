@@ -34,6 +34,17 @@ describe('allowedExitEdges', () => {
     const ok = withContent(emptyMap(10, 10), [a, room('b', 3, 0, 4, 1, 'room', 2)], [entry]);
     expect(allowedExitEdges(ok, 'a', []).some((e) => e.side === 'N' && e.y === 3)).toBe(true);
   });
+  it('disallows an exit whose square beyond sits beside another room', () => {
+    // b's west wall runs along x=7, so the square north of a's (6,3) N edge, (6,2), touches it.
+    const m = withContent(emptyMap(10, 10), [a, room('b', 7, 0, 2, 3, 'room', 2)], [entry]);
+    const north = allowedExitEdges(m, 'a', []).filter((e) => e.side === 'N' && e.y === 3);
+    expect(north.map((e) => e.x).sort()).toEqual([3, 4, 5]);
+  });
+  it('disallows an exit whose square beyond sits beside the Outer Boundary', () => {
+    const m = withContent(emptyMap(10, 10), [{ ...room('a', 0, 3, 4, 3, 'room', 1), entryDoorId: 'e' }], [door('e', 1, 6, 'N')]);
+    const north = allowedExitEdges(m, 'a', []).filter((e) => e.side === 'N' && e.y === 3);
+    expect(north.map((e) => e.x).sort()).toEqual([1, 2, 3]);
+  });
   it('an existing door on the E wall disables E', () => {
     const m = withContent(emptyMap(10, 10), [a, room('c', 7, 3, 2, 3, 'room', 2)], [entry, door('x', 7, 4, 'W')]);
     expect(allowedExitEdges(m, 'a', []).some((e) => e.side === 'W' && e.x === 7)).toBe(false);
