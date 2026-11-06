@@ -14,7 +14,7 @@
   type Stat = 'shift' | 'discipline' | 'precision';
   const stats: Stat[] = ['shift', 'discipline', 'precision'];
   type TextKey = 'name' | 'weapon' | 'title';
-  type WholeKey = 'level' | 'hpBaseline' | 'xp' | Stat;
+  type WholeKey = 'level' | 'hpBaseline' | Stat;
 
   /** Free text: one commit per change, no mergeKey. */
   function setText(e: Event, key: TextKey) {
@@ -40,7 +40,7 @@
 </script>
 
 <div class="page">
-  <section>
+  <section class="fields">
     <div class="row ident">
       <label class="grow"><span class="cap">Name</span><input type="text" aria-label="Hero name" value={hero.name} onchange={(e) => setText(e, 'name')} /></label>
       <label class="grow"><span class="cap">Weapon</span><input type="text" aria-label="Hero weapon" value={hero.weapon} onchange={(e) => setText(e, 'weapon')} /></label>
@@ -49,7 +49,6 @@
       <label><span class="cap">Level</span><input class="num" type="text" inputmode="numeric" aria-label="Hero level" value={hero.level} onchange={(e) => setWhole(e, 'level', 1)} /></label>
       <label class="grow"><span class="cap">Title</span><input type="text" aria-label="Hero title" value={hero.title} onchange={(e) => setText(e, 'title')} /></label>
       <label><span class="cap">HP baseline</span><input class="num" type="text" inputmode="numeric" aria-label="HP baseline" value={hero.hpBaseline} onchange={(e) => setWhole(e, 'hpBaseline', 0)} /></label>
-      <label><span class="cap">XP</span><input class="num" type="text" inputmode="numeric" aria-label="XP total" value={hero.xp} onchange={(e) => setWhole(e, 'xp', 0)} /></label>
     </div>
     <div class="row stats">
       {#each stats as s (s)}
@@ -59,7 +58,7 @@
         </label>
       {/each}
     </div>
-    <label class="wide">
+    <label>
       <span class="cap">Applied runes</span>
       <input type="text" value={hero.appliedRunes} onchange={setRunes} />
     </label>
@@ -71,75 +70,83 @@
     </div>
   </section>
 
-  <!-- One name column shared by both sections: every row's boxes (or effect) start on the same line. -->
-  <div class="tracks">
-  <section class="track">
+  <!-- Each tracker's name sits above its boxes, so a row of boxes never has to share its line. -->
+  <section>
     <h3>Conditions</h3>
     <div class="tracker" data-testid="conditions">
-      <span class="what">{c.bloodied.label}</span>
-      <Boxes label={c.bloodied.label} filled={hero.bloodied} total={c.bloodied.boxes} onset={(n) => onedit({ ...hero, bloodied: n })} />
-      <span class="what">{c.soaked.label}</span>
-      <Boxes label={c.soaked.label} filled={hero.soaked} total={c.soaked.boxes} onset={(n) => onedit({ ...hero, soaked: n })} />
-      <button class="toggle" aria-pressed={hero.fever} onclick={() => onedit({ ...hero, fever: !hero.fever })}>{c.fever.label}</button>
-      <span class="effect">{c.fever.effect}</span>
-      <button class="toggle" aria-pressed={hero.pneumonia} onclick={() => onedit({ ...hero, pneumonia: !hero.pneumonia })}>{c.pneumonia.label}</button>
-      <span class="effect">{c.pneumonia.effect}</span>
+      <div class="meter">
+        <span class="what">{c.bloodied.label}</span>
+        <Boxes label={c.bloodied.label} filled={hero.bloodied} total={c.bloodied.boxes} onset={(n) => onedit({ ...hero, bloodied: n })} />
+      </div>
+      <div class="meter">
+        <span class="what">{c.soaked.label}</span>
+        <Boxes label={c.soaked.label} filled={hero.soaked} total={c.soaked.boxes} onset={(n) => onedit({ ...hero, soaked: n })} />
+      </div>
+      <!-- Both toggles as wide as the wider one, so their effects line up. -->
+      <div class="toggles">
+        <button class="toggle" aria-pressed={hero.fever} onclick={() => onedit({ ...hero, fever: !hero.fever })}>{c.fever.label}</button>
+        <span class="effect">{c.fever.effect}</span>
+        <button class="toggle" aria-pressed={hero.pneumonia} onclick={() => onedit({ ...hero, pneumonia: !hero.pneumonia })}>{c.pneumonia.label}</button>
+        <span class="effect">{c.pneumonia.effect}</span>
+      </div>
     </div>
   </section>
 
   {#if hero.favour.length}
-    <section class="track">
+    <section>
       <h3>Favour</h3>
       <div class="tracker" data-testid="favour">
         {#each hero.favour as f (f.god)}
-          <span class="what">{f.god}</span>
-          <Boxes label="{f.god} favour" filled={f.points} total={hero.rules.favourBoxes} onset={(n) => setFavour(f.god, n)} />
+          <div class="meter">
+            <span class="what">{f.god}</span>
+            <Boxes label="{f.god} favour" filled={f.points} total={hero.rules.favourBoxes} onset={(n) => setFavour(f.god, n)} />
+          </div>
         {/each}
       </div>
     </section>
   {/if}
-  </div>
 </div>
 
 <style>
-  .tracks {
-    container-type: inline-size;
-    display: grid;
-    grid-template-columns: max-content minmax(0, 1fr);
-    column-gap: 14px;
-    row-gap: 16px;
+  /* Room between the rows of fields, so no row's controls touch the next. */
+  .fields {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
   }
-  .track,
   .tracker {
-    grid-column: 1 / -1;
-    display: grid;
-    grid-template-columns: subgrid;
-    align-items: center;
-    row-gap: 10px;
+    container-type: inline-size;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
   }
-  .track :global(h3) {
-    grid-column: 1 / -1;
-    margin-bottom: 0;
+  .meter {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
   }
   .what {
     font-size: 16px;
     font-weight: 600;
     overflow-wrap: anywhere;
   }
-  /* Both toggles as wide as the name column, so their effects line up with the boxes above. */
+  .toggles {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    align-items: center;
+    gap: 10px 14px;
+  }
   .toggle {
     justify-self: stretch;
   }
-  /* Too narrow for a name beside its boxes: each name sits on top of its own row. */
-  @container (max-width: 520px) {
-    .tracks {
+  .effect {
+    overflow-wrap: anywhere;
+  }
+  /* Too narrow for an effect beside its toggle: each effect sits under its own toggle. */
+  @container (max-width: 360px) {
+    .toggles {
       grid-template-columns: minmax(0, 1fr);
-    }
-    .tracker {
       row-gap: 4px;
-    }
-    .tracker > :global(:nth-child(2n)) {
-      margin-bottom: 10px;
     }
     .toggle {
       justify-self: start;

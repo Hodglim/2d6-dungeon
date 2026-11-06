@@ -523,8 +523,11 @@ if (!(await page.isVisible('text=This replaces your current game.'))) problems.p
     return t;
   };
   const fixtureRaw = readFileSync('tests/fixtures/dungeon-tables.fixture.json');
-  // In-test copy only: a single-die armour with a long modifier, wider than any manoeuvre damage.
+  // In-test copy only: a single-die armour with a long modifier, wider than any manoeuvre damage,
+  // and conditions with 8 boxes each, as long as a real table file's.
   const fixtureObj = JSON.parse(fixtureRaw.toString());
+  fixtureObj.tables.conditions.bloodied.boxes = 8;
+  fixtureObj.tables.conditions.soaked.boxes = 8;
   JSON.stringify(fixtureObj, (k, v) => {
     if (v && v.name === 'Padded Tablecloth') Object.assign(v, { dice: [2], modifier: '-1 Damage' });
     return v;
@@ -874,10 +877,13 @@ if (!(await page.isVisible('text=This replaces your current game.'))) problems.p
 
   await p.click(`${panel} button[aria-label="Scraped Up box 2"]`);
   await p.click(`${panel} button[aria-label="Old Mossbeard favour box 3"]`);
-  // Conditions and Favour: every row's boxes start on one line, whatever the length of its name.
+  // Conditions and Favour: each name sits above its boxes, every row of boxes starts on one line, and at full width none wraps.
   const tracksAligned = async (where) => {
     const xs = await p.$$eval(`${panel} [data-testid=conditions] .boxes, ${panel} [data-testid=favour] .boxes`, (gs) => gs.map((g) => Math.round(g.getBoundingClientRect().x)));
     if (xs.length < 3 || new Set(xs).size !== 1) problems.push(`condition and favour boxes ${where} not lined up: ${xs}`);
+    const wrapped = await p.$$eval(`${panel} [data-testid=conditions] .boxes, ${panel} [data-testid=favour] .boxes`, (gs) => gs.filter((g) => new Set([...g.children].map((b) => Math.round(b.getBoundingClientRect().y))).size > 1).length);
+    // At 420 the panel is too narrow for 8 boxes of 44px, so they may wrap there.
+    if (wrapped && where === 'wide') problems.push(`${wrapped} condition or favour trackers ${where} wrap onto a second line`);
     const fx = await p.$$eval(`${panel} [data-testid=conditions] .effect`, (es) => es.map((e) => Math.round(e.getBoundingClientRect().x)));
     if (new Set(fx).size !== 1) problems.push(`condition effects ${where} not lined up: ${fx}`);
     if (await p.$eval(panel, (e) => e.scrollWidth > e.clientWidth + 1)) problems.push(`hero tab ${where}: panel scrolls sideways`);

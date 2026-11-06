@@ -78,23 +78,21 @@
     </form>
   </div>
 
-  <div class="cell coins">
-    {#each coins as c (c.key)}
-      <span class="coin">
-        <span class="tag">{c.label}</span>
-        <button aria-label="{c.label} down" disabled={hero.coins[c.key] === 0} onclick={() => onedit(adjustCoin(hero, c.key, -1), { mergeKey: c.key })}>−</button>
-        <input
-          class="num"
-          type="text"
-          inputmode="numeric"
-          aria-label={c.label}
-          value={hero.coins[c.key]}
-          onchange={(e) => typed(e, hero.coins[c.key], 0, (n) => adjustCoin(hero, c.key, n - hero.coins[c.key]))}
-        />
-        <button aria-label="{c.label} up" onclick={() => onedit(adjustCoin(hero, c.key, 1), { mergeKey: c.key })}>+</button>
-      </span>
-    {/each}
-  </div>
+  {#each coins as c (c.key)}
+    <div class="cell">
+      <span class="tag">{c.label}</span>
+      <button aria-label="{c.label} down" disabled={hero.coins[c.key] === 0} onclick={() => onedit(adjustCoin(hero, c.key, -1), { mergeKey: c.key })}>−</button>
+      <input
+        class="num"
+        type="text"
+        inputmode="numeric"
+        aria-label={c.label}
+        value={hero.coins[c.key]}
+        onchange={(e) => typed(e, hero.coins[c.key], 0, (n) => adjustCoin(hero, c.key, n - hero.coins[c.key]))}
+      />
+      <button aria-label="{c.label} up" onclick={() => onedit(adjustCoin(hero, c.key, 1), { mergeKey: c.key })}>+</button>
+    </div>
+  {/each}
 
   <form class="cell items" onsubmit={(e) => { e.preventDefault(); addItemBox(); }}>
     <input type="text" class="grow" aria-label="Add item" placeholder="Add item" bind:value={itemText} />
@@ -122,11 +120,6 @@
     align-items: center;
     gap: 6px;
   }
-  .coin {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-  }
   .inline {
     display: inline-flex;
     gap: 6px;
@@ -150,9 +143,6 @@
     width: 64px;
     text-align: center;
     font-variant-numeric: tabular-nums;
-  }
-  .coins {
-    gap: 10px;
   }
   .items .size {
     display: inline-flex;

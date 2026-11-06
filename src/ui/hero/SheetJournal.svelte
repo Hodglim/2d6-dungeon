@@ -1,9 +1,9 @@
 <script lang="ts">
   import type { Hero, ListKey } from '../../systems/dungeon/hero';
-  import { adjustCoin, removeItem, type Coin, type StringList } from './heroActions';
+  import { removeItem, type StringList } from './heroActions';
   import StringListEditor from './StringListEditor.svelte';
 
-  /** What the hero has won and what is going on: coins, treasure, loot lockup, story threads and notes. */
+  /** What the hero has won and what is going on (coins are on the quick strip): treasure, loot lockup, story threads and notes. */
   interface Props {
     hero: Hero;
     onedit: (next: Hero, opts?: { label?: string; mergeKey?: string; limit?: ListKey }) => void;
@@ -11,20 +11,6 @@
   }
   let { hero, onedit, ontext }: Props = $props();
 
-  const coins: { key: Coin; label: string }[] = [
-    { key: 'gc', label: 'GC' },
-    { key: 'sc', label: 'SC' },
-    { key: 'cc', label: 'CC' },
-  ];
-  function setCoin(e: Event, coin: Coin) {
-    const el = e.currentTarget as HTMLInputElement;
-    const n = Number(el.value.trim());
-    if (el.value.trim() === '' || !Number.isInteger(n) || n < 0) {
-      el.value = String(hero.coins[coin]);
-      return;
-    }
-    if (n !== hero.coins[coin]) onedit(adjustCoin(hero, coin, n - hero.coins[coin]));
-  }
   const addTo = (key: StringList) => (text: string) => onedit({ ...hero, [key]: [...hero[key], text.trim()] });
   const removeFrom = (key: StringList) => (i: number) => onedit(removeItem(hero, key, i));
 
@@ -46,18 +32,6 @@
 </script>
 
 <div class="page">
-  <section>
-    <h3>Coins</h3>
-    <div class="row">
-      {#each coins as k (k.key)}
-        <label>
-          <span class="cap">{k.label}</span>
-          <input class="num" type="text" inputmode="numeric" aria-label="{k.label} (sheet)" value={hero.coins[k.key]} onchange={(e) => setCoin(e, k.key)} />
-        </label>
-      {/each}
-    </div>
-  </section>
-
   <StringListEditor title="Treasure" items={hero.treasure} placeholder="Treasure" onadd={addTo('treasure')} onremove={removeFrom('treasure')} />
   <StringListEditor title="Loot lockup" items={hero.lootLockup} placeholder="Stored loot" onadd={addTo('lootLockup')} onremove={removeFrom('lootLockup')} />
   <StringListEditor title="Side quests" items={hero.sideQuests} placeholder="Side quest" onadd={addTo('sideQuests')} onremove={removeFrom('sideQuests')} />
