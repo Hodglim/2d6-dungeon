@@ -973,6 +973,8 @@
         onremovecards={() => void removeCards()}
         earlier={earlier.map((m) => ({ level: m.level, label: levelLabel(tables, m.level) }))}
         onearlier={(i) => (viewing = earlier[i] ?? null)}
+        realDice={diceView.enterMode}
+        onrealdice={(on) => desk.setEnterMode(on)}
       />
     {/if}
   </div>

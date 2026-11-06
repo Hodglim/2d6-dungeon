@@ -87,14 +87,28 @@ const stepIs = async (want, where) => {
   console.log(`Step after ${where}: ${got}`);
   if (got !== want) problems.push(`after ${where}: expected step "${want}", got "${got}"`);
 };
-// The dice are the floating roller's. These open it and set "Enter my roll" explicitly (click the toggle
-// only when its state differs), so a check never inverts what an earlier one left behind.
+// The dice are the floating roller's. "Playing with real dice" lives in the Game menu: this sets it
+// explicitly (click only when its state differs, then close the menu), so a check never inverts what an
+// earlier one left behind.
 const rollerPanel = '[data-testid=dice-panel]';
+const realDiceBox = '[role=menu] [data-testid=dice-enter] input';
+/** Ticks or unticks "Playing with real dice" in the Game menu; returns what the box showed after. */
+const setRealDice = async (p, on) => {
+  // Already as wanted (typed boxes with real dice, a Roll button without): leave the menu shut. The
+  // unconscious dialog holds the roller over an inert app, so the menu can't be reached there.
+  if (await p.isVisible(`${rollerPanel} ${on ? '[data-testid=dice-typed]' : 'button.roll'}`)) return on;
+  await p.click('header.toolbar button[aria-label="Menu"]');
+  await p.waitForSelector(realDiceBox);
+  if ((await p.isChecked(realDiceBox)) !== on) await p.click(realDiceBox);
+  const now = await p.isChecked(realDiceBox);
+  await p.keyboard.press('Escape');
+  await p.waitForSelector('[role=menu]', { state: 'detached' });
+  return now;
+};
 const rollerEnterModeOn = async (p, on) => {
   if (!(await p.isVisible(rollerPanel))) await p.click('header.toolbar button[aria-label="Dice"]');
   await p.waitForSelector(rollerPanel);
-  const toggle = `${rollerPanel} [data-testid=dice-enter]`;
-  if ((await p.isChecked(toggle)) !== on) await p.click(toggle);
+  return setRealDice(p, on);
 };
 /** Types the values into the roller's boxes, in order, and clicks "Use these". */
 const rollerEnterOn = async (p, ...values) => {
@@ -2482,7 +2496,7 @@ for (const reduced of [false, true]) {
   };
   const enterMode = async (on) => {
     await rollerOpen();
-    if ((await p.isChecked(`${panel} [data-testid=dice-enter]`)) !== on) await p.click(`${panel} [data-testid=dice-enter]`);
+    await setRealDice(p, on);
   };
   const typedBoxes = `${panel} [data-testid=dice-typed] input`;
   const useTyped = async (...vals) => {
@@ -3606,8 +3620,8 @@ for (const reduced of [false, true]) {
 
   // Enter my roll: type a die, "Use these" records it as a free roll; 7 shows the roller's own error.
   const typedIn = `${panel} [data-testid=dice-typed] input`;
-  await rollerEnterModeOn(p, true);
-  if (!(await p.isChecked(`${panel} [data-testid=dice-enter]`))) problems.push(`${tag}: enter checkbox not ticked`);
+  if (!(await rollerEnterModeOn(p, true))) problems.push(`${tag}: real dice checkbox not ticked`);
+  if (await p.isVisible(`${panel} button.roll`)) problems.push(`${tag}: Roll button still shown with real dice`);
   await p.fill(typedIn, '4');
   await p.click(`${panel} [data-testid=dice-typed] button:text-is("Use these")`);
   await p.waitForTimeout(150);
@@ -3619,8 +3633,7 @@ for (const reduced of [false, true]) {
   if (typedErr !== 'Type a number from 1 to 6.') problems.push(`${tag}: typed 7 gave "${typedErr}"`);
   if ((await historyLines())[0] !== 'Free D6: 4') problems.push(`${tag}: a rejected typed roll changed the history`);
   await p.fill(typedIn, '');
-  await rollerEnterModeOn(p, false);
-  if (await p.isChecked(`${panel} [data-testid=dice-enter]`)) problems.push(`${tag}: enter checkbox still ticked`);
+  if (await rollerEnterModeOn(p, false)) problems.push(`${tag}: real dice checkbox still ticked`);
   if ((await historyLines())[1] !== afterSecond[0]) problems.push(`${tag}: typed roll history is ${JSON.stringify(await historyLines())}`);
 
   // "Roll a D3" in a reference-table row is a button too.
@@ -3679,11 +3692,11 @@ for (const reduced of [false, true]) {
   console.log(`${tag}: roller ${pr.width.toFixed(0)}×${pr.height.toFixed(0)} of map ${cr.width.toFixed(0)}×${(visBottom - visTop).toFixed(0)} (${(share * 100).toFixed(0)}%)`);
   if (share > 0.5) problems.push(`${tag}: roller covers ${(share * 100).toFixed(0)}% of the visible map (limit 50%)`);
   if (pr.left < cr.left || pr.right > cr.right + 0.5) problems.push(`${tag}: roller is wider than the map`);
-  const small = await p.$$eval(`${panel} button, ${panel} input:not([type=checkbox]), ${panel} label.enter`, (els) =>
+  const small = await p.$$eval(`${panel} button, ${panel} input`, (els) =>
     els.map((el) => ({ t: el.textContent?.trim() || el.getAttribute('aria-label') || el.tagName, r: el.getBoundingClientRect() })).filter((b) => b.r.width > 0 && (b.r.width < 44 || b.r.height < 44)).map((b) => `${b.t} ${b.r.width.toFixed(1)}×${b.r.height.toFixed(1)}`),
   );
   for (const b of small) problems.push(`${tag}: roller control too small: ${b}`);
-  await p.click(`${panel} [data-testid=dice-enter]`);
+  await setRealDice(p, true);
   await p.waitForSelector(`${panel} [data-testid=dice-typed]`);
   const boxes = await p.$$eval(`${panel} [data-testid=dice-typed] input`, (els) => els.map((e) => e.getBoundingClientRect().toJSON()));
   for (const b of boxes) if (b.width < 52 || b.height < 52) problems.push(`${tag}: typed box ${b.width.toFixed(1)}×${b.height.toFixed(1)} (want 52)`);

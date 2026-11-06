@@ -183,13 +183,9 @@
     {/if}
     </div>
     {#if !view.enterMode}
-      <!-- With real dice there is nothing to roll here: the typed boxes below take the result. -->
+      <!-- With real dice (set in the Game menu) there is nothing to roll here: the typed boxes below take the result. -->
       <button type="button" class="roll" disabled={rolling} onclick={rollButton}>🎲 Roll {rollLabel(kind, hasModifier ? view.modifier : 0)}</button>
     {/if}
-    <label class="enter" data-testid="dice-enter">
-      <input type="checkbox" checked={view.enterMode} onchange={(e) => desk.setEnterMode(e.currentTarget.checked)} />
-      Playing with real dice
-    </label>
     {#if target?.shift?.state && !rolling}
       {@const owner = target}
       <DiceShifter shift={target.shift} onmoved={(faces) => desk.noteShift(owner.id, faces)} />
@@ -384,28 +380,6 @@
     border: 2px solid var(--ink);
     border-radius: 6px;
   }
-  /* A setting, not an action: a checkbox, so it can't be mistaken for the Roll button above it. */
-  .enter {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    min-height: 44px;
-    font-size: 17px;
-    cursor: pointer;
-    touch-action: manipulation;
-  }
-  .enter input {
-    width: 22px;
-    height: 22px;
-    margin: 0;
-    accent-color: var(--ink);
-    cursor: pointer;
-  }
-  .enter:has(input:focus-visible) {
-    outline: 3px solid var(--accent);
-    outline-offset: 2px;
-    border-radius: 6px;
-  }
   .typed {
     display: flex;
     flex-direction: column;
@@ -462,10 +436,6 @@
       height: 1px;
       overflow: hidden;
       clip-path: inset(50%);
-    }
-    .dice-panel > .roll,
-    .dice-panel > .roll + .enter {
-      grid-column: auto;
     }
     .row {
       display: flex;

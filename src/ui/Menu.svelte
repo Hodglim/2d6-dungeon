@@ -21,9 +21,12 @@
     /** Levels above the current one, oldest first. */
     earlier?: { level: number; label: string }[];
     onearlier?: (index: number) => void;
+    /** "Playing with real dice": the roller takes typed results instead of rolling. */
+    realDice?: boolean;
+    onrealdice?: (on: boolean) => void;
   }
 
-  let { toggles = $bindable(), onclose, onnewmap, ondemo, onfit, onexport, onimport, tablesName, cardsName, onloadtables, ontemplate = () => {}, onloadcards, onremovetables, onremovecards, earlier = [], onearlier = () => {} }: Props = $props();
+  let { toggles = $bindable(), onclose, onnewmap, ondemo, onfit, onexport, onimport, tablesName, cardsName, onloadtables, ontemplate = () => {}, onloadcards, onremovetables, onremovecards, earlier = [], onearlier = () => {}, realDice = false, onrealdice = () => {} }: Props = $props();
 
   const toggleLabels: Record<keyof DisplayToggles, string> = {
     grid: 'Grid',
@@ -37,6 +40,15 @@
 
   let sound = $state(isSoundEnabled());
 
+  // The toolbar wraps to several rows on a phone, so a fixed allowance for it is not enough: cap the
+  // menu at the room left below where it starts, so it scrolls instead of running off the screen.
+  let menuEl: HTMLDivElement;
+  let maxHeight = $state<number | null>(null);
+  function fit() {
+    maxHeight = Math.max(160, window.innerHeight - menuEl.getBoundingClientRect().top - 8);
+  }
+  $effect(fit);
+
   function act(fn: () => void) {
     return () => {
       onclose();
@@ -45,10 +57,10 @@
   }
 </script>
 
-<svelte:window onkeydown={(e) => e.key === 'Escape' && onclose()} />
+<svelte:window onkeydown={(e) => e.key === 'Escape' && onclose()} onresize={fit} />
 
 <div class="backdrop" role="presentation" onclick={onclose}></div>
-<div class="menu" role="menu" aria-label="Menu">
+<div class="menu" role="menu" aria-label="Menu" bind:this={menuEl} style:max-height={maxHeight === null ? null : `${maxHeight}px`}>
   <button role="menuitem" onclick={act(onnewmap)}>New game…</button>
   <button role="menuitem" onclick={act(ondemo)}>Load demo map</button>
   <button role="menuitem" onclick={act(onfit)}>Fit map to screen</button>
@@ -76,6 +88,8 @@
   {#each toggleNames as name (name)}
     <label><input type="checkbox" bind:checked={toggles[name]} /> {toggleLabels[name]}</label>
   {/each}
+  <h3>Dice</h3>
+  <label data-testid="dice-enter"><input type="checkbox" checked={realDice} onchange={(e) => onrealdice(e.currentTarget.checked)} /> Playing with real dice</label>
   <h3>Sound</h3>
   <label><input type="checkbox" checked={sound} onchange={(e) => setSoundEnabled((sound = e.currentTarget.checked))} /> Sound effects</label>
 </div>
@@ -93,6 +107,7 @@
     z-index: 11;
     display: flex;
     flex-direction: column;
+    box-sizing: border-box;
     min-width: 260px;
     max-height: calc(100dvh - 80px);
     overflow: auto;
