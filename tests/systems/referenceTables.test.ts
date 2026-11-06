@@ -76,7 +76,7 @@ describe('reference table column headings', () => {
   });
 });
 
-import { findTable, naturalTotal, rollReference } from '../../src/systems/dungeon/referenceTables';
+import { findTable, naturalTotal, recoveryTable, rollReference } from '../../src/systems/dungeon/referenceTables';
 import type { RefDice, RefTable } from '../../src/systems/dungeon/referenceTables';
 import type { DungeonTables } from '../../src/systems/dungeon/tables';
 
@@ -167,5 +167,18 @@ describe('findTable', () => {
   it('returns null when absent', () => {
     expect(findTable(t, 'NOPE')).toBeNull();
     expect(findTable(null, 'XX1')).toBeNull();
+  });
+});
+
+describe('recoveryTable', () => {
+  const t = fixture as unknown as DungeonTables;
+  it('is the reference table the file names as its recovery table', () => {
+    const named = { ...t, tables: { ...t.tables, recoveryTable: 'XX2' } };
+    expect(recoveryTable(named)?.code).toBe('XX2');
+    expect(recoveryTable(named)?.table.name).toBe('Practice Trinket Table');
+  });
+  it('is null when the file names none, or with no file', () => {
+    expect(recoveryTable(t)).toBeNull();
+    expect(recoveryTable(null)).toBeNull();
   });
 });

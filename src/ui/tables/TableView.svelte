@@ -19,8 +19,12 @@
     onopen: (code: string, modifier: number) => void;
     onback: () => void;
     onlist: () => void;
+    /** The Back and List buttons (off where the table is shown on its own, as in the unconscious dialog). */
+    nav?: boolean;
+    /** The roller job's id; a second view of the same table (the unconscious dialog) needs its own. */
+    jobId?: string;
   }
-  let { code, table, tables, modifier, result, canBack, onresult, onopen, onback, onlist }: Props = $props();
+  let { code, table, tables, modifier, result, canBack, onresult, onopen, onback, onlist, nav = true, jobId }: Props = $props();
 
   const minus = (n: number) => (n < 0 ? `−${Math.abs(n)}` : String(n));
   const rolls = $derived(table.dice !== null);
@@ -52,7 +56,7 @@
   const job = $derived<DiceJob | null>(
     table.dice
       ? {
-          id: `table:${code}`,
+          id: jobId ?? `table:${code}`,
           kind: 'watcher',
           label: isSlug(code) ? table.name : `${code} ${table.name}`,
           dice: table.dice,
@@ -81,10 +85,12 @@
   });
 </script>
 
-<div class="nav">
-  {#if canBack}<button type="button" onclick={onback}>‹ Back</button>{/if}
-  <button type="button" onclick={onlist}>☰ List</button>
-</div>
+{#if nav}
+  <div class="nav">
+    {#if canBack}<button type="button" onclick={onback}>‹ Back</button>{/if}
+    <button type="button" onclick={onlist}>☰ List</button>
+  </div>
+{/if}
 
 <header class="head">
   <h3>

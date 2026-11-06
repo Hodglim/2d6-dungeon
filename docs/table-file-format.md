@@ -159,7 +159,7 @@ A short, complete, valid example (copy it and replace the made-up values with yo
 - `format`: always `1`. A higher number is refused as made by a newer version of the app.
 - `systemId`: always `"dungeon"`.
 - `name`: any label for your own use.
-- `tables`: the tables below. Every one is required except `dungeonLevels`, `exitTables`, `creatureTables`, `creatures`, `referenceTables`, `throwingWeapons`, `potionBombs` and `potions`.
+- `tables`: the tables below. Every one is required except `dungeonLevels`, `exitTables`, `creatureTables`, `creatures`, `referenceTables`, `throwingWeapons`, `potionBombs`, `potions` and `recoveryTable`.
 
 Dice are lists of faces, each a whole number 1 to 6, in printed order with the primary (red) die first.
 
@@ -407,6 +407,16 @@ Potions to pick from when adding one to the hero sheet: a list of `{ "name", "ef
   { "name": "Potion of Glow", "effect": "Made-up: you glow softly for one room." }
 ]
 ```
+
+## recoveryTable (optional)
+
+The table to roll on when the hero drops to 0 HP or below outside a fight (a trap, poison, starving). In a fight the foe finishes the hero off and the adventure is over; outside one the hero falls unconscious, and the app shows this table in the dialog to roll on. Where to find it: the Tables Codex contents pages.
+
+```json
+"recoveryTable": "XX2"
+```
+
+It is the id of a table in `referenceTables` that has dice (not a list). Without it, the dialog still asks, and you roll on the table from your own book.
 
 ## Creature cards
 

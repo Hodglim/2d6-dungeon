@@ -134,3 +134,9 @@ export function findTable(t: DungeonTables | null, code: string): { code: string
   for (const [id, table] of Object.entries(all)) if (id.toLowerCase() === want) return { code: id, table };
   return null;
 }
+
+/** The table rolled when the hero drops to 0 HP outside a fight, when the file names one. */
+export function recoveryTable(t: DungeonTables | null): { code: string; table: RefTable } | null {
+  const id = t?.tables.recoveryTable;
+  return id === undefined ? null : findTable(t, id);
+}

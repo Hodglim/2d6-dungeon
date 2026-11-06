@@ -286,6 +286,25 @@ describe('throwing weapons and potion bombs', () => {
   });
 });
 
+describe('recovery table', () => {
+  const D = 'The table file is damaged: ';
+  it('takes the id of a rollable reference table', () => {
+    const o = clone();
+    o.tables.recoveryTable = 'XX2';
+    expect(parse(o).ok).toBe(true);
+  });
+  it('checks it', () => {
+    const bad = (v: unknown, msg: string) => {
+      const o = clone();
+      o.tables.recoveryTable = v;
+      expect(err(parse(o))).toBe(D + msg);
+    };
+    bad(7, 'Recovery Table');
+    bad('NOPE', 'Recovery Table (no table named NOPE in Reference Tables)');
+    bad('LIST1', 'Recovery Table (LIST1 is a list with no dice)');
+  });
+});
+
 describe('docs/table-file-format.md', () => {
   it('the inline example is a valid table file', () => {
     const doc = readFileSync('docs/table-file-format.md', 'utf8');

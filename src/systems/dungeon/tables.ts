@@ -113,6 +113,8 @@ export interface DungeonTables {
     potionBombs?: PotionBomb[];
     /** Potions to pick from when adding one to the hero sheet (optional). */
     potions?: { name: string; effect: string }[];
+    /** Id of the rollable reference table for a hero knocked to 0 HP outside a fight (optional). */
+    recoveryTable?: string;
   };
 }
 
@@ -356,7 +358,17 @@ function roomTablesProblem(t: Record<string, unknown>): string | null {
   }
   const dl = t.dungeonLevels;
   const roomP = dl === undefined ? null : roomLevelsProblem(dl, exitTables);
-  return roomP ?? creatureProblem(t) ?? referenceProblem(t) ?? throwingProblem(t);
+  return roomP ?? creatureProblem(t) ?? referenceProblem(t) ?? throwingProblem(t) ?? recoveryProblem(t);
+}
+
+/** `recoveryTable` names a rollable table in `referenceTables` (checked after them). */
+function recoveryProblem(t: Record<string, unknown>): string | null {
+  const id = t.recoveryTable;
+  if (id === undefined) return null;
+  if (!isStr(id)) return 'Recovery Table';
+  const all = isObj(t.referenceTables) ? t.referenceTables : {};
+  if (!Object.hasOwn(all, id)) return `Recovery Table (no table named ${id} in Reference Tables)`;
+  return (all[id] as RefTable).dice === null ? `Recovery Table (${id} is a list with no dice)` : null;
 }
 
 function roomLevelsProblem(dl: unknown, exitTables: unknown): string | null {

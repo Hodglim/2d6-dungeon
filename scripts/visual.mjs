@@ -2185,7 +2185,10 @@ for (const reduced of [false, true]) {
     await p.waitForTimeout(500);
   };
 
-  await p.setInputFiles('input[data-extra="tables"]', { name: 'tables.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(withThrowing(JSON.parse(readFileSync('tests/fixtures/dungeon-tables.fixture.json', 'utf8'))))) });
+  // XX2 stands in for the recovery table rolled when the hero drops to 0 HP outside a fight.
+  const endTables = withThrowing(JSON.parse(readFileSync('tests/fixtures/dungeon-tables.fixture.json', 'utf8')));
+  endTables.tables.recoveryTable = 'XX2';
+  await p.setInputFiles('input[data-extra="tables"]', { name: 'tables.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(endTables)) });
   await p.waitForTimeout(500);
   await menu();
   await p.click('[role=menuitem]:text-is("New game…")');
@@ -2278,14 +2281,56 @@ for (const reduced of [false, true]) {
   const xpAgain = (await p.textContent('[aria-label="XP total"]'))?.trim();
   if (xpAgain !== '5') problems.push(`${tag}: sheet XP ${xpAgain} after undoing Done and winning again`);
 
-  // 18c. Death from the sheet's − button.
+  // 18c. Out of a fight, 0 HP knocks the hero out: the recovery table and the roller sit in the dialog.
   if (await p.isVisible('#side-tab-hero')) await p.click('#side-tab-hero');
   await p.waitForSelector('[aria-label="Quick strip"]');
-  const hp = Number(await p.inputValue('[aria-label="Quick strip"] input[aria-label="HP"]'));
-  for (let i = 0; i < hp; i++) await p.click('[aria-label="Quick strip"] button[aria-label="HP down"]');
-  await p.waitForSelector(deathQ, { timeout: 2000 }).catch(() => problems.push(`${tag}: no death question at 0 HP`));
+  const hpIn = '[aria-label="Quick strip"] input[aria-label="HP"]';
+  const hpDown = () => p.click('[aria-label="Quick strip"] button[aria-label="HP down"]');
+  const hpUp = () => p.click('[aria-label="Quick strip"] button[aria-label="HP up"]');
+  const hp = Number(await p.inputValue(hpIn));
+  for (let i = 0; i < hp; i++) await hpDown();
+  await p.waitForSelector(deathQ, { timeout: 2000 }).catch(() => problems.push(`${tag}: no unconscious question at 0 HP out of a fight`));
+  const uq = (await p.textContent(`${deathQ} h2`))?.trim();
+  if (uq !== 'Your hero falls unconscious') problems.push(`${tag}: unconscious question "${uq}"`);
+  if (!(await p.isVisible(`${deathQ} h3:has-text("Practice Trinket Table")`))) problems.push(`${tag}: recovery table not shown in the dialog`);
+  if (!(await p.isVisible(`${deathQ} ${rollerPanel}`))) problems.push(`${tag}: roller not in the unconscious dialog`);
+  if ((await p.$$(rollerPanel)).length !== 1) problems.push(`${tag}: more than one roller on screen`);
+  if (!(await p.evaluate(() => document.querySelector('.shell')?.inert === true))) problems.push(`${tag}: app behind the unconscious question is not inert`);
+  const uFor = ((await p.textContent(`${rollerPanel} [data-testid=dice-for]`)) ?? '').replace(/\s+/g, ' ').trim();
+  if (!uFor.includes('XX2')) problems.push(`${tag}: roller not aimed at the recovery table: "${uFor}"`);
+  await rollerEnterOn(p, '3', '4');
+  if (!(await p.isVisible(`${deathQ} [data-testid=ref-result]`))) problems.push(`${tag}: no recovery result in the dialog`);
+  if (!(await p.isVisible(`${deathQ} tr.hit`))) problems.push(`${tag}: recovery row not highlighted`);
+  await shot('64a-unconscious.png', p);
+  const smallU = await p.$$eval(`${deathQ} .actions button`, (els) => els.map((e) => e.getBoundingClientRect()).filter((r) => r.width < 44 || r.height < 44).length);
+  if (smallU) problems.push(`${tag}: ${smallU} unconscious dialog buttons under 44 px`);
+  await p.click(`${deathQ} button:text-is("Hero wakes")`);
+  await p.waitForTimeout(400);
+  if (await p.isVisible(deathQ)) problems.push(`${tag}: unconscious question stayed after Hero wakes`);
+  if (!(await p.isVisible(`.shell ${rollerPanel}`))) problems.push(`${tag}: roller not back in the app after waking`);
+  // Putting the sheet right while still at 0 HP or below doesn't ask again; back above 0 then down asks afresh.
+  await hpDown();
+  await p.waitForTimeout(400);
+  if (await p.isVisible(deathQ)) problems.push(`${tag}: asked again while the woken hero's sheet was put right`);
+  await hpUp();
+  await hpUp();
+  await p.waitForTimeout(200);
+  await hpDown();
+  await p.waitForSelector(deathQ, { timeout: 2000 }).catch(() => problems.push(`${tag}: a new fall to 0 HP did not ask again`));
+  await p.click(`${deathQ} button:text-is("Hero wakes")`);
+  await hpUp();
+  await p.waitForTimeout(200);
+
+  // 18d. In a fight, 0 HP is the foe finishing the hero off.
+  await p.click('header.toolbar button.encounter');
+  await p.waitForSelector(pane);
+  await addByHand('Grumbler');
+  if (await p.isVisible('#side-tab-hero')) await p.click('#side-tab-hero');
+  await hpDown();
+  await p.waitForSelector(deathQ, { timeout: 2000 }).catch(() => problems.push(`${tag}: no death question at 0 HP in a fight`));
   const dq = (await p.textContent(`${deathQ} h2`))?.trim();
   if (dq !== 'Your hero has fallen: confirm their death?') problems.push(`${tag}: death question "${dq}"`);
+  if (await p.isVisible(`${deathQ} ${rollerPanel}`)) problems.push(`${tag}: recovery roller shown for a death in a fight`);
   await shot('64-death-question.png', p);
   const deathFocus = await p.evaluate((sel) => !!document.activeElement?.closest(sel), deathQ);
   if (!deathFocus) problems.push(`${tag}: focus not in the death dialog`);
@@ -2293,9 +2338,9 @@ for (const reduced of [false, true]) {
   await p.click(`${deathQ} button:text-is("Cancel")`);
   await p.waitForTimeout(500);
   if (await p.isVisible(deathQ)) problems.push(`${tag}: death question came straight back after Cancel`);
-  const hpNow = await p.inputValue('[aria-label="Quick strip"] input[aria-label="HP"]');
+  const hpNow = await p.inputValue(hpIn);
   if (hpNow !== '0') problems.push(`${tag}: HP after Cancel ${hpNow}`);
-  await p.click('[aria-label="Quick strip"] button[aria-label="HP down"]');
+  await hpDown();
   await p.waitForSelector(deathQ, { timeout: 2000 }).catch(() => problems.push(`${tag}: death not asked again after another −`));
   await p.click(`${deathQ} button:text-is("Confirm death")`);
   await p.waitForSelector(cover, { timeout: 2000 }).catch(() => problems.push(`${tag}: no Game Over after confirming`));

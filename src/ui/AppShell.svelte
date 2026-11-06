@@ -47,7 +47,7 @@
   import EncounterPane, { NO_WIN, type WinState } from './encounter/EncounterPane.svelte';
   import DeathDialog from './DeathDialog.svelte';
   import GameOver from './GameOver.svelte';
-  import { shouldAskDeath } from './endings';
+  import { deathCause, shouldAskDeath } from './endings';
   import { queueCreatureRoll, startOrJoin, type EncounterHooks } from './encounter/encounterActions';
   import { findCreature } from '../systems/dungeon/creatures';
   import LevelViewer from './LevelViewer.svelte';
@@ -56,8 +56,8 @@
   import { resolveSelection, roomTabShown, routeEditorTap, routePlayTap, type Selection } from './tapRouting';
   import Toolbar from './Toolbar.svelte';
   import TablesPane from './tables/TablesPane.svelte';
-  import { initialTablesState, openTable, type TablesState } from './tables/tablesState';
-  import { findTable } from '../systems/dungeon/referenceTables';
+  import { initialTablesState, openTable, setResult, type TablesState } from './tables/tablesState';
+  import { findTable, recoveryTable } from '../systems/dungeon/referenceTables';
   import DicePanel from './DicePanel.svelte';
   import { readDicePrefs, writeDicePrefs, type DiceKind } from './diceRoller';
   import { DiceDesk, type DeskView } from './diceDesk';
@@ -278,7 +278,16 @@
    * Death from any cause: watched on the History-derived hero, so any execute, undo, redo, restore
    * or import that leaves HP at 0 or below asks. Not before start-up has settled.
    */
-  const askingDeath = $derived(started && !loadError && shouldAskDeath($view.hero as Hero | null, gameOver !== null, deathDismissed));
+  const askingDeath = $derived(
+    started && !loadError && shouldAskDeath($view.hero as Hero | null, gameOver !== null, deathDismissed, $view.encounter !== null),
+  );
+  const deathBy = $derived(deathCause($view.encounter as Encounter | null));
+  const recovery = $derived(recoveryTable(tables));
+  // A "not yet" (or a woken hero) lasts until HP is back above 0; the next fall asks afresh.
+  $effect(() => {
+    const h = $view.hero as Hero | null;
+    if (deathDismissed !== null && (h === null || h.hp > 0)) deathDismissed = null;
+  });
 
   // The Victory panel goes once the fight is over or a foe is standing again (Undo).
   $effect(() => {
@@ -952,7 +961,8 @@
     dragsGhost={step.kind === 'position'}
     ghost={step.kind === 'position' ? step.placement.rect : null}
   />
-  {#if started && !loadError && gameOver === null}
+  <!-- While the hero lies unconscious the roller sits in that dialog instead (this one is shut away with the rest). -->
+  {#if started && !loadError && gameOver === null && !(askingDeath && deathBy === 'unconscious' && recovery)}
     <DicePanel {desk} />
   {/if}
   {#snippet stepPanel(collapsed: boolean)}
@@ -1049,6 +1059,19 @@
 {#if askingDeath && $view.hero}
   <DeathDialog
     heroName={($view.hero as Hero).name}
+    cause={deathBy}
+    {recovery}
+    {tables}
+    {desk}
+    modifier={recovery ? (tablesState.modifier[recovery.code] ?? 0) : 0}
+    result={recovery ? (tablesState.results[recovery.code] ?? null) : null}
+    onresult={(r) => {
+      if (recovery) tablesState = setResult(tablesState, recovery.code, r);
+    }}
+    onopen={(code, modifier) => {
+      const t = findTable(tables, code);
+      if (t) tablesState = openTable(tablesState, t.code, modifier);
+    }}
     onconfirm={confirmDeath}
     oncancel={() => (deathDismissed = $view.hero as Hero)}
   />
