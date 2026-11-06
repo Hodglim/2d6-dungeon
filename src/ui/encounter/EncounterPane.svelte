@@ -1165,9 +1165,10 @@
     background: rgba(20, 16, 10, 0.9);
     cursor: zoom-out;
   }
+  /* Cards are taller than they are wide: fit the whole card on the screen. */
   .full img {
-    max-width: 100%;
-    max-height: 100%;
+    max-width: calc(100vw - 24px);
+    max-height: calc(100dvh - 24px);
     object-fit: contain;
   }
   :focus-visible {
