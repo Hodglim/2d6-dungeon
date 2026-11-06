@@ -675,7 +675,7 @@
             <span class="label" data-testid="round">Round {encounter.round}</span>
             <DieFace value={fatigueDie(encounter.round)} colour="red" size={44} />
             <span class="bonus" data-testid="fatigue">{signed(fatigue)} Shift</span>
-            <button class="primary" onclick={next}>Next turn</button>
+            {#if !showVictory}<button class="primary" onclick={next}>Next turn</button>{/if}
           </div>
         </div>
         {#if interruptReminder(encounter.round)}
@@ -796,7 +796,7 @@
       {/if}
 
       <div class="row">
-        {#if askingFor === null}<button onclick={() => ((adding = true), (confirmingEnd = false))}>Add creature</button>{/if}
+        {#if askingFor === null && !showVictory}<button onclick={() => ((adding = true), (confirmingEnd = false))}>Add creature</button>{/if}
         {#if encounter && !showVictory && !askingWin}<button onclick={end}>End encounter</button>{/if}
       </div>
       {#if confirmingEnd}
