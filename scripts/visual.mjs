@@ -1343,8 +1343,11 @@ for (const reduced of [false, true]) {
   const insp = (await p.innerText('aside.panel [data-editor="room"]')).replace(/\s+/g, ' ').trim();
   console.log(`${tag}: inspector "${insp}"`);
   if (!insp.includes('Nothing but invented dust (34).')) problems.push(`${tag}: inspector missing the encounter text`);
-  const typeValue = await p.inputValue('aside.panel [data-editor="room"] input[type="text"]');
-  if (typeValue !== 'Practice Room 34') problems.push(`${tag}: room type "${typeValue}"`);
+  // A rolled room's type and unique flag are the table's: shown, not editable. The narrative still is.
+  if (!insp.includes('Practice Room 34')) problems.push(`${tag}: inspector missing the rolled room type`);
+  if (await p.isVisible('aside.panel [data-editor="room"] input[type="text"]')) problems.push(`${tag}: rolled room type still editable`);
+  if (await p.isVisible('aside.panel [data-editor="room"] input[type="checkbox"]')) problems.push(`${tag}: rolled room unique flag still editable`);
+  if (!(await p.isVisible('aside.panel [data-editor="room"] textarea'))) problems.push(`${tag}: rolled room narrative not editable`);
   if (await p.isVisible('aside.panel button:text-is("Roll for this room")')) problems.push(`${tag}: roll button still shown after rolling`);
   await checkPanelOn(p, tag);
   await shot('48-roll-later.png', p);

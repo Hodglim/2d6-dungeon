@@ -1,6 +1,7 @@
 <script lang="ts">
-  // A room tapped in Play: its details. Its label (type, unique, narrative) is
-  // editable; size, class and exit count are read-only. Rooms are never moved, resized or
+  // A room tapped in Play: its details. Its narrative is editable, and so are its type and
+  // unique flag unless it was rolled on the room table (then they are the table's, read-only);
+  // size, class and exit count are read-only. Rooms are never moved, resized or
   // deleted, so there are no controls for that (mistakes are fixed with Undo).
   import { type Command, updateRoom } from '../../core/commands';
   import type { DungeonMap, Room, RoomContents } from '../../core/types';
@@ -24,6 +25,8 @@
   let { map, roomId, onexec, tables = null, encounter = null }: Props = $props();
 
   const room = $derived(map.rooms.find((r) => r.id === roomId));
+  /** Rolled on the room table: its type and unique flag come from there. */
+  const rolled = $derived(!!room?.contents);
 
   let type = $state('');
   let unique = $state(false);
@@ -77,7 +80,7 @@
           <dt>Roll</dt>
           <dd>{room.contents.roll}</dd>
           <dt>Type</dt>
-          <dd>{room.contents.type}</dd>
+          <dd>{room.contents.type}{#if room.label.unique}<span class="badge">Unique</span>{/if}</dd>
           <dt class="wide">Description</dt>
           <dd class="wide" data-testid="room-description">{#if encounter}<EncounterText text={room.contents.description} {tables} onopentable={encounter.onopentable} />{:else}{room.contents.description}{/if}</dd>
           {#if room.contents.encounter}
@@ -93,8 +96,10 @@
         </div>
       {/if}
       <form class="label" onsubmit={(e) => { e.preventDefault(); save(room); }}>
-        <label class="field"><span class="name">Room type</span> <input type="text" bind:value={type} placeholder="e.g. Lamp Room" /></label>
-        <label class="check"><input type="checkbox" bind:checked={unique} /> Unique</label>
+        {#if !rolled}
+          <label class="field"><span class="name">Room type</span> <input type="text" bind:value={type} placeholder="e.g. Lamp Room" /></label>
+          <label class="check"><input type="checkbox" bind:checked={unique} /> Unique</label>
+        {/if}
         <label class="field"><span class="name">Narrative</span> <textarea rows="3" bind:value={narrative}></textarea></label>
         <div class="row">
           <button type="submit" class="primary" disabled={!changed}>Save</button>
