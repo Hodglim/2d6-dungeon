@@ -12,8 +12,8 @@ function pngSize(file: string): string {
 describe('web app manifest', () => {
   it('has the expected identity and display mode', () => {
     expect(manifest.display).toBe('standalone');
-    expect(manifest.name).toBe('2D6 Map Maker');
-    expect(manifest.short_name).toBe('2D6 Map');
+    expect(manifest.name).toBe('2D6 Dungeon Companion');
+    expect(manifest.short_name).toBe('2D6 Dungeon');
     expect(manifest.start_url).toBe('./');
     expect(manifest.scope).toBe('./');
   });

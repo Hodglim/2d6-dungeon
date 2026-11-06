@@ -1,5 +1,5 @@
 {
-  "name": "2d6-map-maker",
+  "name": "2d6-dungeon-companion",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -17,7 +17,7 @@
     "screenshot": "node scripts/screenshot.mjs",
     "e2e:pwa": "node scripts/e2e-pwa.mjs",
     "e2e:persistence": "node scripts/e2e-persistence.mjs",
-    "deploy": "npm run build && node scripts/check-dist.mjs && wrangler pages deploy dist --project-name 2d6-map-maker"
+    "deploy": "npm run build && node scripts/check-dist.mjs && wrangler pages deploy dist --project-name 2d6-dungeon-companion"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "7.3.1",

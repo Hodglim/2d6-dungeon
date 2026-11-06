@@ -33,6 +33,7 @@ export class IdbSaveStore implements SaveStore {
   private db: Promise<IDBDatabase> | null = null;
 
   constructor(
+    // Kept from the app's old name: renaming it would leave existing saved games behind.
     private readonly dbName = '2d6-map-maker',
     private readonly openTimeoutMs = 5000,
     private readonly extraWriteTimeoutMs = EXTRA_WRITE_TIMEOUT_MS,

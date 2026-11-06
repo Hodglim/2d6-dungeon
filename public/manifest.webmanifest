@@ -1,7 +1,7 @@
 {
-  "name": "2D6 Map Maker",
-  "short_name": "2D6 Map",
-  "description": "Draw dungeon maps as you play the 2D6 dungeon rules.",
+  "name": "2D6 Dungeon Companion",
+  "short_name": "2D6 Dungeon",
+  "description": "A companion for playing the 2D6 dungeon rules: maps, your hero, fights and your own tables.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

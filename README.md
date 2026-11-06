@@ -67,7 +67,7 @@ The app is a static site hosted on Cloudflare Pages.
 1. One time only: `npx wrangler login`.
 2. `npm run deploy`. It builds, checks that `dist/` holds only the app (no PDFs, `local-data/`, `reference/` or `.superpowers/`), then uploads it.
 
-The first deploy creates the `2d6-map-maker` Pages project and prints the `*.pages.dev` URL. Later deploys update the same URL.
+The first deploy creates the `2d6-dungeon-companion` Pages project and prints the `*.pages.dev` URL. Later deploys update the same URL.
 
 After the first real deploy, open the URL on the iPad once while online, then switch to airplane mode and check the app still opens.
 
