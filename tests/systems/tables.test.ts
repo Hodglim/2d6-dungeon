@@ -249,7 +249,7 @@ describe('creature tables and creatures', () => {
     bad({ prime: null }, 'prime');
   });
   it('still parses a file with neither key', () => {
-    const o = clone(); delete o.tables.creatureTables; delete o.tables.creatures;
+    const o = clone(); delete o.tables.creatureTables; delete o.tables.creatures; delete o.tables.dungeonLevels[0].patrolTable;
     expect(parse(o).ok).toBe(true);
   });
 });
@@ -311,5 +311,35 @@ describe('docs/table-file-format.md', () => {
     const block = /complete, valid example[^`]*```json\n([\s\S]*?)\n```/.exec(doc)?.[1];
     expect(block).toBeTruthy();
     expect(validateTableFile(JSON.parse(block!)).ok).toBe(true);
+  });
+});
+
+describe('door locks and patrol tables', () => {
+  const withLocks = (doorLocks: unknown, patrolTable?: unknown) => {
+    const o = clone();
+    if (doorLocks !== undefined) o.tables.doorLocks = doorLocks;
+    if (patrolTable !== undefined) o.tables.dungeonLevels[0].patrolTable = patrolTable;
+    return o;
+  };
+  it('accepts lock numbers and a level patrol table', () => {
+    expect(parse(withLocks({ wooden: 6, metal: 4, reinforced: 5 }, 'PRAC1')).ok).toBe(true);
+  });
+  it('still loads a file without them', () => {
+    const o = clone();
+    delete o.tables.doorLocks;
+    delete o.tables.dungeonLevels[0].patrolTable;
+    expect(parse(o).ok).toBe(true);
+  });
+  it('refuses a lock number outside 1-6', () => {
+    expect(err(parse(withLocks({ metal: 7 })))).toContain('Door Locks metal (a whole number from 1 to 6)');
+  });
+  it('refuses a door type that is never locked', () => {
+    expect(err(parse(withLocks({ archway: 3 })))).toContain('Door Locks archway (only wooden, metal or reinforced)');
+  });
+  it('refuses door locks that are not an object', () => {
+    expect(err(parse(withLocks([])))).toContain('Door Locks');
+  });
+  it('refuses a patrol table that is not a creature table', () => {
+    expect(err(parse(withLocks(undefined, 'NOPE')))).toContain('Dungeon Levels[0] patrolTable (no table named NOPE in Creature Tables)');
   });
 });

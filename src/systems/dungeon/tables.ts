@@ -45,7 +45,13 @@ export interface LevelTables {
   smallRooms: Record<string, SmallRoomEntry>;
   /** Keys "2".."12". */
   largeRooms: Record<string, RoomEntry>;
+  /** Key into creatureTables: the level's patrol table (optional). */
+  patrolTable?: string;
 }
+
+/** Door types a lock check applies to. */
+export type LockableDoor = 'wooden' | 'metal' | 'reinforced';
+export const LOCKABLE_DOORS: readonly LockableDoor[] = ['wooden', 'metal', 'reinforced'];
 
 export type CreatureTableEntry = { creatures: string[] } | { text: string };
 /** One attack off a creature card: hit when the attack dice (after shifting) read `dice`, red then blue. */
@@ -115,6 +121,8 @@ export interface DungeonTables {
     potions?: { name: string; effect: string }[];
     /** Id of the rollable reference table for a hero knocked to 0 HP outside a fight (optional). */
     recoveryTable?: string;
+    /** Lowest D6 roll that locks each door type (optional; types left out are never checked). */
+    doorLocks?: Partial<Record<LockableDoor, number>>;
   };
 }
 
@@ -357,8 +365,8 @@ function roomTablesProblem(t: Record<string, unknown>): string | null {
     }
   }
   const dl = t.dungeonLevels;
-  const roomP = dl === undefined ? null : roomLevelsProblem(dl, exitTables);
-  return roomP ?? creatureProblem(t) ?? referenceProblem(t) ?? throwingProblem(t) ?? recoveryProblem(t);
+  const roomP = dl === undefined ? null : roomLevelsProblem(dl, exitTables, t.creatureTables);
+  return roomP ?? doorLocksProblem(t) ?? creatureProblem(t) ?? referenceProblem(t) ?? throwingProblem(t) ?? recoveryProblem(t);
 }
 
 /** `recoveryTable` names a rollable table in `referenceTables` (checked after them). */
@@ -371,7 +379,19 @@ function recoveryProblem(t: Record<string, unknown>): string | null {
   return (all[id] as RefTable).dice === null ? `Recovery Table (${id} is a list with no dice)` : null;
 }
 
-function roomLevelsProblem(dl: unknown, exitTables: unknown): string | null {
+/** `doorLocks`: lockable door type → lowest D6 roll that locks it. */
+function doorLocksProblem(t: Record<string, unknown>): string | null {
+  const v = t.doorLocks;
+  if (v === undefined) return null;
+  if (!isObj(v)) return 'Door Locks';
+  for (const [k, n] of Object.entries(v)) {
+    if (!(LOCKABLE_DOORS as readonly string[]).includes(k)) return `Door Locks ${k} (only wooden, metal or reinforced)`;
+    if (!isInt(n) || (n as number) < 1 || (n as number) > 6) return `Door Locks ${k} (a whole number from 1 to 6)`;
+  }
+  return null;
+}
+
+function roomLevelsProblem(dl: unknown, exitTables: unknown, creatureTables: unknown): string | null {
   const seen = new Set<number>();
   return rows('Dungeon Levels', dl, false, (l, at) => {
     const p = field(l, at, ['name', 'exitTable'], isStr);
@@ -381,6 +401,9 @@ function roomLevelsProblem(dl: unknown, exitTables: unknown): string | null {
     seen.add(l.level as number);
     if (!isObj(exitTables) || !Object.hasOwn(exitTables, l.exitTable as string)) {
       return `${at} exitTable (no table named ${l.exitTable} in Exit Tables)`;
+    }
+    if (l.patrolTable !== undefined && !(isStr(l.patrolTable) && isObj(creatureTables) && Object.hasOwn(creatureTables, l.patrolTable))) {
+      return `${at} patrolTable (no table named ${String(l.patrolTable)} in Creature Tables)`;
     }
     return keyed(`${at} rooms`, l.rooms, D66_KEYS, (r, rat) => roomEntry(r, rat, true, true)) ??
       keyed(`${at} smallRooms`, l.smallRooms, TWO_D6_KEYS, (r, rat) => roomEntry(r, rat, false, false)) ??

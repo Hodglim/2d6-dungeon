@@ -159,7 +159,7 @@ A short, complete, valid example (copy it and replace the made-up values with yo
 - `format`: always `1`. A higher number is refused as made by a newer version of the app.
 - `systemId`: always `"dungeon"`.
 - `name`: any label for your own use.
-- `tables`: the tables below. Every one is required except `dungeonLevels`, `exitTables`, `creatureTables`, `creatures`, `referenceTables`, `throwingWeapons`, `potionBombs`, `potions` and `recoveryTable`.
+- `tables`: the tables below. Every one is required except `dungeonLevels`, `exitTables`, `creatureTables`, `creatures`, `referenceTables`, `throwingWeapons`, `potionBombs`, `potions`, `recoveryTable` and `doorLocks`.
 
 Dice are lists of faces, each a whole number 1 to 6, in printed order with the primary (red) die first.
 
@@ -417,6 +417,22 @@ The table to roll on when the hero drops to 0 HP or below outside a fight (a tra
 ```
 
 It is the id of a table in `referenceTables` that has dice (not a list). Without it, the dialog still asks, and you roll on the table from your own book.
+
+## doorLocks and patrolTable (optional)
+
+The first time you leave through a door you haven't used, the app asks for a D6 to see whether it is locked. `doorLocks` gives, for each door type, the lowest roll that locks it. Only `wooden`, `metal` and `reinforced` may be listed; door types left out are never checked, and secret doors never are. The numbers below are made up.
+
+```json
+"doorLocks": { "wooden": 6, "metal": 4, "reinforced": 5 }
+```
+
+Each entry in `dungeonLevels` may also name its patrol table, a code in `creatureTables`. When you wait at a locked door, the app queues a roll on it:
+
+```json
+{ "level": 1, "name": "Test Halls", "exitTable": "EXT1", "patrolTable": "PAT1", ... }
+```
+
+Without `doorLocks`, there is no automatic lock check (you can still set a padlock in the Door editor). Without a `patrolTable`, waiting still works, and you roll on the patrol table from your own book.
 
 ## Creature cards
 

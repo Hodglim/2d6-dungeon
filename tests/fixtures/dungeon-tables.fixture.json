@@ -52,9 +52,10 @@
     },
     "favourBoxes": 4,
     "limits": { "potions": 3, "scrolls": 2, "largeItems": 2, "armour": 1 },
+    "doorLocks": { "wooden": 6, "metal": 4, "reinforced": 5 },
     "dungeonLevels": [
       {
-        "level": 1, "name": "Test Halls", "exitTable": "EXT1",
+        "level": 1, "name": "Test Halls", "exitTable": "EXT1", "patrolTable": "PRAC1",
         "rooms": {
           "11": {"type":"Practice Room 11","description":"A made-up room, number 11.","encounter":"Nothing but invented dust (11).","exit":"random","unique":false},
           "12": {"type":"Practice Room 12","description":"A made-up room, number 12.","encounter":"Nothing but invented dust (12).","exit":{"door":"wooden"},"unique":false},

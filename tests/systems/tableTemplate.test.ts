@@ -19,7 +19,7 @@ describe('blankTableFile', () => {
     expect(t.format).toBe(1);
     expect(t.systemId).toBe('dungeon');
     expect(Object.keys(t.tables).sort()).toEqual(
-      ['conditions', 'creatureTables', 'creatures', 'dungeonLevels', 'exitTables', 'favourBoxes', 'gods', 'levels', 'limits', 'referenceTables', 'starting', 'startingArmour', 'startingScrolls', 'weapons'].sort(),
+      ['conditions', 'creatureTables', 'creatures', 'doorLocks', 'dungeonLevels', 'exitTables', 'favourBoxes', 'gods', 'levels', 'limits', 'referenceTables', 'starting', 'startingArmour', 'startingScrolls', 'weapons'].sort(),
     );
     expect(TEMPLATE_FILE_NAME).toMatch(/\.json$/);
   });
@@ -69,6 +69,8 @@ describe('blankTableFile', () => {
     for (const e of Object.values(t.tables.creatureTables.L1X) as any[]) e.creatures = ['Grumbler'];
     for (const e of Object.values(t.tables.exitTables.EXT1) as any[]) e.door = 'archway';
     const lvl = t.tables.dungeonLevels[0];
+    lvl.patrolTable = 'L1X';
+    t.tables.doorLocks = { wooden: 6, metal: 4, reinforced: 5 };
     for (const table of [lvl.rooms, lvl.smallRooms, lvl.largeRooms]) {
       for (const e of Object.values(table) as any[]) {
         e.type = 'Made-up Room';
@@ -99,5 +101,13 @@ describe('validation of names left blank', () => {
   it('refuses an empty kit item', () => {
     const o = clone(); o.tables.starting.kit = [''];
     expect(err(o)).toBe('The table file is damaged: Starting Values kit[0] (empty)');
+  });
+});
+
+describe('blankTableFile door locks', () => {
+  it('has blank lock numbers and a blank patrol table', () => {
+    const t = blankTableFile();
+    expect(t.tables.doorLocks).toEqual({ wooden: null, metal: null, reinforced: null });
+    expect(t.tables.dungeonLevels[0]!.patrolTable).toBe('');
   });
 });
