@@ -8,6 +8,7 @@
   import { applyRoomRoll } from '../../systems/dungeon/roomTables';
   import type { DungeonTables } from '../../systems/dungeon/tables';
   import RoomRoll from '../RoomRoll.svelte';
+  import { autoGrow } from '../autoGrow';
   import EncounterText from '../encounter/EncounterText.svelte';
   import type { EncounterHooks } from '../encounter/encounterActions';
   import { roomExitCount } from '../tapRouting';
@@ -100,7 +101,7 @@
           <label class="field"><span class="name">Room type</span> <input type="text" bind:value={type} placeholder="e.g. Lamp Room" /></label>
           <label class="check"><input type="checkbox" bind:checked={unique} /> Unique</label>
         {/if}
-        <label class="field"><span class="name">Narrative</span> <textarea rows="3" bind:value={narrative}></textarea></label>
+        <label class="field"><span class="name">Narrative</span> <textarea rows="3" bind:value={narrative} use:autoGrow={narrative}></textarea></label>
         <div class="row">
           <button type="submit" class="primary" disabled={!changed}>Save</button>
         </div>

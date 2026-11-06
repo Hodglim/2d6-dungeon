@@ -5,6 +5,7 @@
   import RollCard from '../RollCard.svelte';
   import type { DiceJob } from '../diceDesk';
   import DieFace from '../DieFace.svelte';
+  import { autoGrow } from '../autoGrow';
   import EncounterText from '../encounter/EncounterText.svelte';
   import { placingFirst, type EncounterHooks } from '../encounter/encounterActions';
   import type { DungeonTables } from '../../systems/dungeon/tables';
@@ -105,7 +106,7 @@
   <form class="label" onsubmit={(e) => { e.preventDefault(); oncommit(() => flow.finish({ type: type.trim(), unique, narrative: narrative.trim() })); }}>
     <label class="field">Room type <input type="text" bind:value={type} placeholder="e.g. Lamp Room" /></label>
     <label class="check"><input type="checkbox" bind:checked={unique} /> Unique</label>
-    <label class="field">Narrative <textarea rows="3" bind:value={narrative}></textarea></label>
+    <label class="field">Narrative <textarea rows="3" bind:value={narrative} use:autoGrow={narrative}></textarea></label>
     <div class="row">
       <button type="button" onclick={() => oncommit(() => flow.finish(null))}>Skip</button>
       <button type="submit" class="primary">Done</button>
